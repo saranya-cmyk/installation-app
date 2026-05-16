@@ -156,12 +156,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
     <label>Job Name / Campaign</label>
     <input type="text" id="jobNameInput" placeholder="ใส่ชื่องาน หรือโหลด Excel แล้วเลือกสินค้าด้านล่าง" autocomplete="off">
   </div>
-  <div id="productPickerWrap" style="display:none;margin-bottom:14px">
-    <div style="font-size:11px;color:var(--mu);margin-bottom:8px">หรือเลือกจากชื่อสินค้าในไฟล์</div>
-    <div id="productChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
-  </div>
-
-  <div class="excel-zone" id="excelZone">
+<div class="excel-zone" id="excelZone">
     <input type="file" accept=".xlsx,.xls,.csv" id="excelInput" onchange="loadExcel(this.files[0])">
     <div id="ezBefore"><div class="ez-icon">📋</div><div class="ez-title">Upload Excel / CSV</div><div class="ez-sub">Any format supported — auto-detects columns</div></div>
     <div id="ezAfter" style="display:none"><div class="ez-icon">✅</div><div class="ez-title" id="ezTitle">โหลดแล้ว</div><div class="ez-sub" id="ezSub">—</div></div>
@@ -332,8 +327,7 @@ function loadExcel(file) {
     document.getElementById('excelZone').classList.add('has');
     document.getElementById('mapperWrap').style.display = 'none';
 
-    // Clear job name - will be filled from product chip
-    document.getElementById('jobNameInput').value = '';
+    // ไม่ auto-fill — แอดมินพิมพ์เอง
 
     // Show preview
     showAutoPreview();
@@ -407,24 +401,8 @@ function showAutoPreview() {
   document.getElementById('previewData').style.display = 'block';
 }
 
-function showProductChips() {
-  if (!pendingSpots.length) return;
-  var products = [];
-  pendingSpots.forEach(function(s){
-    if (s.product && products.indexOf(s.product) === -1) products.push(s.product);
-  });
-  if (!products.length) return;
-  var chips = document.getElementById('productChips');
-  chips.innerHTML = '';
-  products.forEach(function(p) {
-    var div = document.createElement('div');
-    div.className = 'prod-chip';
-    div.textContent = p;
-    div.onclick = function(){ pickProduct(div, p); };
-    chips.appendChild(div);
-  });
-  document.getElementById('productPickerWrap').style.display = 'block';
-}
+function showProductChips() { }
+
 
 function updatePreview() { } // legacy — no longer needed
 
@@ -451,7 +429,6 @@ function createJob() {
   document.getElementById('ezAfter').style.display = 'none';
   document.getElementById('excelZone').classList.remove('has');
   document.getElementById('mapperWrap').style.display = 'none';
-  document.getElementById('productPickerWrap').style.display = 'none';
   rawExcelData = []; excelCols = []; pendingSpots = [];
 
   renderJobCards();
