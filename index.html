@@ -334,20 +334,28 @@ function pickFiles(files) {
 
   if (uzBefore) uzBefore.style.display = 'none';
   if (uzAfter) uzAfter.style.display = 'block';
-  if (fileCount) fileCount.textContent = allFiles.length;
+  var fileCountEl = document.getElementById('fileCountEl');
+  if (fileCountEl) fileCountEl.textContent = allFiles.length;
   if (uploadZone) uploadZone.className = 'upload-zone has';
   if (sendBtn) sendBtn.disabled = false;
 }
 
 function clearAllFiles() {
   allFiles = [];
-  document.getElementById('fileInput').value = '';
-  document.getElementById('uzBefore').style.display = 'block';
-  document.getElementById('uzAfter').style.display = 'none';
-  document.getElementById('uploadZone').className = 'upload-zone';
-  document.getElementById('sendBtn').disabled = true;
-  document.getElementById('previewSection').style.display = 'none';
-  document.getElementById('previewGrid').innerHTML = '';
+  var fi = document.getElementById('fileInput');
+  if (fi) fi.value = '';
+  var uzB = document.getElementById('uzBefore');
+  var uzA = document.getElementById('uzAfter');
+  var uz = document.getElementById('uploadZone');
+  var sb = document.getElementById('sendBtn');
+  var ps = document.getElementById('previewSection');
+  var pg = document.getElementById('previewGrid');
+  if (uzB) uzB.style.display = 'block';
+  if (uzA) uzA.style.display = 'none';
+  if (uz) uz.className = 'upload-zone';
+  if (sb) sb.disabled = true;
+  if (ps) ps.style.display = 'none';
+  if (pg) pg.innerHTML = '';
 }
 
 function clearFiles() {
