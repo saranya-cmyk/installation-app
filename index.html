@@ -150,8 +150,8 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
       </div>
       <div class="jsb-change" onclick="go('s2')">เปลี่ยน</div>
     </div>
-    <div class="upload-zone" id="uploadZone">
-      <input type="file" accept="image/*" multiple id="fileInput" onchange="pickFiles(this.files)">
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+      <input type="file" accept="image/*" multiple id="fileInput" onchange="pickFiles(this.files)" style="display:none">
       <div id="uzBefore">
         <div class="uz-icon">📂</div>
         <div class="uz-title">กดเลือกรูปทั้งหมด</div>
