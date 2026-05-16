@@ -703,6 +703,7 @@ function doExport(jobId) {
     });
 }
 
+function exportReport(jobId) { doExport(jobId); }
 function save() { localStorage.setItem('jobs', JSON.stringify(jobs)); }
 
 // ── Photo Viewer ──────────────────────────────────────────────
