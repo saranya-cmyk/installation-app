@@ -601,8 +601,8 @@ function renderDash() {
     var badgeCls = s.status === 'done' ? 'sb-done' : s.status === 'warn' ? 'sb-warn' : 'sb-pending';
     var badgeTxt = s.status === 'done' ? '✓ Installed' : s.status === 'warn' ? '⚠ Off-plan' : 'Pending';
     var copyBtn = s.status === 'done' ? '<button class="spot-link-btn" onclick="copySpot(\'' + id + '\',\'' + s.code + '\',this)">📋</button>' : '';
-    var clickable = s.status === 'done' || s.status === 'warn';
-    var spotClick = clickable ? 'onclick="openPhotoModal(' + JSON.stringify(id) + ',' + JSON.stringify(s.code) + ',' + JSON.stringify(s.product) + ')" style="cursor:pointer"' : '';
+    // All codes are clickable - system will check Drive directly
+    var spotClick = 'onclick="openPhotoModal(' + JSON.stringify(id) + ',' + JSON.stringify(s.code) + ',' + JSON.stringify(s.product) + ')" style="cursor:pointer"';
     return '<div class="spot ' + s.status + '" ' + spotClick + '>' +
       '<div class="sdot ' + (s.status === 'done' ? 'done' : s.status === 'warn' ? 'warn' : '') + '"></div>' +
       '<div class="scode">' + s.code + '</div>' +
@@ -697,7 +697,7 @@ function openPhotoModal(jobId, code, product) {
       document.getElementById('photoModalSub').textContent = 'After: ' + after.length + ' · Before: ' + before.length + dateStr;
 
       if (!photos.length) {
-        document.getElementById('photoGridModal').innerHTML = '<div class="no-photos">No photos found in Drive<br>May still be uploading</div>';
+        document.getElementById('photoGridModal').innerHTML = '<div class="no-photos" style="padding:32px;text-align:center;color:var(--mu);font-size:13px;line-height:1.8">ไม่พบรูปใน Drive<br><br>อาจเป็นเพราะ:<br>• รูปยังอยู่ใน _ตรวจสอบ<br>• ชื่อโฟลเดอร์ไม่ตรงกับ Code<br>• ยังไม่ได้ส่งรูปจุดนี้</div>';
         return;
       }
       currentPhotos = photos;
