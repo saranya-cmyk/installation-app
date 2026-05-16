@@ -348,28 +348,28 @@ function autoDetectAndBuild() {
   var codeCol=null, productCol=null, addrCol=null, latCol=null, lngCol=null;
   var codePattern = /^[A-Za-z]{1,4}[-]?[0-9]{2,5}$/;
 
+  // Priority 1: detect by common column name keywords
+  function findByName(keywords) {
+    return excelCols.find(function(col) {
+      return keywords.some(function(k){ return col.toString().toLowerCase().indexOf(k.toLowerCase()) > -1; });
+    }) || null;
+  }
+  codeCol    = findByName(['code id','code','รหัส']);
+  productCol = findByName(['ad.on','adsone','product','สินค้า']);
+  addrCol    = findByName(['location','ที่อยู่','สถานที่','address']);
+  latCol     = findByName(['co_y','latitude','lat']);
+  lngCol     = findByName(['co_x','longitude','lng','lon']);
+
+  // Priority 2: fallback to data pattern if name not found
   excelCols.forEach(function(col) {
     var vals = rawExcelData.slice(0,5).map(function(r){ return String(r[col]||'').trim(); }).filter(Boolean);
     if (!vals.length) return;
-
-    // Code: matches pattern like DP821, BKK-001
-    if (!codeCol && vals.some(function(v){ return codePattern.test(v); })) {
-      codeCol = col; return;
-    }
-    // Latitude: 13.xxx (Thailand range)
-    if (!latCol && vals.every(function(v){ var n=parseFloat(v); return !isNaN(n) && n>5 && n<21; })) {
-      latCol = col; return;
-    }
-    // Longitude: 98.xxx - 106.xxx (Thailand range)
-    if (!lngCol && vals.every(function(v){ var n=parseFloat(v); return !isNaN(n) && n>95 && n<110; })) {
-      lngCol = col; return;
-    }
-    // Address: long Thai text
-    if (!addrCol && vals.some(function(v){ return v.length > 20; })) {
-      addrCol = col; return;
-    }
-    // Product: short non-numeric text (not already assigned)
-    if (!productCol && vals.some(function(v){ return v.length > 2 && v.length < 60 && isNaN(parseFloat(v)); })) {
+    if (!codeCol && vals.some(function(v){ return codePattern.test(v); })) { codeCol = col; return; }
+    if (!latCol && vals.every(function(v){ var n=parseFloat(v); return !isNaN(n)&&n>5&&n<21; })) { latCol = col; return; }
+    if (!lngCol && vals.every(function(v){ var n=parseFloat(v); return !isNaN(n)&&n>95&&n<110; })) { lngCol = col; return; }
+    if (!addrCol && vals.some(function(v){ return v.length > 20; })) { addrCol = col; return; }
+    if (!productCol && col !== codeCol && col !== addrCol &&
+        vals.some(function(v){ return v.length>2 && v.length<60 && isNaN(parseFloat(v)) && !codePattern.test(v); })) {
       productCol = col;
     }
   });
