@@ -99,6 +99,12 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 /* Spinner */
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{width:18px;height:18px;border:2.5px solid rgba(15,15,15,.3);border-top-color:#0f0f0f;border-radius:50%;animation:spin .7s linear infinite}
+.preview-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:12px}
+.preview-thumb{aspect-ratio:1;border-radius:6px;overflow:hidden;background:var(--s2);cursor:pointer}
+.preview-thumb img{width:100%;height:100%;object-fit:cover}
+.preview-more{display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:var(--mu);background:var(--s2);aspect-ratio:1;border-radius:6px}
+.preview-count{font-size:12px;color:var(--mu);margin-bottom:8px;display:flex;justify-content:space-between}
+.clear-all-btn{font-size:11px;color:var(--err);cursor:pointer;background:transparent;border:none;font-family:var(--f)}
 </style>
 </head>
 <body>
@@ -118,7 +124,10 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 <div class="screen" id="s2">
   <div class="bar">
     <div class="bar-title">เลือกงานคืนนี้</div>
-    <div class="name-chip" id="nameChip">—</div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button onclick="showGuide()" style="background:transparent;border:0.5px solid #2a2a2a;border-radius:20px;padding:5px 12px;font-size:11px;color:#888;cursor:pointer;font-family:var(--f)">📖 คู่มือ</button>
+      <div class="name-chip" id="nameChip">—</div>
+    </div>
   </div>
   <div class="body">
     <div class="section-title">งานที่มีอยู่ — กดเลือก 1 งาน</div>
@@ -282,17 +291,54 @@ function goUpload() {
 
 // ── S3: โยนรูป ────────────────────────────────────────────────
 function pickFiles(files) {
-  allFiles = Array.from(files).sort((a, b) => {
-    const ta = extractTs(a.name) || a.lastModified || 0;
-    const tb = extractTs(b.name) || b.lastModified || 0;
+  allFiles = Array.from(files).sort(function(a, b) {
+    var ta = extractTs(a.name) || a.lastModified || 0;
+    var tb = extractTs(b.name) || b.lastModified || 0;
     return ta - tb;
   });
   if (!allFiles.length) return;
+
+  // Show preview
+  var grid = document.getElementById('previewGrid');
+  var section = document.getElementById('previewSection');
+  document.getElementById('previewCountTxt').textContent = allFiles.length + ' รูปที่เลือกค่ะ';
+  grid.innerHTML = '';
+  var show = allFiles.slice(0, 11);
+  var rest = allFiles.length - 11;
+  show.forEach(function(f, i) {
+    var div = document.createElement('div');
+    div.className = 'preview-thumb';
+    var img = document.createElement('img');
+    img.src = URL.createObjectURL(f);
+    img.alt = 'รูป ' + (i+1);
+    img.loading = 'lazy';
+    div.appendChild(img);
+    grid.appendChild(div);
+  });
+  if (rest > 0) {
+    var more = document.createElement('div');
+    more.className = 'preview-more';
+    more.textContent = '+' + rest;
+    grid.appendChild(more);
+  }
+  section.style.display = 'block';
+
   document.getElementById('uzBefore').style.display = 'none';
   document.getElementById('uzAfter').style.display = 'block';
-  document.getElementById('fileCountEl').textContent = allFiles.length;
-  document.getElementById('uploadZone').classList.add('has');
+  document.getElementById('fileCount').textContent = allFiles.length;
+  document.getElementById('uploadZone').className = 'upload-zone has';
   document.getElementById('sendBtn').disabled = false;
+}
+
+function clearAllFiles() {
+  allFiles = [];
+  document.getElementById('fileInput').value = '';
+  document.getElementById('uzBefore').style.display = 'block';
+  document.getElementById('uzAfter').style.display = 'none';
+  document.getElementById('uploadZone').className = 'upload-zone';
+  document.getElementById('sendBtn').disabled = true;
+  document.getElementById('previewSection').style.display = 'none';
+  document.getElementById('previewGrid').innerHTML = '';
 }
 
 function clearFiles() {
@@ -474,6 +520,76 @@ function syncJobs() {
 setInterval(syncJobs, 3000);
 
 init();
+</script>
+
+<!-- Guide Modal -->
+<div id="guideModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:99;overflow-y:auto;padding:20px 16px 40px">
+  <div style="max-width:480px;margin:0 auto">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <button onclick="hideGuide()" style="background:transparent;border:0.5px solid #2a2a2a;border-radius:20px;padding:8px 14px;font-size:12px;color:#888;cursor:pointer;font-family:var(--f)">← กลับ</button>
+      <div style="font-size:15px;font-weight:600;color:#f0f0f0">📖 คู่มือถ่ายรูปค่ะ</div>
+    </div>
+
+    <div style="background:#1a2a00;border:1px solid #c8f542;border-radius:12px;padding:14px 16px;margin-bottom:16px;font-size:13px;line-height:1.8;color:#f0f0f0">
+      ⚡ <b style="color:#c8f542">สำคัญมาก</b> — ถ่ายตามลำดับ ①②③ ทุกจุดค่ะ และเปิด GPS บนมือถือด้วยนะคะ
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+      <div style="background:#1a1a1a;border-radius:12px;padding:14px 16px;display:flex;gap:12px">
+        <div style="width:32px;height:32px;border-radius:50%;background:#4caf50;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;color:#fff">1</div>
+        <div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:#f0f0f0">ถ่ายป้ายเก่า</div>
+          <div style="font-size:12px;color:#888;line-height:1.6">ถ่ายป้ายโฆษณาเดิมที่ยังติดอยู่ก่อนเปลี่ยน 1-2 รูปก็พอค่ะ</div>
+          <div style="background:rgba(76,175,80,.1);color:#4caf50;font-size:11px;padding:3px 10px;border-radius:20px;display:inline-block;margin-top:6px">รูปสินค้าเก่า</div>
+        </div>
+      </div>
+
+      <div style="background:#1a1a1a;border-radius:12px;padding:14px 16px;display:flex;gap:12px">
+        <div style="width:32px;height:32px;border-radius:50%;background:#ffa94d;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;color:#0f0f0f">2</div>
+        <div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:#f0f0f0">ถ่าย Code ที่เสา ⭐ สำคัญที่สุด</div>
+          <div style="font-size:12px;color:#888;line-height:1.6">ถ่ายตัวเลขบนเสา เช่น <b style="color:#c8f542">DP800</b> ให้ชัดๆ ใกล้ๆ แสงพอค่ะ ถ่ายตรงๆ ไม่เอียงนะคะ ระบบจะอ่าน Code อัตโนมัติค่ะ</div>
+          <div style="background:rgba(255,169,77,.1);color:#ffa94d;font-size:11px;padding:3px 10px;border-radius:20px;display:inline-block;margin-top:6px">จุดแบ่งก่อน/หลัง</div>
+        </div>
+      </div>
+
+      <div style="background:#1a1a1a;border-radius:12px;padding:14px 16px;display:flex;gap:12px">
+        <div style="width:32px;height:32px;border-radius:50%;background:#4caf50;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;color:#fff">3</div>
+        <div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:#f0f0f0">ถ่ายป้ายใหม่</div>
+          <div style="font-size:12px;color:#888;line-height:1.6">ถ่ายป้ายใหม่ที่ติดเสร็จแล้ว ถ่ายหลายรูปได้เลยค่ะ ทั้งใกล้และไกล</div>
+          <div style="background:rgba(76,175,80,.1);color:#4caf50;font-size:11px;padding:3px 10px;border-radius:20px;display:inline-block;margin-top:6px">รูปสินค้าใหม่</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#1a1a1a;border-radius:12px;padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:#f0f0f0">📍 วิธีเปิด GPS (ทำครั้งเดียว)</div>
+      <div style="font-size:12px;color:#888;line-height:2">
+        1. Settings → Location → เปิด On<br>
+        2. App Permissions → Camera → อนุญาต Location<br>
+        3. ถ่ายรูปทดสอบ 1 รูป — GPS จะติดมาค่ะ
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:24px">
+      <div style="background:rgba(76,175,80,.08);border:1px solid rgba(76,175,80,.3);border-radius:10px;padding:12px">
+        <div style="font-size:12px;font-weight:600;color:#4caf50;margin-bottom:8px">✅ ทำแบบนี้</div>
+        <div style="font-size:11px;color:#888;line-height:1.9">✓ ถ่าย Code ใกล้ๆ ชัดๆ<br>✓ แสงพอมองเห็น<br>✓ ถ่ายตรง ไม่เอียง<br>✓ เปิด GPS ก่อนถ่าย</div>
+      </div>
+      <div style="background:rgba(255,92,92,.08);border:1px solid rgba(255,92,92,.3);border-radius:10px;padding:12px">
+        <div style="font-size:12px;font-weight:600;color:#ff5c5c;margin-bottom:8px">❌ อย่าทำแบบนี้</div>
+        <div style="font-size:11px;color:#888;line-height:1.9">✗ ถ่าย Code เบลอ/ไกล<br>✗ รูปมืดเกิน<br>✗ ถ่ายเอียง/หมุน<br>✗ ส่งผ่าน Line ก่อน</div>
+      </div>
+    </div>
+
+    <button onclick="hideGuide()" style="width:100%;padding:15px;background:#c8f542;color:#0f0f0f;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--f)">กลับหน้าหลัก →</button>
+  </div>
+</div>
+
+<script>
+function showGuide() { document.getElementById('guideModal').style.display = 'block'; window.scrollTo(0,0); }
+function hideGuide() { document.getElementById('guideModal').style.display = 'none'; }
 </script>
 </body>
 </html>
