@@ -298,36 +298,45 @@ function pickFiles(files) {
   });
   if (!allFiles.length) return;
 
-  // Show preview
+  // Show preview grid
   var grid = document.getElementById('previewGrid');
   var section = document.getElementById('previewSection');
-  document.getElementById('previewCountTxt').textContent = allFiles.length + ' รูปที่เลือกค่ะ';
-  grid.innerHTML = '';
-  var show = allFiles.slice(0, 11);
-  var rest = allFiles.length - 11;
-  show.forEach(function(f, i) {
-    var div = document.createElement('div');
-    div.className = 'preview-thumb';
-    var img = document.createElement('img');
-    img.src = URL.createObjectURL(f);
-    img.alt = 'รูป ' + (i+1);
-    img.loading = 'lazy';
-    div.appendChild(img);
-    grid.appendChild(div);
-  });
-  if (rest > 0) {
-    var more = document.createElement('div');
-    more.className = 'preview-more';
-    more.textContent = '+' + rest;
-    grid.appendChild(more);
+  var countTxt = document.getElementById('previewCountTxt');
+  if (countTxt) countTxt.textContent = allFiles.length + ' รูปที่เลือกค่ะ';
+  if (grid) {
+    grid.innerHTML = '';
+    var show = allFiles.slice(0, 11);
+    var rest = allFiles.length - 11;
+    show.forEach(function(f) {
+      var div = document.createElement('div');
+      div.className = 'preview-thumb';
+      var img = document.createElement('img');
+      img.src = URL.createObjectURL(f);
+      img.alt = 'รูป';
+      img.loading = 'lazy';
+      div.appendChild(img);
+      grid.appendChild(div);
+    });
+    if (rest > 0) {
+      var more = document.createElement('div');
+      more.className = 'preview-more';
+      more.textContent = '+' + rest;
+      grid.appendChild(more);
+    }
   }
-  section.style.display = 'block';
+  if (section) section.style.display = 'block';
 
-  document.getElementById('uzBefore').style.display = 'none';
-  document.getElementById('uzAfter').style.display = 'block';
-  document.getElementById('fileCount').textContent = allFiles.length;
-  document.getElementById('uploadZone').className = 'upload-zone has';
-  document.getElementById('sendBtn').disabled = false;
+  var uzBefore = document.getElementById('uzBefore');
+  var uzAfter = document.getElementById('uzAfter');
+  var fileCount = document.getElementById('fileCount');
+  var uploadZone = document.getElementById('uploadZone');
+  var sendBtn = document.getElementById('sendBtn');
+
+  if (uzBefore) uzBefore.style.display = 'none';
+  if (uzAfter) uzAfter.style.display = 'block';
+  if (fileCount) fileCount.textContent = allFiles.length;
+  if (uploadZone) uploadZone.className = 'upload-zone has';
+  if (sendBtn) sendBtn.disabled = false;
 }
 
 function clearAllFiles() {
