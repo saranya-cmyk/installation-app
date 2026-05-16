@@ -234,6 +234,19 @@ function setName(n) {
 }
 
 // ── S2: เลือกงาน ──────────────────────────────────────────────
+function deleteJobFromList(e, id) {
+  e.stopPropagation();
+  if (!confirm('ลบงานนี้ออกจากรายการค่ะ?')) return;
+  jobs = jobs.filter(function(j){ return j.id !== id; });
+  localStorage.setItem('jobs', JSON.stringify(jobs));
+  if (selectedJob && selectedJob.id === id) {
+    selectedJob = null;
+    sessionStorage.removeItem('selectedJobId');
+    document.getElementById('iPickBtn').disabled = true;
+  }
+  renderJobs();
+}
+
 function renderJobs() {
   const el = document.getElementById('jobListEl');
   if (!jobs.length) {
