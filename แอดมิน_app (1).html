@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>แอดมิน — จัดการงาน</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0f0f0f;--s:#1a1a1a;--s2:#222;--b:#2a2a2a;--ac:#c8f542;--tx:#f0f0f0;--mu:#666;--ok:#4caf50;--warn:#ffa94d;--err:#ff5c5c;--r:10px;--f:'IBM Plex Sans Thai',sans-serif}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:100vh;max-width:600px;margin:0 auto}
+
+.bar{background:var(--s);border-bottom:1px solid var(--b);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.bar-title{font-size:15px;font-weight:600}
+.admin-badge{background:#2e1a00;border:1px solid var(--warn);border-radius:20px;padding:4px 12px;font-size:11px;color:var(--warn)}
+
+.tabs{display:flex;background:var(--s);border-bottom:1px solid var(--b);position:sticky;top:57px;z-index:9}
+.tab{flex:1;padding:12px;font-size:12px;color:var(--mu);text-align:center;cursor:pointer;border-bottom:2px solid transparent;font-family:var(--f)}
+.tab.on{color:var(--ac);border-bottom-color:var(--ac)}
+
+.screen{display:none;padding:20px}
+.screen.on{display:block}
+
+.section-label{font-size:11px;color:var(--mu);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px}
+
+/* Upload */
+.field{margin-bottom:14px}
+.field label{font-size:12px;color:var(--mu);display:block;margin-bottom:6px}
+.field input{width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:12px 14px;font-size:14px;color:var(--tx);font-family:var(--f);outline:none}
+.field input:focus{border-color:var(--warn)}
+
+.excel-zone{border:1.5px dashed var(--b);border-radius:var(--r);padding:28px;text-align:center;cursor:pointer;position:relative;transition:all .2s;margin-bottom:14px}
+.excel-zone:hover{border-color:var(--warn);background:rgba(255,169,77,.04)}
+.excel-zone.has{border-color:var(--ok);background:rgba(76,175,80,.04)}
+.excel-zone input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+.ez-icon{font-size:36px;margin-bottom:10px}
+.ez-title{font-size:14px;font-weight:600;margin-bottom:4px}
+.ez-sub{font-size:12px;color:var(--mu)}
+
+.preview-wrap{background:var(--s2);border-radius:8px;padding:12px;margin-bottom:14px;overflow-x:auto}
+.preview-table{width:100%;border-collapse:collapse;font-size:12px}
+.preview-table th{text-align:left;color:var(--mu);padding:4px 8px;border-bottom:1px solid var(--b)}
+.preview-table td{padding:6px 8px;border-bottom:1px solid var(--b);color:var(--tx)}
+.preview-table tr:last-child td{border:none}
+
+/* Job cards */
+.job-cards{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
+.jcard{background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px 16px}
+.jcard-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.jcard-name{font-size:14px;font-weight:600}
+.jcard-date{font-size:11px;color:var(--mu)}
+.jcard-prog-wrap{margin-bottom:8px}
+.jcard-prog-label{display:flex;justify-content:space-between;font-size:11px;color:var(--mu);margin-bottom:5px}
+.jcard-prog-bar{height:4px;background:var(--s2);border-radius:2px;overflow:hidden}
+.jcard-prog-fill{height:100%;background:var(--ac);border-radius:2px}
+.jcard-stats{display:flex;gap:12px}
+.jcs{font-size:11px;color:var(--mu);display:flex;align-items:center;gap:4px}
+.jcs-dot{width:6px;height:6px;border-radius:50%}
+.jcard-del{font-size:11px;color:var(--err);cursor:pointer;padding:4px 0;margin-top:8px;display:inline-block}
+.jcard-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.copy-btn{font-size:11px;padding:6px 12px;border-radius:20px;cursor:pointer;border:none;font-family:var(--f);display:flex;align-items:center;gap:4px;transition:all .15s}
+.copy-btn:active{transform:scale(.96)}
+.copy-all{background:#1a2a00;border:1px solid var(--ac);color:var(--ac)}
+.copy-all:hover{background:#243800}
+.copy-sel{background:var(--s2);border:1px solid var(--b);color:var(--mu)}
+.copy-sel:hover{color:var(--tx);border-color:var(--tx)}
+.copied{background:#0d2e0d!important;border-color:var(--ok)!important;color:var(--ok)!important}
+
+.spot-copy{display:flex;align-items:center;gap:8px}
+.spot-link-btn{font-size:10px;padding:3px 8px;border-radius:20px;background:var(--s);border:1px solid var(--b);color:var(--mu);cursor:pointer;white-space:nowrap;transition:all .15s}
+.spot-link-btn:hover{border-color:var(--ac);color:var(--ac)}
+.spot-link-btn.copied{border-color:var(--ok);color:var(--ok)}
+
+.send-panel{background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px;margin-bottom:16px}
+.send-title{font-size:12px;color:var(--mu);margin-bottom:10px}
+.send-msg{width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none;resize:none;min-height:80px}
+.send-msg:focus{border-color:var(--ac)}
+.send-actions{display:flex;gap:8px;margin-top:10px}
+.send-copy{flex:1;padding:10px;border-radius:8px;background:var(--ac);color:#0f0f0f;font-size:13px;font-weight:700;cursor:pointer;border:none;font-family:var(--f)}
+.send-line{flex:1;padding:10px;border-radius:8px;background:#06C755;color:#fff;font-size:13px;font-weight:700;cursor:pointer;border:none;font-family:var(--f)}
+
+/* Dashboard */
+.dash-select{width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:12px 14px;font-size:14px;color:var(--tx);font-family:var(--f);outline:none;margin-bottom:16px}
+.dash-select:focus{border-color:var(--ac)}
+
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.stat{background:var(--s2);border-radius:8px;padding:12px;text-align:center}
+.stat-n{font-size:24px;font-weight:700}
+.stat-l{font-size:10px;color:var(--mu);margin-top:2px}
+
+.prog-wrap{margin-bottom:16px}
+.prog-label{display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:6px}
+.prog-bar{height:5px;background:var(--s2);border-radius:3px;overflow:hidden}
+.prog-fill{height:100%;background:var(--ac);border-radius:3px;transition:width .4s}
+
+.spot-list{display:flex;flex-direction:column;gap:6px}
+.spot{background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:10px}
+.spot.done{border-color:#1a3a1a}
+.spot.warn{border-color:#3a2200}
+.sdot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--b)}
+.sdot.done{background:var(--ok)}
+.sdot.warn{background:var(--warn)}
+.scode{font-size:12px;font-weight:600;color:var(--ac);font-family:monospace;min-width:54px}
+.sinfo{flex:1;min-width:0}
+.sname{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.saddr{font-size:10px;color:var(--mu)}
+.sbadge{font-size:10px;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.sb-done{background:#0d2e0d;color:var(--ok)}
+.sb-pending{border:1px solid var(--b);color:var(--mu)}
+.sb-warn{background:#2e1a00;color:var(--warn)}
+
+/* Buttons */
+.btn{width:100%;padding:14px;border-radius:var(--r);font-size:14px;font-weight:700;cursor:pointer;border:none;font-family:var(--f);display:flex;align-items:center;justify-content:center;gap:8px;transition:transform .1s}
+.btn:active{transform:scale(.98)}
+.btn-warn{background:var(--warn);color:#0f0f0f;margin-top:4px}
+.btn-outline{background:transparent;border:1px solid var(--b);color:var(--mu);margin-top:8px}
+
+.empty{text-align:center;padding:40px 20px;color:var(--mu);font-size:13px;line-height:1.7}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="bar-title">⚙️ แอดมิน</div>
+  <div class="admin-badge">Admin Only</div>
+</div>
+
+<div class="tabs">
+  <div class="tab on" onclick="switchTab(0)">📊 อัปโหลดงาน</div>
+  <div class="tab" onclick="switchTab(1)">📈 Dashboard</div>
+</div>
+
+<!-- TAB 0: อัปโหลดงาน -->
+<div class="screen on" id="t0">
+
+  <div class="section-label" style="margin-bottom:16px">สร้างงานใหม่</div>
+
+  <div class="field">
+    <label>ชื่องาน / แคมเปญ</label>
+    <input type="text" id="jobNameInput" placeholder="เช่น Singha-Soda-May25" autocomplete="off">
+  </div>
+
+  <div class="excel-zone" id="excelZone">
+    <input type="file" accept=".xlsx,.xls,.csv" id="excelInput" onchange="loadExcel(this.files[0])">
+    <div id="ezBefore">
+      <div class="ez-icon">📋</div>
+      <div class="ez-title">อัปโหลด Excel / CSV</div>
+      <div class="ez-sub">คอลัมน์: Code, ชื่อสินค้า, ที่อยู่</div>
+    </div>
+    <div id="ezAfter" style="display:none">
+      <div class="ez-icon">✅</div>
+      <div class="ez-title" id="ezTitle">โหลดแล้ว</div>
+      <div class="ez-sub" id="ezSub">—</div>
+    </div>
+  </div>
+
+  <div id="previewWrap" style="display:none;margin-bottom:14px">
+    <div style="font-size:11px;color:var(--mu);margin-bottom:8px" id="previewLabel"></div>
+    <div class="preview-wrap">
+      <table class="preview-table" id="previewTable"></table>
+    </div>
+  </div>
+
+  <button class="btn btn-warn" onclick="createJob()">✚ สร้างงานนี้</button>
+
+  <div style="margin-top:28px">
+    <div class="section-label">งานที่มีอยู่</div>
+    <div class="job-cards" id="jobCards">
+      <div class="empty">ยังไม่มีงาน<br>สร้างงานแรกด้านบนได้เลย</div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 1: Dashboard -->
+<div class="screen" id="t1">
+  <div class="section-label" style="margin-bottom:12px">เลือกงานที่ต้องการดู</div>
+  <select class="dash-select" id="dashSelect" onchange="renderDash()">
+    <option value="">-- เลือกงาน --</option>
+  </select>
+
+  <div id="dashContent" style="display:none">
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-n" id="dsDone" style="color:var(--ok)">0</div><div class="stat-l">ติดแล้ว</div></div>
+      <div class="stat"><div class="stat-n" id="dsPending" style="color:var(--mu)">0</div><div class="stat-l">ยังไม่ติด</div></div>
+      <div class="stat"><div class="stat-n" id="dsWarn" style="color:var(--warn)">0</div><div class="stat-l">ผิดแผน</div></div>
+    </div>
+    <div class="prog-wrap">
+      <div class="prog-label"><span id="dsPct" style="color:var(--ac);font-weight:600">0%</span><span id="dsCount" style="color:var(--mu)"></span></div>
+      <div class="prog-bar"><div class="prog-fill" id="dsFill" style="width:0%"></div></div>
+    </div>
+    <div class="spot-list" id="dashSpots"></div>
+  </div>
+</div>
+
+<!-- Send Panel Modal -->
+<div id="sendPanel" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;padding:20px;align-items:flex-end">
+  <div style="background:var(--s);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:600px;margin:0 auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:600">ส่งรูปให้เซล</div>
+      <div style="cursor:pointer;color:var(--mu);font-size:20px" onclick="closeSendPanel()">✕</div>
+    </div>
+    <div style="font-size:11px;color:var(--mu);margin-bottom:8px">เลือก Code ที่ต้องการส่ง</div>
+    <div id="sendCodeList" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;max-height:150px;overflow-y:auto"></div>
+    <div class="send-panel">
+      <div class="send-title">ข้อความที่จะส่งให้เซล (แก้ได้)</div>
+      <textarea class="send-msg" id="sendMsg"></textarea>
+      <div class="send-actions">
+        <button class="send-copy" onclick="copySendMsg()">📋 Copy ข้อความ</button>
+        <button class="send-line" onclick="openLine()">💬 เปิด Line</button>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--mu);text-align:center">Copy ข้อความแล้ววางใน Line ได้เลย</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+let jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
+let codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+let pendingSpots = [];
+
+// ── Tabs ──────────────────────────────────────────────────────
+function switchTab(i) {
+  document.querySelectorAll('.tab').forEach((t,j) => t.classList.toggle('on', j===i));
+  document.querySelectorAll('.screen').forEach((s,j) => s.classList.toggle('on', j===i));
+  if (i===0) renderJobCards();
+  if (i===1) { renderDashSelect(); renderDash(); }
+}
+
+// ── Excel ─────────────────────────────────────────────────────
+function loadExcel(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result, { type: 'binary' });
+    // Try header row 0 first, then row 1 (some files have merged header)
+    let raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+    if (!raw.length || !Object.keys(raw[0]).some(k => k.toLowerCase().includes('code'))) {
+      raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', range: 1 });
+    }
+    if (!raw.length) { alert('ไม่พบข้อมูลในไฟล์'); return; }
+
+    const cols = Object.keys(raw[0]);
+    const find = keys => cols.find(c => keys.some(k => c.toLowerCase().includes(k.toLowerCase())));
+    const codeCol = find(['code id','code','รหัส']);
+    const prodCol = find(['ad.on','product','สินค้า','ชื่อสินค้า']);
+    const addrCol = find(['location','address','ที่อยู่','สถานที่']);
+    const latCol  = find(['co_y','latitude','lat']);
+    const lngCol  = find(['co_x','longitude','lng','lon']);
+    const roadCol = find(['road','ถนน']);
+    const distCol = find(['district','แขวง','เขต']);
+
+    if (!codeCol) { alert('ไม่พบคอลัมน์ Code ID กรุณาตรวจสอบหัวคอลัมน์'); return; }
+
+    pendingSpots = raw.map(r => ({
+      code:    String(r[codeCol]||'').trim().toUpperCase(),
+      product: prodCol ? String(r[prodCol]||'').trim() : '',
+      address: addrCol ? String(r[addrCol]||'').trim() : '',
+      lat:     latCol  ? parseFloat(r[latCol])  || null : null,
+      lng:     lngCol  ? parseFloat(r[lngCol])  || null : null,
+      road:    roadCol ? String(r[roadCol]||'').trim() : '',
+      district:distCol ? String(r[distCol]||'').trim() : '',
+    })).filter(r => r.code);
+
+    // Show preview
+    document.getElementById('ezBefore').style.display = 'none';
+    document.getElementById('ezAfter').style.display = 'block';
+    document.getElementById('ezTitle').textContent = `โหลดแล้ว — ${pendingSpots.length} จุด`;
+    document.getElementById('ezSub').textContent = file.name;
+    document.getElementById('excelZone').classList.add('has');
+
+    const preview = pendingSpots.slice(0, 5);
+    document.getElementById('previewLabel').textContent = `ตัวอย่าง 5 แถวแรก (ทั้งหมด ${pendingSpots.length} จุด)`;
+    const hasGPS = pendingSpots.some(s => s.lat && s.lng);
+    document.getElementById('previewTable').innerHTML =
+      `<tr><th>Code</th><th>สินค้า</th><th>ที่อยู่</th>${hasGPS?'<th>GPS</th>':''}</tr>` +
+      preview.map(r => `<tr><td>${r.code}</td><td>${r.product}</td><td style="font-size:10px">${r.address.substring(0,40)}...</td>${hasGPS?`<td style="color:${r.lat?'var(--ok)':'var(--err)'};">${r.lat?'✓':'—'}</td>`:''}</tr>`).join('') +
+      (pendingSpots.length > 5 ? `<tr><td colspan="${hasGPS?4:3}" style="color:var(--mu)">...อีก ${pendingSpots.length-5} รายการ</td></tr>` : '');
+    if (hasGPS) document.getElementById('ezSub').textContent = file.name + ' · มี GPS ✓';
+    document.getElementById('previewWrap').style.display = 'block';
+  };
+  reader.readAsBinaryString(file);
+}
+
+// ── Create Job ─────────────────────────────────────────────────
+function createJob() {
+  const name = document.getElementById('jobNameInput').value.trim();
+  if (!name) { alert('กรุณาใส่ชื่องาน'); return; }
+  if (!pendingSpots.length) { alert('กรุณาอัปโหลด Excel ก่อน'); return; }
+
+  const job = { id: 'j_' + Date.now(), name, spots: pendingSpots, created: new Date().toLocaleString('th-TH') };
+  jobs.unshift(job);
+  save();
+
+  // Reset form
+  pendingSpots = [];
+  document.getElementById('jobNameInput').value = '';
+  document.getElementById('excelInput').value = '';
+  document.getElementById('ezBefore').style.display = 'block';
+  document.getElementById('ezAfter').style.display = 'none';
+  document.getElementById('excelZone').classList.remove('has');
+  document.getElementById('previewWrap').style.display = 'none';
+
+  renderJobCards();
+  alert(`สร้างงาน "${name}" แล้ว — ช่างจะเห็นงานนี้ในแอปทันที`);
+}
+
+// ── Job Cards ──────────────────────────────────────────────────
+function renderJobCards() {
+  const el = document.getElementById('jobCards');
+  if (!jobs.length) {
+    el.innerHTML = '<div class="empty">ยังไม่มีงาน<br>สร้างงานแรกด้านบนได้เลย</div>';
+    return;
+  }
+  el.innerHTML = jobs.map(j => {
+    const log = codeLog[j.id] || {};
+    const sent = Object.keys(log).filter(k => log[k].status==='sent');
+    const done = sent.filter(c => j.spots.find(s=>s.code===c)).length;
+    const wrong = sent.filter(c => !j.spots.find(s=>s.code===c)).length;
+    const pct = Math.round(done / j.spots.length * 100) || 0;
+    return `<div class="jcard">
+      <div class="jcard-top">
+        <div class="jcard-name">${j.name}</div>
+        <div class="jcard-date">${j.created}</div>
+      </div>
+      <div class="jcard-prog-wrap">
+        <div class="jcard-prog-label"><span>${pct}%</span><span>${done} / ${j.spots.length} จุด</span></div>
+        <div class="jcard-prog-bar"><div class="jcard-prog-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="jcard-stats">
+        <div class="jcs"><div class="jcs-dot" style="background:var(--ok)"></div>ติด ${done}</div>
+        <div class="jcs"><div class="jcs-dot" style="background:var(--mu)"></div>รอ ${j.spots.length-done}</div>
+        ${wrong?`<div class="jcs"><div class="jcs-dot" style="background:var(--warn)"></div>ผิดแผน ${wrong}</div>`:''}
+      </div>
+      <div class="jcard-actions">
+        <button class="copy-btn copy-all" onclick="copyJobLink('${j.id}','all',this)">📋 Copy link ทุก Code</button>
+        <button class="copy-btn copy-sel" onclick="openSendPanel('${j.id}')">✉️ เลือก Code ส่ง</button>
+      </div>
+      <div class="jcard-del" onclick="deleteJob('${j.id}')">🗑 ลบงานนี้</div>
+    </div>`;
+  }).join('');
+}
+
+function deleteJob(id) {
+  if (!confirm('ลบงานนี้? ช่างจะไม่เห็นงานนี้อีก')) return;
+  jobs = jobs.filter(j => j.id !== id);
+  save();
+  renderJobCards();
+  renderDashSelect();
+}
+
+// ── Dashboard ──────────────────────────────────────────────────
+function renderDashSelect() {
+  const sel = document.getElementById('dashSelect');
+  sel.innerHTML = '<option value="">-- เลือกงาน --</option>' +
+    jobs.map(j => `<option value="${j.id}">${j.name}</option>`).join('');
+}
+
+function renderDash() {
+  const id = document.getElementById('dashSelect').value;
+  const c = document.getElementById('dashContent');
+  if (!id) { c.style.display = 'none'; return; }
+  c.style.display = 'block';
+
+  const job = jobs.find(j => j.id === id);
+  const log = codeLog[id] || {};
+  const planCodes = job.spots.map(s => s.code);
+  const sentCodes = Object.keys(log).filter(k => log[k].status==='sent');
+  const done = sentCodes.filter(c => planCodes.includes(c)).length;
+  const pending = planCodes.filter(c => !sentCodes.includes(c)).length;
+  const wrong = sentCodes.filter(c => !planCodes.includes(c)).length;
+  const pct = Math.round(done / planCodes.length * 100) || 0;
+
+  document.getElementById('dsDone').textContent = done;
+  document.getElementById('dsPending').textContent = pending;
+  document.getElementById('dsWarn').textContent = wrong;
+  document.getElementById('dsPct').textContent = pct + '%';
+  document.getElementById('dsCount').textContent = `${done} / ${planCodes.length} จุด`;
+  document.getElementById('dsFill').style.width = pct + '%';
+
+  const spots = [
+    ...job.spots.map(s => ({
+      code: s.code, product: s.product, address: s.address,
+      status: sentCodes.includes(s.code) ? 'done' : 'pending',
+      count: log[s.code]?.count || 0
+    })),
+    ...sentCodes.filter(c => !planCodes.includes(c)).map(c => ({
+      code: c, product: '?', address: 'ไม่อยู่ในแผน',
+      status: 'warn', count: log[c]?.count || 0
+    }))
+  ];
+
+  const jobId = document.getElementById('dashSelect').value;
+  document.getElementById('dashSpots').innerHTML = spots.map(s => `
+    <div class="spot ${s.status}">
+      <div class="sdot ${s.status==='done'?'done':s.status==='warn'?'warn':''}"></div>
+      <div class="scode">${s.code}</div>
+      <div class="sinfo">
+        <div class="sname">${s.product}</div>
+        <div class="saddr">${s.address}${s.count?' · '+s.count+' รูป':''}</div>
+      </div>
+      <div class="spot-copy">
+        ${s.status==='done'?`<button class="spot-link-btn" onclick="copyCodeLink('${jobId}','${s.code}',this)">📋 Copy</button>`:''}
+        <div class="sbadge ${s.status==='done'?'sb-done':s.status==='warn'?'sb-warn':'sb-pending'}">${s.status==='done'?'✓':s.status==='warn'?'⚠':'รอ'}</div>
+      </div>
+    </div>`).join('');
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function save() { localStorage.setItem('jobs', JSON.stringify(jobs)); }
+
+// ── Copy Link Functions ───────────────────────────────────────
+function getDriveUrl(jobId, code) {
+  // Returns Drive folder URL from log or constructs it
+  const log = JSON.parse(localStorage.getItem('uploadHistory') || '[]');
+  const entry = log.find(h => h.jobId === jobId);
+  if (entry && entry.folderUrl) {
+    return entry.folderUrl;
+  }
+  // Fallback: just return Drive root
+  return 'https://drive.google.com';
+}
+
+function copyJobLink(jobId, type, btn) {
+  const job = jobs.find(j => j.id === jobId);
+  if (!job) return;
+  const log = codeLog[jobId] || {};
+  const sentCodes = Object.keys(log).filter(k => log[k].status === 'sent');
+  const folderUrl = localStorage.getItem('folderUrl_' + jobId) || 'https://drive.google.com';
+  
+  const msg = [
+    `📸 รูปติดตั้ง — ${job.name}`,
+    ``,
+    `✅ ติดตั้งแล้ว ${sentCodes.length} จุด`,
+    sentCodes.map(c => {
+      const spot = job.spots.find(s => s.code === c);
+      return `• ${c}${spot ? ' — ' + spot.address.substring(0,30) : ''}`;
+    }).join('\n'),
+    ``,
+    `🔗 ดูรูปทั้งหมด: ${folderUrl}`
+  ].join('\n');
+
+  navigator.clipboard.writeText(msg).then(() => {
+    btn.classList.add('copied');
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = '📋 Copy link ทุก Code'; }, 2000);
+  });
+}
+
+function copyCodeLink(jobId, code, btn) {
+  const job = jobs.find(j => j.id === jobId);
+  const spot = job ? job.spots.find(s => s.code === code) : null;
+  const folderUrl = localStorage.getItem('folderUrl_' + jobId) || 'https://drive.google.com';
+  
+  const msg = [
+    `📸 รูปติดตั้ง`,
+    `Code: ${code}`,
+    spot ? `📍 ${spot.address.substring(0,50)}` : '',
+    spot ? `🏷 ${spot.product}` : '',
+    ``,
+    `🔗 ดูรูป: ${folderUrl}`
+  ].filter(Boolean).join('\n');
+
+  navigator.clipboard.writeText(msg).then(() => {
+    btn.classList.add('copied');
+    btn.textContent = '✓';
+    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '📋 Copy'; }, 2000);
+  });
+}
+
+// ── Send Panel ────────────────────────────────────────────────
+let sendJobId = null;
+let selectedCodes = new Set();
+
+function openSendPanel(jobId) {
+  sendJobId = jobId;
+  selectedCodes = new Set();
+  const job = jobs.find(j => j.id === jobId);
+  const log = codeLog[jobId] || {};
+  const sentCodes = Object.keys(log).filter(k => log[k].status === 'sent');
+  
+  if (!sentCodes.length) { alert('ยังไม่มี Code ที่ส่งรูปแล้ว'); return; }
+
+  document.getElementById('sendCodeList').innerHTML = sentCodes.map(c => {
+    const spot = job.spots.find(s => s.code === c);
+    return `<div class="copy-btn copy-sel" id="sc_${c}" onclick="toggleCode('${c}')" style="cursor:pointer">
+      ${c}${spot ? ' · ' + spot.product.substring(0,12) : ''}
+    </div>`;
+  }).join('');
+
+  // Select all by default
+  sentCodes.forEach(c => { selectedCodes.add(c); document.getElementById('sc_'+c)?.classList.add('copy-all'); });
+  updateSendMsg(jobId);
+  
+  const panel = document.getElementById('sendPanel');
+  panel.style.display = 'flex';
+}
+
+function toggleCode(code) {
+  const el = document.getElementById('sc_' + code);
+  if (selectedCodes.has(code)) {
+    selectedCodes.delete(code);
+    el.classList.remove('copy-all');
+  } else {
+    selectedCodes.add(code);
+    el.classList.add('copy-all');
+  }
+  updateSendMsg(sendJobId);
+}
+
+function updateSendMsg(jobId) {
+  const job = jobs.find(j => j.id === jobId);
+  const folderUrl = localStorage.getItem('folderUrl_' + jobId) || 'https://drive.google.com';
+  const codes = [...selectedCodes];
+  
+  const lines = [
+    `📸 รูปติดตั้ง — ${job.name}`,
+    ``,
+    `✅ ${codes.length} จุดที่แนบมา`,
+    ...codes.map(c => {
+      const spot = job.spots.find(s => s.code === c);
+      return `• ${c}${spot ? ' — ' + spot.address.substring(0,35) : ''}`;
+    }),
+    ``,
+    `🔗 ดูรูปทั้งหมด: ${folderUrl}`
+  ];
+  document.getElementById('sendMsg').value = lines.join('\n');
+}
+
+function copySendMsg() {
+  const msg = document.getElementById('sendMsg').value;
+  navigator.clipboard.writeText(msg).then(() => {
+    const btn = document.querySelector('.send-copy');
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy ข้อความ', 2000);
+  });
+}
+
+function openLine() {
+  const msg = encodeURIComponent(document.getElementById('sendMsg').value);
+  window.open('https://line.me/R/share?text=' + msg, '_blank');
+}
+
+function closeSendPanel() {
+  document.getElementById('sendPanel').style.display = 'none';
+}
+
+// Save folderUrl when upload completes (called from Apps Script response)
+function saveFolderUrl(jobId, url) {
+  localStorage.setItem('folderUrl_' + jobId, url);
+}
+
+// Auto-refresh log every 10s
+setInterval(() => {
+  codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+  renderJobCards();
+  if (document.getElementById('t1').classList.contains('on')) renderDash();
+}, 10000);
+
+renderJobCards();
+</script>
+</body>
+</html>
