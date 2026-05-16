@@ -332,11 +332,8 @@ function loadExcel(file) {
     document.getElementById('excelZone').classList.add('has');
     document.getElementById('mapperWrap').style.display = 'none';
 
-    // Auto job name from filename
-    var autoName = file.name.replace(/[.][^.]+$/, '').replace(/_/g,' ').replace(/Copy of /i,'').trim();
-    if (!document.getElementById('jobNameInput').value) {
-      document.getElementById('jobNameInput').value = autoName;
-    }
+    // Clear job name - will be filled from product chip
+    document.getElementById('jobNameInput').value = '';
 
     // Show preview
     showAutoPreview();
@@ -435,10 +432,7 @@ function pickProduct(el, product) {
   document.querySelectorAll('.prod-chip').forEach(function(c){ c.classList.remove('on'); });
   el.classList.add('on');
   // Auto-fill job name = product + month
-  var now = new Date();
-  var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  var autoName = product.replace(/[ ]+/g,'-') + '-' + monthNames[now.getMonth()] + now.getFullYear().toString().slice(2);
-  document.getElementById('jobNameInput').value = autoName;
+  document.getElementById('jobNameInput').value = product;
 }
 
 function createJob() {
@@ -636,7 +630,7 @@ function renderDash() {
       '<div class="sdot ' + (s.status === 'done' ? 'done' : s.status === 'warn' ? 'warn' : '') + '"></div>' +
       '<div class="scode">' + s.code + '</div>' +
       '<div class="sinfo"><div class="sname">' + s.product + '</div><div class="saddr">' + (s.installedAt ? s.installedAt + ' · ' : '') + s.address.substring(0,30) + (s.count ? ' · ' + s.count + ' รูป' : '') + '</div></div>' +
-      '<div class="spot-copy">' + copyBtn + fixBtn + '<div class="sbadge ' + badgeCls + '">' + badgeTxt + '</div></div>' +
+      '<div class="spot-copy">' + copyBtn + (s.status==='warn' ? '<button class="spot-link-btn" style="border-color:var(--warn);color:var(--warn)" onclick="openFixModal(' + JSON.stringify(id) + ',' + JSON.stringify(s.code) + ')">✏️ Fix</button>' : '') + '<div class="sbadge ' + badgeCls + '">' + badgeTxt + '</div></div>' +
     '</div>';
   }).join('');
 }
@@ -720,12 +714,34 @@ function openPhotoModal(jobId, code, product) {
     .then(function(r){ return r.json(); })
     .then(function(result) {
       var photos = result.photos || [];
-      document.getElementById('photoModalSub').textContent = photos.length + ' รูป';
+      var before = photos.filter(function(p){ return p.phase==='before'; });
+      var after  = photos.filter(function(p){ return p.phase==='after'||p.phase==='photo'; });
+      var dateStr = photos.length && photos[0].date ? ' · ' + photos[0].date : '';
+      document.getElementById('photoModalSub').textContent = 'After: ' + after.length + ' · Before: ' + before.length + dateStr;
+
       if (!photos.length) {
         document.getElementById('photoGridModal').innerHTML = '<div class="no-photos">No photos found in Drive<br>May still be uploading</div>';
         return;
       }
-      
+      currentPhotos = photos;
+      var tabs = document.getElementById('photoTabs');
+      if (before.length || after.length) tabs.style.display='flex'; else tabs.style.display='none';
+
+      var gridEl = document.getElementById('photoGridModal');
+      gridEl.innerHTML = '';
+      var show = after.length ? after : photos.filter(function(p){return p.phase!=='code';});
+      show.forEach(function(p,i){
+        var div = document.createElement('div');
+        div.className = 'photo-thumb-modal';
+        div.onclick = (function(idx){ return function(){ openFullPhoto(idx); }; })(photos.indexOf(p));
+        var img = document.createElement('img');
+        img.src = p.thumbnail;
+        img.alt = 'photo';
+        img.loading = 'lazy';
+        img.onerror = function(){ this.style.opacity='0.2'; };
+        div.appendChild(img);
+        gridEl.appendChild(div);
+      });
     })
     .catch(function() {
       document.getElementById('photoGridModal').innerHTML = '<div class="no-photos">Cannot connect to Drive<br>Please try again</div>';
