@@ -675,6 +675,46 @@ function doExport(jobId) {
 }
 
 function exportReport(jobId) { doExport(jobId); }
+var allLoadedPhotos = [];
+var currentPhotoTab = 'after';
+
+function renderPhotoTab(tab) {
+  currentPhotoTab = tab;
+  var gridEl = document.getElementById('photoGridModal');
+  gridEl.innerHTML = '';
+  var show = allLoadedPhotos.filter(function(p){
+    if (tab === 'all') return p.phase !== 'code';
+    if (tab === 'before') return p.phase === 'before';
+    return p.phase === 'after' || p.phase === 'photo';
+  });
+  if (!show.length) {
+    gridEl.innerHTML = '<div class="no-photos">ไม่มีรูป' + (tab==='before'?' ก่อนติดตั้ง':tab==='after'?' หลังติดตั้ง':'') + '</div>';
+    return;
+  }
+  show.forEach(function(p){
+    appendThumb(gridEl, p, allLoadedPhotos.indexOf(p));
+  });
+}
+
+function switchPhotoTab(tab, el) {
+  document.querySelectorAll('.photo-tab').forEach(function(t){ t.classList.remove('on'); });
+  el.classList.add('on');
+  renderPhotoTab(tab);
+}
+
+function appendThumb(grid, p, idx) {
+  var div = document.createElement('div');
+  div.className = 'photo-thumb-modal';
+  div.onclick = (function(i){ return function(){ openFullPhoto(i); }; })(idx);
+  var img = document.createElement('img');
+  img.src = p.thumbnail;
+  img.alt = 'photo';
+  img.loading = 'lazy';
+  img.onerror = function(){ this.style.opacity='0.2'; };
+  div.appendChild(img);
+  grid.appendChild(div);
+}
+
 function save() { localStorage.setItem('jobs', JSON.stringify(jobs)); }
 
 // ── Photo Viewer ──────────────────────────────────────────────
