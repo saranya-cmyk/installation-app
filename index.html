@@ -251,7 +251,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script>
 // ── Config ────────────────────────────────────────────────────
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyFjeNtYyNXCzqduDUqfBIfu7n0XCF-lag0lT5vLTMMOnLYKdqXoTYgkRD2xJsMO16E/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx6_z_xY66OX3BnwaKeY8OwiwUivJD_ZG9-_h6GYkEze1ZxMoxiXF21jfYuYIzBD6Lw/exec';
 
 // ── State ─────────────────────────────────────────────────────
 let installerName = localStorage.getItem('installerName') || '';
@@ -782,16 +782,17 @@ function renderCodeList() {
     var div = document.createElement('div');
     div.className = 'code-item' + (photos.length ? ' has-photos' : '');
     div.id = 'ci_' + s.code;
+    var addr = s.address && s.address.length > 3 ? s.address.substring(0,35) : s.product;
     div.innerHTML =
       '<div class="ci-left">' +
         '<div>' +
           '<div class="ci-code">' + s.code + '</div>' +
-          '<div class="ci-addr">' + (s.address ? s.address.substring(0,30) + '...' : s.product) + '</div>' +
+          '<div class="ci-addr">' + addr + '</div>' +
         '</div>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<div class="ci-count' + (photos.length ? ' done' : '') + '">' +
-          (photos.length ? '✓ ' + photos.length + ' รูป' : 'กดเพื่อเลือกรูป') +
+          (photos.length ? '✓ ' + photos.length + ' รูป' : 'กดเลือกรูป') +
         '</div>' +
       '</div>';
     div.onclick = function() { openCodePicker(s.code); };
