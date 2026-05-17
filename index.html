@@ -251,7 +251,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script>
 // ── Config ────────────────────────────────────────────────────
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxDa3nQMfdyyIvgGl6tU98eKn8klyp9Ifhoek07fp2vE6x0ht1dmF7yPHK7owvOXQi2/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwXI9VFNt6eGlhbqIFSUdVNWpdagcc-9iWTFbBhTd9TxEHCL6HYR3vL1QBZHOrQ-F-u/exec';
 
 // ── State ─────────────────────────────────────────────────────
 let installerName = localStorage.getItem('installerName') || '';
@@ -636,9 +636,14 @@ function setProgress(p, t) {
 }
 
 function showSuccess(result, total) {
-  var codes = result.codes || [];
-  // นับจาก codePhotos ถ้า server ไม่ส่งกลับมา
-  var codeCount = codes.length || Object.keys(codePhotos || {}).filter(function(k){ return codePhotos[k] && codePhotos[k].length > 0; }).length || Math.ceil(total/3);
+  // นับจาก codePhotos (สิ่งที่ช่างเลือกจริงๆ)
+  var fromCodePhotos = Object.keys(codePhotos || {}).filter(function(k){
+    return codePhotos[k] && codePhotos[k].length > 0;
+  }).length;
+  // นับจาก server response
+  var fromServer = (result.codes || []).length;
+  // ใช้อันที่มากกว่า
+  var codeCount = Math.max(fromCodePhotos, fromServer) || Math.ceil(total / 3);
   document.getElementById('okCodes').textContent = codeCount;
   document.getElementById('okPhotos').textContent = total;
   document.getElementById('okSub').textContent = 'งาน: ' + (selectedJob ? selectedJob.name : '') + '\nระบบจัดโฟลเดอร์ให้แล้วค่ะ';
