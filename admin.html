@@ -281,7 +281,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx8-G2av7K7FU9DLNwkq_uyDT4VkAc8lGGYSWBAF4l_Ne1YnITBVrHB314-BoAdoo0/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxcf4-khjLrGL8cZMgF2-_6mgO-_HNF2aZIyd7Jrpb7df5Xh_seQ194kBBSMgO2_fGu/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
 var rawExcelData = [];
@@ -342,31 +342,38 @@ function autoDetectAndBuild() {
   var codeCol=null, productCol=null, addrCol=null, latCol=null, lngCol=null;
   var codePattern = /^[A-Za-z]{1,4}[-]?[0-9]{2,5}$/;
 
-  // Priority 1: detect by common column name keywords
+  // Detect by column name keywords ONLY - more reliable than data pattern
   function findByName(keywords) {
     return excelCols.find(function(col) {
-      return keywords.some(function(k){ return col.toString().toLowerCase().indexOf(k.toLowerCase()) > -1; });
+      var colName = col.toString().toLowerCase().trim();
+      return keywords.some(function(k){ return colName.indexOf(k.toLowerCase()) > -1; });
     }) || null;
   }
+
   codeCol    = findByName(['code id','code','รหัส']);
   productCol = findByName(['ad.on','adsone','product','สินค้า']);
   addrCol    = findByName(['location','ที่อยู่','สถานที่','address']);
   latCol     = findByName(['co_y','latitude','lat']);
   lngCol     = findByName(['co_x','longitude','lng','lon']);
 
-  // Priority 2: fallback to data pattern if name not found
-  excelCols.forEach(function(col) {
-    var vals = rawExcelData.slice(0,5).map(function(r){ return String(r[col]||'').trim(); }).filter(Boolean);
-    if (!vals.length) return;
-    if (!codeCol && vals.some(function(v){ return codePattern.test(v); })) { codeCol = col; return; }
-    if (!latCol && vals.every(function(v){ var n=parseFloat(v); return !isNaN(n)&&n>5&&n<21; })) { latCol = col; return; }
-    if (!lngCol && vals.every(function(v){ var n=parseFloat(v); return !isNaN(n)&&n>95&&n<110; })) { lngCol = col; return; }
-    if (!addrCol && vals.some(function(v){ return v.length > 20; })) { addrCol = col; return; }
-    if (!productCol && col !== codeCol && col !== addrCol &&
-        vals.some(function(v){ return v.length>2 && v.length<60 && isNaN(parseFloat(v)) && !codePattern.test(v); })) {
-      productCol = col;
-    }
-  });
+  // Fallback by data pattern ONLY if keyword not found
+  if (!codeCol || !productCol || !latCol || !lngCol) {
+    excelCols.forEach(function(col) {
+      if (codeCol && productCol && latCol && lngCol) return;
+      var vals = rawExcelData.slice(0,5).map(function(r){ return String(r[col]||'').trim(); }).filter(Boolean);
+      if (!vals.length) return;
+      // Skip columns already assigned
+      if (col===codeCol||col===productCol||col===addrCol||col===latCol||col===lngCol) return;
+      if (!codeCol && vals.some(function(v){ return codePattern.test(v); })) { codeCol = col; return; }
+      if (!latCol && vals.every(function(v){ var n=parseFloat(v); return !isNaN(n)&&n>5&&n<21; })) { latCol = col; return; }
+      if (!lngCol && vals.every(function(v){ var n=parseFloat(v); return !isNaN(n)&&n>95&&n<110; })) { lngCol = col; return; }
+      if (!addrCol && vals.some(function(v){ return v.length > 20; })) { addrCol = col; return; }
+      // Product: non-numeric text, NOT already a code-pattern, NOT address
+      if (!productCol && vals.some(function(v){
+        return v.length>2 && v.length<60 && isNaN(parseFloat(v)) && !codePattern.test(v) && v.length<=20;
+      })) { productCol = col; }
+    });
+  }
 
   // Build spots
   pendingSpots = rawExcelData.filter(function(r){
