@@ -294,6 +294,22 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx6_z_xY66OX3BnwaKeY8OwiwUivJD_ZG9-_h6GYkEze1ZxMoxiXF21jfYuYIzBD6Lw/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+
+// Sync jobs from server on load
+fetch(SCRIPT_URL + '?action=getJobs')
+  .then(function(r){ return r.json(); })
+  .then(function(result){
+    if (result.jobs && result.jobs.length > 0) {
+      // Merge server jobs with local jobs (local takes priority for new ones)
+      var serverIds = result.jobs.map(function(j){ return j.id; });
+      var localOnly = jobs.filter(function(j){ return serverIds.indexOf(j.id) === -1; });
+      jobs = result.jobs.concat(localOnly);
+      localStorage.setItem('jobs', JSON.stringify(jobs));
+      renderJobCards();
+      renderDashSelect();
+    }
+  })
+  .catch(function(){});
 var rawExcelData = [];
 var excelCols = [];
 var pendingSpots = [];
