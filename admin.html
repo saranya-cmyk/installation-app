@@ -291,7 +291,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxyPULHKu6SQLgh3OpSJMA2vnZPQW1OofkiMxQilRoneK8_t15qH_6sZKQ-raNtwKfC/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzoogxSq9-D6S0jdaHOi-22Np7LC_2_G96K0P1WxR4VmN_zLOTLGZp8oeqO6-flWr2B/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
 var rawExcelData = [];
@@ -443,6 +443,9 @@ function createJob() {
     dateStart: dateStart, dateEnd: dateEnd };
   jobs.unshift(job);
   save();
+  // Save to server so installers can see it
+  fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'saveJob', job: job }) })
+    .catch(function(e){ console.error('Save job failed:', e); });
 
   document.getElementById('jobNameInput').value = '';
   document.getElementById('jobDateStart').value = '';
@@ -491,6 +494,9 @@ function deleteJob(id) {
   save();
   renderJobCards();
   renderDashSelect();
+  // Delete from server
+  fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'deleteJob', jobId: id }) })
+    .catch(function(e){ console.error('Delete job failed:', e); });
 }
 
 function getFolderUrl(jobId) { return localStorage.getItem('folderUrl_' + jobId) || 'https://drive.google.com'; }
