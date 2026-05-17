@@ -255,7 +255,29 @@ const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyFjeNtYyNXCzqduDUqf
 
 // ── State ─────────────────────────────────────────────────────
 let installerName = localStorage.getItem('installerName') || '';
-let jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
+var jobs = [];
+
+// Load jobs from server
+function loadJobsFromServer() {
+  fetch(SCRIPT_URL + '?action=getJobs')
+    .then(function(r){ return r.json(); })
+    .then(function(result){
+      if (result.jobs && result.jobs.length > 0) {
+        jobs = result.jobs;
+        // Also cache locally
+        localStorage.setItem('jobs', JSON.stringify(jobs));
+      } else {
+        // Fallback to localStorage
+        jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
+      }
+      renderJobs();
+    })
+    .catch(function(){
+      jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
+      renderJobs();
+    });
+}
+loadJobsFromServer();
 let selectedJob = null;
 let allFiles = [];
 let verifyGroups = []; // [{code, status:'ok'|'warn'|'err', product, address, files}]
@@ -727,6 +749,11 @@ function formatInstallDate(start, end) {
   if (s.getMonth()===e.getMonth()) return s.getDate() + '-' + e.getDate() + ' ' + months[e.getMonth()] + ' ' + (e.getFullYear()+543);
   return s.getDate() + ' ' + months[s.getMonth()] + ' — ' + e.getDate() + ' ' + months[e.getMonth()] + ' ' + (e.getFullYear()+543);
 }
+
+// Refresh jobs every 30s
+setInterval(function(){
+  loadJobsFromServer();
+}, 30000);
 
 function showGuide() { document.getElementById('guideModal').style.display = 'block'; window.scrollTo(0,0); }
 function hideGuide() { document.getElementById('guideModal').style.display = 'none'; }
