@@ -308,7 +308,7 @@ function renderJobs() {
       <div class="job-dot"></div>
       <div>
         <div class="job-name">${j.name}</div>
-        <div class="job-detail">${j.spots.length} จุด · ${[...new Set(j.spots.map(s=>s.product))].slice(0,2).join(', ')}</div>
+        <div class="job-detail">${j.spots.length} จุด${j.dateStart ? ' · ติดตั้ง ' + formatInstallDate(j.dateStart, j.dateEnd) : ''}</div>
       </div>
     </div>`).join('');
   if (jobs.length) {
@@ -719,6 +719,16 @@ init();
 </div>
 
 <script>
+function formatInstallDate(start, end) {
+  if (!start) return '';
+  var s = new Date(start);
+  var months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  if (!end) return s.getDate() + ' ' + months[s.getMonth()];
+  var e = new Date(end);
+  if (s.getMonth()===e.getMonth()) return s.getDate() + '-' + e.getDate() + ' ' + months[e.getMonth()] + ' ' + (e.getFullYear()+543);
+  return s.getDate() + ' ' + months[s.getMonth()] + ' — ' + e.getDate() + ' ' + months[e.getMonth()] + ' ' + (e.getFullYear()+543);
+}
+
 function showGuide() { document.getElementById('guideModal').style.display = 'block'; window.scrollTo(0,0); }
 function hideGuide() { document.getElementById('guideModal').style.display = 'none'; }
 
