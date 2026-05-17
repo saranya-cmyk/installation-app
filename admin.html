@@ -664,17 +664,18 @@ function doExport(jobId) {
   var job = jobs.find(function(j){ return j.id === jobId; });
   if (!job) return;
   var log = codeLog[jobId] || {};
-  var sentCodes = Object.keys(log).filter(function(k){ return log[k].status === 'sent'; });
-  var codes = sentCodes.map(function(c) {
+  // Export ALL spots in job — not just sent ones
+  var codes = job.spots.map(function(s) {
+    var logEntry = log[s.code] || {};
     return {
-      code: c,
-      product: (job.spots.find(function(s){return s.code===c;})||{}).product || '',
-      address: (job.spots.find(function(s){return s.code===c;})||{}).address || '',
-      beforeCount: log[c].beforeCount || 0,
-      afterCount: log[c].afterCount || 0,
-      count: log[c].count || 0,
-      method: log[c].method || '',
-      folderUrl: getFolderUrl(jobId)
+      code: s.code,
+      product: s.product || '',
+      address: s.address || '',
+      beforeCount: logEntry.beforeCount || 0,
+      afterCount: logEntry.afterCount || 0,
+      count: logEntry.count || 0,
+      method: logEntry.method || (logEntry.status === 'sent' ? 'sent' : 'pending'),
+      folderUrl: logEntry.folderUrl || ''
     };
   });
 
