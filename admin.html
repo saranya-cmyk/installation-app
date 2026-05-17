@@ -154,7 +154,17 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
   <div class="section-label" style="margin-bottom:16px">Create New Job</div>
   <div class="field" id="jobNameField">
     <label>Job Name / Campaign</label>
-    <input type="text" id="jobNameInput" placeholder="ใส่ชื่องาน หรือโหลด Excel แล้วเลือกสินค้าด้านล่าง" autocomplete="off">
+    <input type="text" id="jobNameInput" placeholder="ใส่ชื่องาน" autocomplete="off">
+  </div>
+  <div style="display:flex;gap:10px;margin-bottom:14px">
+    <div class="field" style="flex:1;margin-bottom:0">
+      <label>วันที่เริ่มติดตั้ง</label>
+      <input type="date" id="jobDateStart" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none;width:100%">
+    </div>
+    <div class="field" style="flex:1;margin-bottom:0">
+      <label>วันที่สิ้นสุด</label>
+      <input type="date" id="jobDateEnd" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none;width:100%">
+    </div>
   </div>
 <div class="excel-zone" id="excelZone">
     <input type="file" accept=".xlsx,.xls,.csv" id="excelInput" onchange="loadExcel(this.files[0])">
@@ -426,11 +436,17 @@ function createJob() {
   // pendingSpots already built by autoDetectAndBuild
   if (!pendingSpots.length) { alert('ไม่พบข้อมูล กรุณาตรวจสอบ'); return; }
 
-  var job = { id: 'j_' + Date.now(), name: name, spots: pendingSpots, created: new Date().toLocaleString('th-TH') };
+  var dateStart = document.getElementById('jobDateStart').value;
+  var dateEnd   = document.getElementById('jobDateEnd').value;
+  var job = { id: 'j_' + Date.now(), name: name, spots: pendingSpots,
+    created: new Date().toLocaleString('th-TH'),
+    dateStart: dateStart, dateEnd: dateEnd };
   jobs.unshift(job);
   save();
 
   document.getElementById('jobNameInput').value = '';
+  document.getElementById('jobDateStart').value = '';
+  document.getElementById('jobDateEnd').value = '';
   document.getElementById('excelInput').value = '';
   document.getElementById('ezBefore').style.display = 'block';
   document.getElementById('ezAfter').style.display = 'none';
@@ -720,6 +736,20 @@ function appendThumb(grid, p, idx) {
   img.onerror = function(){ this.style.opacity='0.2'; };
   div.appendChild(img);
   grid.appendChild(div);
+}
+
+function formatDateRange(start, end) {
+  if (!start) return '';
+  var s = new Date(start);
+  var months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  var sStr = s.getDate() + ' ' + months[s.getMonth()] + ' ' + (s.getFullYear()+543);
+  if (!end) return 'ติดตั้ง ' + sStr;
+  var e = new Date(end);
+  if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
+    return 'ติดตั้ง ' + s.getDate() + '-' + e.getDate() + ' ' + months[s.getMonth()] + ' ' + (s.getFullYear()+543);
+  }
+  var eStr = e.getDate() + ' ' + months[e.getMonth()] + ' ' + (e.getFullYear()+543);
+  return 'ติดตั้ง ' + sStr + ' — ' + eStr;
 }
 
 function save() { localStorage.setItem('jobs', JSON.stringify(jobs)); }
