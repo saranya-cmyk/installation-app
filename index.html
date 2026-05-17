@@ -251,7 +251,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script>
 // ── Config ────────────────────────────────────────────────────
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxcf4-khjLrGL8cZMgF2-_6mgO-_HNF2aZIyd7Jrpb7df5Xh_seQ194kBBSMgO2_fGu/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxyPULHKu6SQLgh3OpSJMA2vnZPQW1OofkiMxQilRoneK8_t15qH_6sZKQ-raNtwKfC/exec';
 
 // ── State ─────────────────────────────────────────────────────
 let installerName = localStorage.getItem('installerName') || '';
@@ -584,7 +584,6 @@ async function doUpload() {
           spots: selectedJob.spots,
           batchIndex: b,
           totalBatches: batches,
-          clientGroups: [],
           files: batch,
           timestamp: new Date().toISOString()
         }, 2);
@@ -839,8 +838,9 @@ async function sendAllCodes() {
         jobId: selectedJob.id,
         jobName: selectedJob.name,
         spots: selectedJob.spots,
-        // Force match to this specific code
         forceCode: code,
+        batchIndex: ci,
+        totalBatches: codes.length,
         files: fileData,
         timestamp: new Date().toISOString()
       }, 3);
