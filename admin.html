@@ -294,7 +294,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx6C7ahCjy8F5wKgN_1w4AB15bJbcMtIS0n8WezqNJX0z0LoURlCJvjcDP561mw8Rl6_g/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyk27h-PNWHcHr3q2lfDxRIr-9_vUyTiZO2LP_Bnl08JvZlcL-Uj-GZZzxKkMlwHQ-VnQ/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
 
@@ -771,6 +771,61 @@ function formatDateRange(start, end) {
   }
   var eStr = e.getDate() + ' ' + months[e.getMonth()] + ' ' + (e.getFullYear()+543);
   return 'ติดตั้ง ' + sStr + ' — ' + eStr;
+}
+
+function createPDF(jobId, btn) {
+  var job = jobs.find(function(j){ return j.id === jobId; });
+  if (!job) return;
+  var log = codeLog[jobId] || {};
+
+  // Get sent codes with folder URLs
+  var codes = job.spots.map(function(s) {
+    var logEntry = log[s.code] || {};
+    return {
+      code: s.code,
+      product: s.product || job.name,
+      address: s.address || '',
+      folderUrl: logEntry.folderUrl || ''
+    };
+  }).filter(function(c){ return log[c.code] && log[c.code].status === 'sent'; });
+
+  if (!codes.length) {
+    alert('ยังไม่มีรูปที่ส่งแล้วในงานนี้ครับ');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ กำลังสร้าง PDF...';
+
+  fetch(SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'createPDF',
+      jobId: jobId,
+      jobName: job.name,
+      installer: 'แอดมิน',
+      codes: codes
+    })
+  }).then(function(r){ return r.json(); })
+    .then(function(result) {
+      btn.disabled = false;
+      btn.textContent = '📄 PDF รูป';
+      if (result.success) {
+        // Open PDF directly
+        window.open(result.pdfUrl, '_blank');
+        // Also show doc link
+        if (confirm('PDF พร้อมแล้ว! \n' + result.photoCount + ' รูป\n\nกด OK เพื่อเปิด PDF')) {
+          window.open(result.pdfUrl, '_blank');
+        }
+      } else {
+        alert('สร้าง PDF ไม่สำเร็จ: ' + (result.error || ''));
+      }
+    })
+    .catch(function(err) {
+      btn.disabled = false;
+      btn.textContent = '📄 PDF รูป';
+      alert('เกิดข้อผิดพลาด: ' + err.message);
+    });
 }
 
 function save() { localStorage.setItem('jobs', JSON.stringify(jobs)); }
