@@ -294,7 +294,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwuaOWlsVuR0CONsrTi6GgB4tESUAOCmBoppB-RlMvVZgyIpyEUI1IXvX1LgvYBTRTl0Q/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzuWhk3QyTHlbkQYL1Tok_5Cfl_cNrcO-RZueVMaPwSIRm9mv5futsCdNxy_OurpGEC8w/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
 
@@ -384,6 +384,7 @@ function autoDetectAndBuild() {
   addrCol    = findByName(['location','ที่อยู่','สถานที่','address']);
   latCol     = findByName(['co_y','latitude','lat']);
   lngCol     = findByName(['co_x','longitude','lng','lon']);
+  var mediaCol   = findByName(['media type','media','สื่อ','ประเภท']);
 
   // Fallback by data pattern ONLY for code/GPS columns (NOT product)
   if (!codeCol || !latCol || !lngCol) {
@@ -409,6 +410,7 @@ function autoDetectAndBuild() {
       address: addrCol    ? String(r[addrCol]||'').trim()    : '',
       lat:     latCol     ? parseFloat(r[latCol])  || null   : null,
       lng:     lngCol     ? parseFloat(r[lngCol])  || null   : null,
+      media:   mediaCol   ? String(r[mediaCol]||'').trim()   : '',
     };
   });
 }
@@ -526,10 +528,13 @@ function buildMsg(jobId, codes) {
   var logEntry = firstCode ? (log[firstCode] || {}) : {};
   var productUrl = logEntry.productFolderUrl || logEntry.afterFolderUrl || logEntry.folderUrl || '';
 
-  var lines = [
-    '📸 รูปติดตั้ง — ' + job.name,
-    '✅ ' + codes.length + ' จุด'
-  ];
+  // Get media type from first spot
+  var firstSpot = codes[0] ? job.spots.find(function(s){ return s.code === codes[0]; }) : null;
+  var mediaType = firstSpot && firstSpot.media ? firstSpot.media : '';
+
+  var lines = ['📸 รูปติดตั้ง — ' + job.name];
+  if (mediaType) lines.push('📺 สื่อ: ' + mediaType);
+  lines.push('✅ ' + codes.length + ' จุด');
   if (productUrl) {
     lines.push('🖼️ ดูรูปทั้งหมด: ' + productUrl);
   }
