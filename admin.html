@@ -474,9 +474,15 @@ function createJob() {
 
   var dateStart = document.getElementById('jobDateStart').value;
   var dateEnd   = document.getElementById('jobDateEnd').value;
+    // Get unique media types from spots
+  var mediaTypes = [];
+  pendingSpots.forEach(function(s) {
+    if (s.media && mediaTypes.indexOf(s.media) === -1) mediaTypes.push(s.media);
+  });
   var job = { id: 'j_' + Date.now(), name: name, spots: pendingSpots,
     created: new Date().toLocaleString('th-TH'),
-    dateStart: dateStart, dateEnd: dateEnd };
+    dateStart: dateStart, dateEnd: dateEnd,
+    media: mediaTypes.join(', ') };
   jobs.unshift(job);
   save();
   // Save to server so installers can see it
@@ -551,9 +557,12 @@ function buildMsg(jobId, codes) {
   var logEntry = firstCode ? (log[firstCode] || {}) : {};
   var productUrl = logEntry.productFolderUrl || logEntry.afterFolderUrl || logEntry.folderUrl || '';
 
-  // Get media type from first spot
-  var firstSpot = codes[0] ? job.spots.find(function(s){ return s.code === codes[0]; }) : null;
-  var mediaType = firstSpot && firstSpot.media ? firstSpot.media : '';
+  // Get media type from job or first spot
+  var mediaType = job.media || '';
+  if (!mediaType) {
+    var firstSpot = codes[0] ? job.spots.find(function(s){ return s.code === codes[0]; }) : null;
+    mediaType = firstSpot && firstSpot.media ? firstSpot.media : '';
+  }
 
   var lines = ['📸 รูปติดตั้ง — ' + job.name];
   if (mediaType) lines.push('📺 สื่อ: ' + mediaType);
