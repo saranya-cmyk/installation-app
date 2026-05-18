@@ -220,6 +220,11 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 <div class="screen" id="t1">
   <div class="section-label" style="margin-bottom:12px">Select a job to view</div>
   <select class="dash-select" id="dashSelect" onchange="renderDash()"><option value="">-- Select Job --</option></select>
+  <div id="dashFilter" style="display:none;display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+    <button onclick="setFilter('all')" id="fAll" style="padding:6px 14px;border-radius:20px;border:1px solid var(--ac);background:#1a2a00;color:var(--ac);cursor:pointer;font-size:12px;font-family:var(--f)">ทั้งหมด</button>
+    <button onclick="setFilter('pending')" id="fPending" style="padding:6px 14px;border-radius:20px;border:1px solid var(--b);background:transparent;color:var(--mu);cursor:pointer;font-size:12px;font-family:var(--f)">Pending</button>
+    <button onclick="setFilter('done')" id="fDone" style="padding:6px 14px;border-radius:20px;border:1px solid var(--b);background:transparent;color:var(--mu);cursor:pointer;font-size:12px;font-family:var(--f)">✅ ติดแล้ว</button>
+  </div>
   <div id="dashContent" style="display:none">
     <div class="stat-grid">
       <div class="stat"><div class="stat-n" id="dsDone" style="color:var(--ok)">0</div><div class="stat-l">Installed</div></div>
@@ -314,7 +319,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyuGYxhQw7UeMN0tv8cCU9Pq6vqmUhW2il_v4_7tkKzhJJmltiNMl6YiPDNA2fIAGarRg/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwGpXO672AsOg_qZ71s7Y8jVoH_Rq0u0R0hC8rraFvPWzJA3EFVd_ikeftzM1_apgSzCg/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
 
@@ -620,6 +625,26 @@ function openLine() {
 }
 function closeSend() { document.getElementById('sendPanelBg').style.display = 'none'; }
 
+var dashFilter = 'all';
+
+function setFilter(f) {
+  dashFilter = f;
+  ['all','pending','done'].forEach(function(k) {
+    var btn = document.getElementById('f' + k.charAt(0).toUpperCase() + k.slice(1));
+    if (!btn) return;
+    if (k === f) {
+      btn.style.background = '#1a2a00';
+      btn.style.borderColor = 'var(--ac)';
+      btn.style.color = 'var(--ac)';
+    } else {
+      btn.style.background = 'transparent';
+      btn.style.borderColor = 'var(--b)';
+      btn.style.color = 'var(--mu)';
+    }
+  });
+  renderDash();
+}
+
 function renderDashSelect() {
   var sel = document.getElementById('dashSelect');
   sel.innerHTML = '<option value="">-- Select Job --</option>' +
@@ -631,6 +656,7 @@ function renderDash() {
   var c = document.getElementById('dashContent');
   if (!id) { c.style.display = 'none'; return; }
   c.style.display = 'block';
+  document.getElementById('dashFilter').style.display = 'flex';
   var job = jobs.find(function(j){ return j.id === id; });
   var log = codeLog[id] || {};
   var planCodes = job.spots.map(function(s){ return s.code; });
@@ -677,7 +703,12 @@ function renderDash() {
     dc.insertBefore(expBar, document.getElementById('dashSpots'));
   }
 
-  document.getElementById('dashSpots').innerHTML = spots.map(function(s){
+  var filteredSpots = dashFilter === 'all' ? spots : spots.filter(function(s){
+    if (dashFilter === 'pending') return s.status === 'pending';
+    if (dashFilter === 'done') return s.status === 'done';
+    return true;
+  });
+  document.getElementById('dashSpots').innerHTML = filteredSpots.map(function(s){
     var badgeCls = s.status === 'done' ? 'sb-done' : s.status === 'warn' ? 'sb-warn' : 'sb-pending';
     var badgeTxt = s.status === 'done' ? '✓ Installed' : s.status === 'warn' ? '⚠ Off-plan' : 'Pending';
     var copyBtn = s.status === 'done' ? '<button class="spot-link-btn" onclick="copySpot(\'' + id + '\',\'' + s.code + '\',this)">📋</button>' : '';
@@ -841,6 +872,9 @@ function createPDF(jobId, btn) {
       jobId: jobId,
       jobName: job.name,
       installer: 'แอดมิน',
+      media: job.media || '',
+      dateStart: job.dateStart || '',
+      dateEnd: job.dateEnd || '',
       codes: codes
     })
   }).then(function(r){ return r.json(); })
