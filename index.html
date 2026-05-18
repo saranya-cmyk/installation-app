@@ -222,7 +222,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script>
 // ── Config ────────────────────────────────────────────────────
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyuGYxhQw7UeMN0tv8cCU9Pq6vqmUhW2il_v4_7tkKzhJJmltiNMl6YiPDNA2fIAGarRg/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwGpXO672AsOg_qZ71s7Y8jVoH_Rq0u0R0hC8rraFvPWzJA3EFVd_ikeftzM1_apgSzCg/exec';
 
 // ── State ─────────────────────────────────────────────────────
 let installerName = localStorage.getItem('installerName') || '';
@@ -840,19 +840,28 @@ function renderCodeList() {
   job.spots.forEach(function(s) {
     var photos = codePhotos[s.code] || [];
     var div = document.createElement('div');
-    div.className = 'code-item' + (photos.length ? ' has-photos' : '');
+    var savedLog2 = JSON.parse(localStorage.getItem('codeLog') || '{}');
+    var jobLog2 = savedLog2[selectedJob ? selectedJob.id : ''] || {};
+    var isSent = jobLog2[s.code] && jobLog2[s.code].status === 'sent';
+    div.className = 'code-item' + (photos.length ? ' has-photos' : isSent ? ' uploading' : '');
     div.id = 'ci_' + s.code;
     var addr = s.address && s.address.length > 3 ? s.address : (s.product || '—');
+    // Check if this code was already sent (from localStorage codeLog)
+    var savedLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+    var jobLog = savedLog[selectedJob ? selectedJob.id : ''] || {};
+    var alreadySent = jobLog[s.code] && jobLog[s.code].status === 'sent';
+    var sentCount = alreadySent ? (jobLog[s.code].count || 0) : 0;
+
     div.innerHTML =
       '<div class="ci-left" style="flex:1;min-width:0">' +
         '<div>' +
-          '<div class="ci-code">' + s.code + '</div>' +
+          '<div class="ci-code">' + s.code + (alreadySent ? ' ✓' : '') + '</div>' +
           '<div class="ci-addr" style="white-space:normal;word-break:break-word">' + addr + '</div>' +
         '</div>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">' +
-        '<div class="ci-count' + (photos.length ? ' done' : '') + '">' +
-          (photos.length ? '✓ ' + photos.length + ' รูป' : 'กดเลือก') +
+        '<div class="ci-count' + (photos.length ? ' done' : alreadySent ? ' done' : '') + '">' +
+          (photos.length ? '✓ ' + photos.length + ' รูป' : alreadySent ? '✓ ส่งแล้ว ' + sentCount + ' รูป' : 'กดเลือก') +
         '</div>' +
       '</div>';
     div.onclick = function() { openCodePicker(s.code); };
