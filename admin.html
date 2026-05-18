@@ -157,7 +157,10 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
   <div class="section-label" style="margin-bottom:16px">Create New Job</div>
   <div class="field" id="jobNameField">
     <label>Job Name / Campaign</label>
-    <input type="text" id="jobNameInput" placeholder="ใส่ชื่องาน" autocomplete="off">
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" id="jobNameInput" placeholder="ใส่ชื่องาน" autocomplete="off" style="flex:1">
+      <button onclick="document.getElementById('jobNameInput').value='';document.getElementById('jobNameInput').focus()" style="background:transparent;border:1px solid var(--err);color:var(--err);border-radius:8px;padding:10px 12px;cursor:pointer;font-size:12px;white-space:nowrap;font-family:var(--f)">✕ ลบ</button>
+    </div>
   </div>
   <div style="display:flex;gap:10px;margin-bottom:14px">
     <div class="field" style="flex:1;margin-bottom:0">
@@ -169,11 +172,14 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
       <input type="date" id="jobDateEnd" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none;width:100%">
     </div>
   </div>
-<div class="excel-zone" id="excelZone">
+<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:14px">
+<div class="excel-zone" id="excelZone" style="margin-bottom:0;flex:1">
     <input type="file" accept=".xlsx,.xls,.csv" id="excelInput" onchange="loadExcel(this.files[0])">
     <div id="ezBefore"><div class="ez-icon">📋</div><div class="ez-title">Upload Excel / CSV</div><div class="ez-sub">Any format supported — auto-detects columns</div></div>
     <div id="ezAfter" style="display:none"><div class="ez-icon">✅</div><div class="ez-title" id="ezTitle">โหลดแล้ว</div><div class="ez-sub" id="ezSub">—</div></div>
   </div>
+  <button onclick="clearExcel()" style="background:transparent;border:1px solid var(--err);color:var(--err);border-radius:8px;padding:10px 12px;cursor:pointer;font-size:12px;white-space:nowrap;font-family:var(--f);align-self:flex-start;margin-top:0">✕ ลบไฟล์</button>
+</div>
 
   <div class="mapper-wrap" id="mapperWrap" style="display:none">
     <div class="mapper-title">จับคู่คอลัมน์</div>
@@ -275,6 +281,20 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
     <button class="photo-nav-btn" onclick="prevPhoto(event)">← ก่อนหน้า</button>
     <span id="photoNavCount" style="color:white;font-size:12px;padding:8px 4px"></span>
     <button class="photo-nav-btn" onclick="nextPhoto(event)">ถัดไป →</button>
+  </div>
+</div>
+
+<!-- Delete Files Modal -->
+<div class="modal-bg" id="deleteFilesModalBg">
+  <div class="modal">
+    <div class="modal-title">🗑️ ลบรูปใน Drive</div>
+    <div class="modal-sub">ใส่ Code ที่อยากลบรูปออกจาก Drive ค่ะ<br>รูปจะถูกย้ายไปถังขยะ</div>
+    <input class="modal-input" id="deleteFilesCode" placeholder="เช่น DP309" autocomplete="off" autocorrect="off">
+    <div id="deleteFilesMsg" style="font-size:11px;color:var(--err);margin-bottom:10px;display:none"></div>
+    <div class="modal-actions">
+      <button class="modal-ok" style="background:var(--err)" onclick="confirmDeleteFiles()">🗑️ ลบรูป</button>
+      <button class="modal-cancel" onclick="closeDeleteFilesModal()">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -833,6 +853,54 @@ function createPDF(jobId, btn) {
     });
 }
 
+function openDeleteFilesModal(jobId) {
+  window._deleteFilesJobId = jobId;
+  document.getElementById('deleteFilesCode').value = '';
+  document.getElementById('deleteFilesMsg').style.display = 'none';
+  document.getElementById('deleteFilesModalBg').classList.add('open');
+  setTimeout(function(){ document.getElementById('deleteFilesCode').focus(); }, 100);
+}
+
+function closeDeleteFilesModal() {
+  document.getElementById('deleteFilesModalBg').classList.remove('open');
+}
+
+function confirmDeleteFiles() {
+  var code = document.getElementById('deleteFilesCode').value.trim().toUpperCase();
+  if (!code) { alert('กรุณาใส่ Code'); return; }
+  var jobId = window._deleteFilesJobId;
+  var job = jobs.find(function(j){ return j.id === jobId; });
+  if (!job) return;
+
+  var msgEl = document.getElementById('deleteFilesMsg');
+  msgEl.textContent = 'กำลังลบรูป...';
+  msgEl.style.display = 'block';
+  msgEl.style.color = 'var(--mu)';
+
+  fetch(SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'deleteCodeFiles',
+      jobName: job.name,
+      code: code
+    })
+  }).then(function(r){ return r.json(); })
+    .then(function(result) {
+      if (result.success) {
+        msgEl.textContent = '✅ ลบแล้ว ' + (result.deleted||0) + ' ไฟล์';
+        msgEl.style.color = 'var(--ok)';
+        setTimeout(function(){ closeDeleteFilesModal(); }, 1500);
+      } else {
+        msgEl.textContent = '❌ ' + (result.error || 'เกิดข้อผิดพลาด');
+        msgEl.style.color = 'var(--err)';
+      }
+    })
+    .catch(function(err) {
+      msgEl.textContent = '❌ ' + err.message;
+      msgEl.style.color = 'var(--err)';
+    });
+}
+
 function editJobName(id) {
   var job = jobs.find(function(j){ return j.id === id; });
   if (!job) return;
@@ -846,6 +914,15 @@ function editJobName(id) {
     .catch(function(e){ console.error(e); });
   renderJobCards();
   renderDashSelect();
+}
+
+function clearExcel() {
+  document.getElementById('excelInput').value = '';
+  document.getElementById('ezBefore').style.display = 'block';
+  document.getElementById('ezAfter').style.display = 'none';
+  document.getElementById('excelZone').classList.remove('has');
+  document.getElementById('mapperWrap').style.display = 'none';
+  rawExcelData = []; excelCols = []; pendingSpots = [];
 }
 
 function save() { localStorage.setItem('jobs', JSON.stringify(jobs)); }
