@@ -222,7 +222,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script>
 // ── Config ────────────────────────────────────────────────────
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyq32m4jCwfLsB54Xs1v5FcbEvPFYSQhZiJvZWFQrkrB4RSoj2HC3UsYs5phfiyviwrNg/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyWFW4OG2L7vzvoE7oWwfcrxDwapbTZVs223-YhB7QzvLKN6-HDs0czXKicdmS8y3tQNw/exec';
 
 // ── State ─────────────────────────────────────────────────────
 let installerName = localStorage.getItem('installerName') || '';
@@ -947,36 +947,42 @@ function deletePhotoFromPreview(code, idx) {
 
 async function sendAllCodes() {
   var btn = document.getElementById('sendAllCodesBtn');
-  btn.disabled = true;
-  btn.textContent = 'กำลังส่ง...';
+  var btnTop = document.getElementById('sendAllCodesBtnTop');
+  if (btn) { btn.disabled = true; btn.textContent = 'กำลังส่ง...'; }
+  if (btnTop) { btnTop.disabled = true; }
   go('s5');
 
   var codes = Object.keys(codePhotos).filter(function(k){ return codePhotos[k] && codePhotos[k].length > 0; });
   var total = codes.reduce(function(s,k){ return s + codePhotos[k].length; }, 0);
   var done = 0;
   var allResults = [];
+  var allFileData = [];
 
+  // Step 1: Compress all files from all codes
   for (var ci = 0; ci < codes.length; ci++) {
     var code = codes[ci];
     var files = codePhotos[code];
-    var spot = selectedJob.spots.find(function(s){ return s.code === code; });
-
-    // Compress files
-    var fileData = [];
     for (var fi = 0; fi < files.length; fi++) {
       done++;
-      setProgress(done/total*80, 'เตรียม ' + code + ' รูป ' + fi + '/' + files.length);
+      setProgress(done/total*50, 'เตรียมรูป ' + done + '/' + total + ' ค่ะ');
       try {
         var b64 = await compressImage(files[fi], 800);
-        fileData.push({ name: files[fi].name, type: 'image/jpeg', lastModified: files[fi].lastModified, data: b64, _code: code, _phase: fi === 0 ? 'before' : 'after' });
+        allFileData.push({ name: files[fi].name, type: 'image/jpeg', lastModified: files[fi].lastModified, data: b64, _forceCode: code });
       } catch(e) {
         var plain = await toB64(files[fi]);
-        fileData.push({ name: files[fi].name, type: files[fi].type, lastModified: files[fi].lastModified, data: plain, _code: code });
+        allFileData.push({ name: files[fi].name, type: files[fi].type, lastModified: files[fi].lastModified, data: plain, _forceCode: code });
       }
     }
+  }
 
-    // Send this code's photos
-    setProgress(done/total*80 + 10, 'ส่ง ' + code + '...');
+  // Step 2: Send all codes together in batches
+  var batchSize = 5;
+  var batches = Math.ceil(allFileData.length / batchSize);
+
+  for (var b = 0; b < batches; b++) {
+    var batch = allFileData.slice(b*batchSize, (b+1)*batchSize);
+    var pct = 50 + Math.round((b+1)/batches*45);
+    setProgress(pct, 'กำลังส่ง ' + (b+1) + '/' + batches + '...');
     try {
       var result = await uploadWithRetry({
         action: 'uploadBatch',
@@ -984,23 +990,20 @@ async function sendAllCodes() {
         jobId: selectedJob.id,
         jobName: selectedJob.name,
         spots: selectedJob.spots,
-        forceCode: code,
-        batchIndex: ci,
-        totalBatches: codes.length,
-        files: fileData,
+        batchIndex: b,
+        totalBatches: batches,
+        files: batch,
         timestamp: new Date().toISOString()
       }, 3);
-      // Update allResults with latest
       if (result && result.codes) {
-        result.codes.forEach(function(c){
+        result.codes.forEach(function(c) {
           var existing = allResults.findIndex(function(r){ return r.code === c.code; });
           if (existing >= 0) allResults[existing] = c;
           else allResults.push(c);
         });
       }
-      if (result && result.codes) allResults = allResults.concat(result.codes);
     } catch(err) {
-      console.error('Failed to send ' + code + ':', err.message);
+      console.error('Batch failed:', err.message);
     }
   }
 
