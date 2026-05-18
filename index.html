@@ -251,7 +251,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script>
 // ── Config ────────────────────────────────────────────────────
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwuaOWlsVuR0CONsrTi6GgB4tESUAOCmBoppB-RlMvVZgyIpyEUI1IXvX1LgvYBTRTl0Q/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzuWhk3QyTHlbkQYL1Tok_5Cfl_cNrcO-RZueVMaPwSIRm9mv5futsCdNxy_OurpGEC8w/exec';
 
 // ── State ─────────────────────────────────────────────────────
 let installerName = localStorage.getItem('installerName') || '';
@@ -511,6 +511,44 @@ function fixCode(i) {
 }
 
 // ── Upload ────────────────────────────────────────────────────
+// GPS Check
+async function checkFilesHaveGPS(files) {
+  if (!files || !files.length) return false;
+  // Check first 3 files for GPS
+  var checkCount = Math.min(3, files.length);
+  for (var i = 0; i < checkCount; i++) {
+    try {
+      var hasGPS = await fileHasGPS(files[i]);
+      if (hasGPS) return true;
+    } catch(e) {}
+  }
+  return false;
+}
+
+async function fileHasGPS(file) {
+  return new Promise(function(resolve) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        var arr = new Uint8Array(e.target.result);
+        // Look for GPS EXIF marker
+        for (var i = 0; i < arr.length - 4; i++) {
+          if (arr[i] === 0xFF && arr[i+1] === 0xE1) {
+            // Found EXIF - check for GPS IFD (0x8825)
+            var exifStr = String.fromCharCode.apply(null, arr.slice(i+4, i+200));
+            if (exifStr.indexOf('GPS') > -1 || arr.indexOf(0x88) > -1) {
+              resolve(true); return;
+            }
+          }
+        }
+        resolve(false);
+      } catch(e) { resolve(false); }
+    };
+    reader.onerror = function() { resolve(false); };
+    reader.readAsArrayBuffer(file.slice(0, 65536)); // Read first 64KB only
+  });
+}
+
 // Image compression
 async function compressImage(file, maxKB) {
   return new Promise(function(resolve) {
@@ -554,6 +592,21 @@ async function uploadWithRetry(payload, retries) {
 }
 
 async function doUpload() {
+  // Check if files have GPS data
+  var hasGPS = await checkFilesHaveGPS(allFiles);
+  if (!hasGPS) {
+    var confirm = window.confirm(
+      '⚠️ ระบบตรวจไม่พบ GPS ในรูปค่ะ\n\n' +
+      'รูปที่ไม่มี GPS จะไปอยู่ใน _ตรวจสอบ ไม่เข้าโฟลเดอร์ที่ถูกต้องค่ะ\n\n' +
+      'แนะนำให้ใช้ "📍 แยกตาม Code" แทนค่ะ\n\n' +
+      'กด OK เพื่อส่งต่อ หรือ Cancel เพื่อกลับไปเลือก Code เองค่ะ'
+    );
+    if (!confirm) {
+      switchMode(1);
+      return;
+    }
+  }
+
   go('s5');
   var total = allFiles.length;
   var fileData = [];
@@ -862,26 +915,51 @@ function closeCodePreview() {
 function showCodePreview(code) {
   var files = codePhotos[code] || [];
   if (!files.length) return;
-  // Show preview modal
+  renderCodePreviewModal(code);
+}
+
+function renderCodePreviewModal(code) {
+  var files = codePhotos[code] || [];
   var existing = document.getElementById('codePreviewModal');
   if (existing) existing.remove();
+
   var modal = document.createElement('div');
   modal.id = 'codePreviewModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:99;display:flex;flex-direction:column;padding:20px';
-  var header = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:99;display:flex;flex-direction:column;padding:16px';
+
+  var header = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
     '<div style="font-size:15px;font-weight:600;color:#c8f542">' + code + ' — ' + files.length + ' รูปค่ะ</div>' +
-    '<button onclick="closeCodePreview()" style="background:transparent;border:1px solid #444;color:#888;padding:6px 14px;border-radius:20px;cursor:pointer;font-size:12px">ปิด</button>' +
-    '</div>';
-  var grid = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;overflow-y:auto;flex:1">';
+    '<button onclick="closeCodePreview()" style="background:transparent;border:1px solid #444;color:#888;padding:6px 14px;border-radius:20px;cursor:pointer;font-size:12px;font-family:var(--f)">ปิด ✕</button>' +
+    '</div>' +
+    '<div style="font-size:11px;color:#666;margin-bottom:12px">กดที่รูปเพื่อลบออกค่ะ</div>';
+
+  modal.innerHTML = header;
+  var gridEl = document.createElement('div');
+  gridEl.id = 'previewGrid_' + code;
+  gridEl.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:6px;overflow-y:auto;flex:1';
   files.forEach(function(f, i) {
     var url = URL.createObjectURL(f);
-    grid += '<div style="aspect-ratio:1;border-radius:8px;overflow:hidden;background:#222">' +
-      '<img src="' + url + '" style="width:100%;height:100%;object-fit:cover" loading="lazy">' +
-      '</div>';
+    var thumb = document.createElement('div');
+    thumb.style.cssText = 'aspect-ratio:1;border-radius:8px;overflow:hidden;background:#222;position:relative;cursor:pointer';
+    thumb.innerHTML = '<img src="' + url + '" style="width:100%;height:100%;object-fit:cover" loading="lazy">' +
+      '<div style="position:absolute;top:4px;right:4px;background:rgba(200,0,0,.85);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:bold">✕</div>';
+    (function(fi) { thumb.onclick = function() { deletePhotoFromPreview(code, fi); }; })(i);
+    gridEl.appendChild(thumb);
   });
-  grid += '</div>';
-  modal.innerHTML = header + grid;
+  modal.appendChild(gridEl);
   document.body.appendChild(modal);
+}
+
+function deletePhotoFromPreview(code, idx) {
+  codePhotos[code].splice(idx, 1);
+  if (codePhotos[code].length === 0) {
+    delete codePhotos[code];
+    closeCodePreview();
+    renderCodeList();
+    return;
+  }
+  renderCodePreviewModal(code);
+  renderCodeList();
 }
 
 async function sendAllCodes() {
