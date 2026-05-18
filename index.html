@@ -109,16 +109,16 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 .mode-tab{flex:1;padding:10px;border:none;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--f);background:transparent;color:var(--mu);transition:all .2s}
 .mode-tab.on{background:var(--s);color:var(--ac);box-shadow:0 1px 4px rgba(0,0,0,.3)}
 .code-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
-.code-item{background:var(--s);border:1.5px solid var(--b);border-radius:var(--r);padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:all .15s}
+.code-item{background:var(--s);border:1.5px solid var(--b);border-radius:var(--r);padding:14px 16px;display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;transition:all .15s;gap:10px}
 .code-item:active{transform:scale(.98)}
 .code-item.has-photos{border-color:var(--ok);background:#0d1a0d}
 .code-item.uploading{border-color:var(--warn);background:#1a1200}
 .ci-left{display:flex;align-items:center;gap:10px}
-.ci-code{font-size:14px;font-weight:700;color:var(--ac);font-family:monospace}
-.ci-name{font-size:12px;color:var(--mu)}
-.ci-count{font-size:11px;padding:3px 10px;border-radius:20px;background:var(--s2);color:var(--mu)}
+.ci-code{font-size:16px;font-weight:700;color:var(--ac);font-family:monospace}
+.ci-name{font-size:13px;color:var(--mu)}
+.ci-count{font-size:12px;padding:4px 12px;border-radius:20px;background:var(--s2);color:var(--mu)}
 .ci-count.done{background:rgba(76,175,80,.15);color:var(--ok)}
-.ci-addr{font-size:10px;color:var(--mu);margin-top:2px}
+.ci-addr{font-size:12px;color:#bbb;margin-top:4px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -636,17 +636,33 @@ function setProgress(p, t) {
 }
 
 function showSuccess(result, total) {
-  // นับจาก codePhotos (สิ่งที่ช่างเลือกจริงๆ)
   var fromCodePhotos = Object.keys(codePhotos || {}).filter(function(k){
     return codePhotos[k] && codePhotos[k].length > 0;
   }).length;
-  // นับจาก server response
   var fromServer = (result.codes || []).length;
-  // ใช้อันที่มากกว่า
   var codeCount = Math.max(fromCodePhotos, fromServer) || Math.ceil(total / 3);
   document.getElementById('okCodes').textContent = codeCount;
   document.getElementById('okPhotos').textContent = total;
   document.getElementById('okSub').textContent = 'งาน: ' + (selectedJob ? selectedJob.name : '') + '\nระบบจัดโฟลเดอร์ให้แล้วค่ะ';
+
+  // Save codeLog to localStorage so admin can see folder URLs
+  if (result.codes && result.codes.length && selectedJob) {
+    var jobId = selectedJob.id;
+    var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+    if (!codeLog[jobId]) codeLog[jobId] = {};
+    result.codes.forEach(function(c) {
+      codeLog[jobId][c.code] = {
+        status: 'sent',
+        count: c.count || 0,
+        method: c.method || 'forced',
+        folderUrl: c.folderUrl || '',
+        afterFolderUrl: c.afterFolderUrl || c.folderUrl || '',
+        installedAt: new Date().toLocaleString('th-TH')
+      };
+    });
+    localStorage.setItem('codeLog', JSON.stringify(codeLog));
+  }
+
   go('s6');
 }
 
@@ -789,17 +805,17 @@ function renderCodeList() {
     var div = document.createElement('div');
     div.className = 'code-item' + (photos.length ? ' has-photos' : '');
     div.id = 'ci_' + s.code;
-    var addr = s.address && s.address.length > 3 ? s.address.substring(0,35) : s.product;
+    var addr = s.address && s.address.length > 3 ? s.address : (s.product || '—');
     div.innerHTML =
-      '<div class="ci-left">' +
+      '<div class="ci-left" style="flex:1;min-width:0">' +
         '<div>' +
           '<div class="ci-code">' + s.code + '</div>' +
-          '<div class="ci-addr">' + addr + '</div>' +
+          '<div class="ci-addr" style="white-space:normal;word-break:break-word">' + addr + '</div>' +
         '</div>' +
       '</div>' +
-      '<div style="display:flex;align-items:center;gap:8px">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">' +
         '<div class="ci-count' + (photos.length ? ' done' : '') + '">' +
-          (photos.length ? '✓ ' + photos.length + ' รูป' : 'กดเลือกรูป') +
+          (photos.length ? '✓ ' + photos.length + ' รูป' : 'กดเลือก') +
         '</div>' +
       '</div>';
     div.onclick = function() { openCodePicker(s.code); };
