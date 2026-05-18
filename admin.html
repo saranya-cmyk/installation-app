@@ -48,7 +48,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 .job-cards{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
 .jcard{background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px 16px}
 .jcard-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-.jcard-name{font-size:14px;font-weight:600}
+.jcard-name{font-size:16px;font-weight:700}
 .jcard-date{font-size:11px;color:var(--mu)}
 .jcard-prog-label{display:flex;justify-content:space-between;font-size:11px;color:var(--mu);margin-bottom:5px}
 .jcard-prog-bar{height:4px;background:var(--s2);border-radius:2px;overflow:hidden;margin-bottom:8px}
@@ -65,23 +65,23 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 .dash-select{width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:12px 14px;font-size:14px;color:var(--tx);font-family:var(--f);outline:none;margin-bottom:16px}
 .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
 .stat{background:var(--s2);border-radius:8px;padding:12px;text-align:center}
-.stat-n{font-size:24px;font-weight:700}
-.stat-l{font-size:10px;color:var(--mu);margin-top:2px}
+.stat-n{font-size:28px;font-weight:700}
+.stat-l{font-size:12px;color:var(--mu);margin-top:2px}
 .prog-wrap{margin-bottom:16px}
 .prog-label{display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:6px}
 .prog-bar{height:5px;background:var(--s2);border-radius:3px;overflow:hidden}
 .prog-fill{height:100%;background:var(--ac);border-radius:3px;transition:width .4s}
 .spot-list{display:flex;flex-direction:column;gap:6px}
-.spot{background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:10px}
+.spot{background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:14px 14px;display:flex;align-items:center;gap:12px}
 .spot.done{border-color:#1a3a1a}
 .spot.warn{border-color:#3a2200}
 .sdot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--b)}
 .sdot.done{background:var(--ok)}
 .sdot.warn{background:var(--warn)}
-.scode{font-size:12px;font-weight:600;color:var(--ac);font-family:monospace;min-width:54px}
+.scode{font-size:15px;font-weight:700;color:var(--ac);font-family:monospace;min-width:64px}
 .sinfo{flex:1;min-width:0}
-.sname{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.saddr{font-size:10px;color:var(--mu)}
+.sname{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--tx)}
+.saddr{font-size:12px;color:#aaa;margin-top:2px}
 .spot-copy{display:flex;align-items:center;gap:6px}
 .spot-link-btn{font-size:10px;padding:3px 8px;border-radius:20px;background:var(--s);border:1px solid var(--b);color:var(--mu);cursor:pointer;white-space:nowrap}
 .spot-link-btn:hover{border-color:var(--ac);color:var(--ac)}
@@ -314,7 +314,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby2eevRNZ_rCcTATZuG6K3w5Lw0l_yIXe93QkN8sfCGfDcOXnIMKEy2fFw98jKzgcuE4Q/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCNnXxuxLHPnyibdwU5KlLvDJRNgRVgj5B2bjo5JsdtQ-MMbBcz74D667m7cQ3RPVoMg/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
 
@@ -400,7 +400,7 @@ function autoDetectAndBuild() {
   }
 
   codeCol    = findByName(['code id','code','รหัส']);
-  productCol = findByName(['ad.on','adsone','product','สินค้า']);
+  productCol = findByName(['ad.on','ad.เดิม','adsone','product','สินค้า','campaign','แคมเปญ']);
   addrCol    = findByName(['location','ที่อยู่','สถานที่','address']);
   latCol     = findByName(['co_y','latitude','lat']);
   lngCol     = findByName(['co_x','longitude','lng','lon']);
@@ -426,7 +426,7 @@ function autoDetectAndBuild() {
   }).map(function(r){
     return {
       code:    String(r[codeCol]||'').trim().toUpperCase(),
-      product: productCol ? String(r[productCol]||'').trim() : '',
+      product: productCol ? String(r[productCol]||'').trim().split('_')[0].trim() : '',
       address: addrCol    ? String(r[addrCol]||'').trim()    : '',
       lat:     latCol     ? parseFloat(r[latCol])  || null   : null,
       lng:     lngCol     ? parseFloat(r[lngCol])  || null   : null,
