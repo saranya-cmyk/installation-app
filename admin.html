@@ -314,7 +314,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCNnXxuxLHPnyibdwU5KlLvDJRNgRVgj5B2bjo5JsdtQ-MMbBcz74D667m7cQ3RPVoMg/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwEm26MS2Qzn-lGAhpQQLxdWxm0R413wa1BEL8YoqsM8FwxSyzSDNKjyHC_znX_JwEVDA/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
 
@@ -518,6 +518,9 @@ function renderJobCards() {
       '<div class="jcard-actions">' +
         '<button class="copy-btn copy-all" onclick="copyJobMsg(\'' + j.id + '\',this)">📋 Copy for Sales</button>' +
         '<button class="copy-btn copy-sel" onclick="openSend(\'' + j.id + '\')">✉️ Select Code</button>' +
+        '<button class="copy-btn" style="background:#1a1a00;border:1px solid #888800;color:#cccc00" onclick="editJobName(\'' + j.id + '\')">✏️ แก้ชื่อ</button>' +
+        '<button class="copy-btn" style="background:#1a1a3a;border:1px solid #4444ff;color:#8888ff" onclick="createPDF(\'' + j.id + '\',this)">📄 PDF</button>' +
+        '<button class="copy-btn" style="background:#2a0000;border:1px solid #880000;color:#ff6666" onclick="openDeleteFilesModal(\'' + j.id + '\')">🗑️ ลบรูป</button>' +
       '</div>' +
       '<div class="jcard-del" onclick="deleteJob(\'' + j.id + '\')">🗑 Delete Job</div>' +
     '</div>';
@@ -697,7 +700,7 @@ function doExport(jobId) {
     var logEntry = log[s.code] || {};
     return {
       code: s.code,
-      product: s.product || '',
+      product: s.product || logEntry.product || job.name || '',
       address: s.address || '',
       beforeCount: logEntry.beforeCount || 0,
       afterCount: logEntry.afterCount || 0,
