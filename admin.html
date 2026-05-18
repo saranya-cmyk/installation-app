@@ -520,7 +520,7 @@ function buildMsg(jobId, codes) {
   if (!job) return '';
   var nl = '\n';
   var log = codeLog[jobId] || {};
-  var lines = ['📸 รูปติดตั้ง — ' + job.name, ''];
+  var lines = ['📸 รูปติดตั้ง — ' + job.name];
   lines.push('✅ ' + codes.length + ' จุด');
   codes.forEach(function(c) {
     var spot = job.spots.find(function(s){ return s.code === c; });
