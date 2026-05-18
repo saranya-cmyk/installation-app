@@ -167,7 +167,10 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
       </div>
       <div class="jsb-change" onclick="go('s2')">เปลี่ยน</div>
     </div>
-    <div style="font-size:12px;color:var(--mu);margin-bottom:12px">กดที่ Code เพื่อเลือกรูปของจุดนั้นค่ะ</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--mu)">กดที่ Code เพื่อเลือกรูปของจุดนั้นค่ะ</div>
+      <button class="btn btn-ac" id="sendAllCodesBtnTop" onclick="sendAllCodes()" style="display:none;padding:8px 16px;width:auto;font-size:13px">📤 ส่ง</button>
+    </div>
     <div class="code-list" id="codeListEl"></div>
     <div class="prog-wrap" id="progWrap" style="display:none">
       <div class="prog-top"><span id="progTxt">กำลังส่ง...</span><span id="progPct">0%</span></div>
@@ -657,11 +660,13 @@ function setProgress(p, t) {
 }
 
 function showSuccess(result, total) {
-  var fromCodePhotos = Object.keys(codePhotos || {}).filter(function(k){
+  // Use server result first, then count from current session codePhotos only
+  var fromServer = (result.codes || []).length;
+  var fromSession = Object.keys(codePhotos || {}).filter(function(k){
     return codePhotos[k] && codePhotos[k].length > 0;
   }).length;
-  var fromServer = (result.codes || []).length;
-  var codeCount = Math.max(fromCodePhotos, fromServer) || Math.ceil(total / 3);
+  // Server is most accurate, session is fallback
+  var codeCount = fromServer || fromSession;
   document.getElementById('okCodes').textContent = codeCount;
   document.getElementById('okPhotos').textContent = total;
   document.getElementById('okSub').textContent = 'งาน: ' + (selectedJob ? selectedJob.name : '') + '\nระบบจัดโฟลเดอร์ให้แล้วค่ะ';
@@ -685,6 +690,8 @@ function showSuccess(result, total) {
     localStorage.setItem('codeLog', JSON.stringify(codeLog));
   }
 
+  // Clear after success
+  codePhotos = {};
   go('s6');
 }
 
@@ -855,6 +862,8 @@ function renderCodeList() {
   // Show send button if any code has photos
   var hasAny = Object.keys(codePhotos).some(function(k){ return codePhotos[k] && codePhotos[k].length > 0; });
   document.getElementById('sendAllCodesBtn').style.display = hasAny ? 'flex' : 'none';
+  var topBtn = document.getElementById('sendAllCodesBtnTop');
+  if (topBtn) topBtn.style.display = hasAny ? 'inline-block' : 'none';
 }
 
 // Hidden file input for per-code picking
