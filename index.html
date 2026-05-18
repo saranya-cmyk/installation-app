@@ -695,9 +695,15 @@ function newBatch() {
 
 // ── Helpers ───────────────────────────────────────────────────
 function go(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('on'); });
   document.getElementById(id).classList.add('on');
   if (id === 's2') renderJobs();
+  if (id === 's3') {
+    codePhotos = {};
+    document.getElementById('nameChip3').textContent = installerName || '—';
+    document.getElementById('jsbName').textContent = selectedJob ? selectedJob.name : '—';
+    renderCodeList();
+  }
 }
 
 function shake(id) {
