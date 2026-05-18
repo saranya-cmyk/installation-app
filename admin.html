@@ -520,19 +520,18 @@ function buildMsg(jobId, codes) {
   if (!job) return '';
   var nl = '\n';
   var log = codeLog[jobId] || {};
-  var lines = ['📸 Installation Photos — ' + job.name, ''];
-  lines.push('✅ ' + codes.length + ' จุดติดตั้ง');
+  var lines = ['📸 รูปติดตั้ง — ' + job.name, ''];
+  lines.push('✅ ' + codes.length + ' จุด');
   codes.forEach(function(c) {
     var spot = job.spots.find(function(s){ return s.code === c; });
     var logEntry = log[c] || {};
-    // Use after folder URL if available, else main folder
-    var photoUrl = logEntry.afterFolderUrl || logEntry.folderUrl || getFolderUrl(jobId);
-    lines.push('• ' + c + (spot && spot.address ? ' — ' + spot.address.substring(0,35) : ''));
-    if (photoUrl && photoUrl !== 'https://drive.google.com') {
-      lines.push('  🖼️ ' + photoUrl);
+    var photoUrl = logEntry.afterFolderUrl || logEntry.folderUrl || '';
+    lines.push('');
+    lines.push('📍 ' + c + (spot && spot.address ? ' — ' + spot.address.substring(0,40) : ''));
+    if (photoUrl) {
+      lines.push('🖼️ ดูรูป: ' + photoUrl);
     }
   });
-  lines.push('', '📁 โฟลเดอร์งาน: ' + getFolderUrl(jobId));
   return lines.join(nl);
 }
 
