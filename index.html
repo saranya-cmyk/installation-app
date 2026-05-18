@@ -394,11 +394,16 @@ function clearAllFiles() {
 
 function clearFiles() {
   allFiles = [];
-  document.getElementById('fileInput').value = '';
-  document.getElementById('uzBefore').style.display = 'block';
-  document.getElementById('uzAfter').style.display = 'none';
-  document.getElementById('uploadZone').classList.remove('has');
-  document.getElementById('sendBtn').disabled = true;
+  var fi = document.getElementById('fileInput');
+  if (fi) fi.value = '';
+  var uzB = document.getElementById('uzBefore');
+  if (uzB) uzB.style.display = 'block';
+  var uzA = document.getElementById('uzAfter');
+  if (uzA) uzA.style.display = 'none';
+  var uz = document.getElementById('uploadZone');
+  if (uz) uz.classList.remove('has');
+  var sb = document.getElementById('sendBtn');
+  if (sb) sb.disabled = true;
 }
 
 function extractTs(n) { const m = n.match(/^(\d{10,13})/); return m ? +m[1] : null; }
