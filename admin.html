@@ -294,7 +294,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyk27h-PNWHcHr3q2lfDxRIr-9_vUyTiZO2LP_Bnl08JvZlcL-Uj-GZZzxKkMlwHQ-VnQ/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwuaOWlsVuR0CONsrTi6GgB4tESUAOCmBoppB-RlMvVZgyIpyEUI1IXvX1LgvYBTRTl0Q/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
 
@@ -520,18 +520,19 @@ function buildMsg(jobId, codes) {
   if (!job) return '';
   var nl = '\n';
   var log = codeLog[jobId] || {};
-  var lines = ['📸 รูปติดตั้ง — ' + job.name];
-  lines.push('✅ ' + codes.length + ' จุด');
-  codes.forEach(function(c) {
-    var spot = job.spots.find(function(s){ return s.code === c; });
-    var logEntry = log[c] || {};
-    var photoUrl = logEntry.afterFolderUrl || logEntry.folderUrl || '';
-    lines.push('');
-    lines.push('📍 ' + c + (spot && spot.address ? ' — ' + spot.address.substring(0,40) : ''));
-    if (photoUrl) {
-      lines.push('🖼️ ดูรูป: ' + photoUrl);
-    }
-  });
+
+  // Get product folder URL from first sent code
+  var firstCode = codes[0];
+  var logEntry = firstCode ? (log[firstCode] || {}) : {};
+  var productUrl = logEntry.productFolderUrl || logEntry.afterFolderUrl || logEntry.folderUrl || '';
+
+  var lines = [
+    '📸 รูปติดตั้ง — ' + job.name,
+    '✅ ' + codes.length + ' จุด'
+  ];
+  if (productUrl) {
+    lines.push('🖼️ ดูรูปทั้งหมด: ' + productUrl);
+  }
   return lines.join(nl);
 }
 
