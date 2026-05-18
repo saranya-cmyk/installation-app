@@ -294,7 +294,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzuWhk3QyTHlbkQYL1Tok_5Cfl_cNrcO-RZueVMaPwSIRm9mv5futsCdNxy_OurpGEC8w/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyq32m4jCwfLsB54Xs1v5FcbEvPFYSQhZiJvZWFQrkrB4RSoj2HC3UsYs5phfiyviwrNg/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
 
@@ -831,6 +831,21 @@ function createPDF(jobId, btn) {
       btn.textContent = '📄 PDF รูป';
       alert('เกิดข้อผิดพลาด: ' + err.message);
     });
+}
+
+function editJobName(id) {
+  var job = jobs.find(function(j){ return j.id === id; });
+  if (!job) return;
+  var newName = window.prompt('แก้ไขชื่องาน:', job.name);
+  if (!newName || !newName.trim()) return;
+  newName = newName.trim();
+  job.name = newName;
+  save();
+  // Update on server too
+  fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'saveJob', job: job }) })
+    .catch(function(e){ console.error(e); });
+  renderJobCards();
+  renderDashSelect();
 }
 
 function save() { localStorage.setItem('jobs', JSON.stringify(jobs)); }
