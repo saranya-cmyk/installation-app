@@ -540,9 +540,7 @@ function renderJobCards() {
       '<div class="jcard-actions">' +
         '<button class="copy-btn copy-all" onclick="copyJobMsg(\'' + j.id + '\',this)">📋 Copy for Sales</button>' +
         '<button class="copy-btn copy-sel" onclick="openSend(\'' + j.id + '\')">✉️ Select Code</button>' +
-        '<button class="copy-btn" style="background:#1a1a00;border:1px solid #888800;color:#cccc00" onclick="editJobName(\'' + j.id + '\')">✏️ แก้ชื่อ</button>' +
         '<button class="copy-btn" style="background:#1a1a3a;border:1px solid #4444ff;color:#8888ff" onclick="createPDF(\'' + j.id + '\',this)">📄 PDF</button>' +
-        '<button class="copy-btn" style="background:#2a0000;border:1px solid #880000;color:#ff6666" onclick="openDeleteFilesModal(\'' + j.id + '\')">🗑️ ลบรูป</button>' +
       '</div>' +
       '<div class="jcard-del" onclick="deleteJob(\'' + j.id + '\')">🗑 Delete Job</div>' +
     '</div>';
