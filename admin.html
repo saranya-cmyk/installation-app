@@ -710,12 +710,48 @@ function renderDash() {
     dc.insertBefore(expBar, document.getElementById('dashSpots'));
   }
 
-  var filteredSpots = dashFilter === 'all' ? spots : spots.filter(function(s){
-    if (dashFilter === 'pending') return s.status === 'pending';
-    if (dashFilter === 'done') return s.status === 'done';
+  // Build day color map
+  var dayColors = {};
+  var colorPalette = ['#4488ff','#44cc88','#cc44ff','#ffaa00','#ff6688','#00ccff','#88ff44'];
+  var dayIdx = 0;
+  spots.forEach(function(s) {
+    if (s.installedAt) {
+      var day = s.installedAt.split(' ')[0];
+      if (!dayColors[day]) { dayColors[day] = colorPalette[dayIdx % colorPalette.length]; dayIdx++; }
+    }
+  });
+
+  // Day filter buttons
+  var uniqueDays = Object.keys(dayColors);
+  var dayFilterHtml = '';
+  if (uniqueDays.length > 1) {
+    dayFilterHtml = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
+    dayFilterHtml += '<button onclick="setDayFilter(\'all\')" id="df_all" style="padding:4px 12px;border-radius:20px;border:1px solid var(--ac);background:#1a2a00;color:var(--ac);cursor:pointer;font-size:11px;font-family:var(--f)">ทั้งหมด</button>';
+    uniqueDays.forEach(function(day) {
+      dayFilterHtml += '<button onclick="setDayFilter(\'' + day + '\')" id="df_' + day + '" style="padding:4px 12px;border-radius:20px;border:1px solid ' + dayColors[day] + ';background:transparent;color:' + dayColors[day] + ';cursor:pointer;font-size:11px;font-family:var(--f)">📅 ' + day + '</button>';
+    });
+    dayFilterHtml += '</div>';
+  }
+
+  var dayFilter = window._dayFilter || 'all';
+  var filteredSpots = spots.filter(function(s){
+    if (dashFilter !== 'all') {
+      if (dashFilter === 'pending' && s.status !== 'pending') return false;
+      if (dashFilter === 'done' && s.status !== 'done') return false;
+    }
+    if (dayFilter !== 'all' && s.installedAt) {
+      var day = s.installedAt.split(' ')[0];
+      if (day !== dayFilter) return false;
+    }
     return true;
   });
-  document.getElementById('dashSpots').innerHTML = filteredSpots.map(function(s){
+
+  var spotsContainer = document.getElementById('dashSpots');
+  spotsContainer.innerHTML = dayFilterHtml;
+  var spotsList = document.createElement('div');
+  spotsList.className = 'spot-list';
+  spotsList.innerHTML = filteredSpots.map(function(s){
+    var dayColor = (s.installedAt && dayColors[s.installedAt.split(' ')[0]]) ? dayColors[s.installedAt.split(' ')[0]] : '';
     // Check problem log
     var problemLog = JSON.parse(localStorage.getItem('problemLog') || '{}');
     var jobProblems = problemLog[id] || {};
@@ -724,7 +760,8 @@ function renderDash() {
     var badgeTxt = hasProblem ? '⚠️ ' + (jobProblems[s.code].reason || 'มีปัญหา').substring(0,15) : s.status === 'done' ? '✓ Installed' : s.status === 'warn' ? '⚠ Off-plan' : 'Pending';
     var copyBtn = s.status === 'done' ? '<button class="spot-link-btn" onclick="copySpot(\'' + id + '\',\'' + s.code + '\',this)">📋</button>' : '';
     // All codes are clickable - system will check Drive directly
-    var spotClick = 'onclick="openPhotoModal(' + JSON.stringify(id) + ',' + JSON.stringify(s.code) + ',' + JSON.stringify(s.product) + ')" style="cursor:pointer"';
+    var borderStyle = dayColor ? 'border-left:3px solid ' + dayColor + ';' : '';
+    var spotClick = 'onclick="openPhotoModal(' + JSON.stringify(id) + ',' + JSON.stringify(s.code) + ',' + JSON.stringify(s.product) + ')" style="cursor:pointer;' + borderStyle + '"';
     return '<div class="spot ' + s.status + '" ' + spotClick + '>' +
       '<div class="sdot ' + (s.status === 'done' ? 'done' : s.status === 'warn' ? 'warn' : '') + '"></div>' +
       '<div class="scode">' + s.code + '</div>' +
@@ -732,6 +769,12 @@ function renderDash() {
       '<div class="spot-copy">' + copyBtn + (s.status==='warn' ? '<button class="spot-link-btn" style="border-color:var(--warn);color:var(--warn)" onclick="openFixModal(' + JSON.stringify(id) + ',' + JSON.stringify(s.code) + ')">✏️ Fix</button>' : '') + '<div class="sbadge ' + badgeCls + '">' + badgeTxt + '</div></div>' +
     '</div>';
   }).join('');
+  spotsContainer.appendChild(spotsList);
+}
+
+function setDayFilter(day) {
+  window._dayFilter = day;
+  renderDash();
 }
 
 function copySpot(jobId, code, btn) {
