@@ -360,13 +360,24 @@ function loadExcel(file) {
     rawExcelData = [];
     excelCols = [];
 
-    // Try every header row until we get clean data
-    for (var r = 0; r <= 5; r++) {
+    // Try every header row - pick the one with most useful columns
+    var bestScore = 0;
+    for (var r = 0; r <= 8; r++) {
       var attempt = XLSX.utils.sheet_to_json(ws, { defval: '', range: r });
-      if (attempt.length >= 2) {
-        var cols = Object.keys(attempt[0]);
-        var real = cols.filter(function(c){ return String(c).trim() !== ''; });
-        if (real.length >= 2) { rawExcelData = attempt; excelCols = cols; break; }
+      if (attempt.length < 2) continue;
+      var cols = Object.keys(attempt[0]);
+      var colStr = cols.join(' ').toLowerCase();
+      // Score by presence of key columns
+      var score = 0;
+      if (colStr.indexOf('code') > -1) score += 3;
+      if (colStr.indexOf('location') > -1) score += 3;
+      if (colStr.indexOf('media') > -1) score += 2;
+      if (colStr.indexOf('product') > -1 || colStr.indexOf('ad.on') > -1) score += 2;
+      if (colStr.indexOf('co_y') > -1 || colStr.indexOf('lat') > -1) score += 1;
+      if (score > bestScore) {
+        bestScore = score;
+        rawExcelData = attempt;
+        excelCols = cols;
       }
     }
     if (!rawExcelData.length) { alert('ไม่พบข้อมูลในไฟล์'); return; }
@@ -394,7 +405,7 @@ function loadExcel(file) {
 
 function autoDetectAndBuild() {
   var codeCol=null, productCol=null, addrCol=null, latCol=null, lngCol=null;
-  var codePattern = /^[A-Za-z]{1,4}[-]?[0-9]{2,5}$/;
+  var codePattern = /^[A-Za-z]{1,4}[-]?[0-9]{2,5}([A-Za-z]{0,4}[-]?[0-9]{0,5})?$/;
 
   // Detect by column name keywords ONLY - more reliable than data pattern
   function findByName(keywords) {
