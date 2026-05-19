@@ -217,7 +217,10 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
       <div class="ok-stat"><div class="ok-n" id="okCodes">0</div><div class="ok-l">จุดติดตั้ง</div></div>
       <div class="ok-stat"><div class="ok-n" id="okPhotos">0</div><div class="ok-l">รูปทั้งหมด</div></div>
     </div>
-    <button class="btn btn-ac" onclick="newBatch()">ส่งงานใหม่ →</button>
+    <div id="okFolderBtn" style="display:none;margin-bottom:12px">
+    <a id="okFolderLink" href="#" target="_blank" style="display:block;padding:12px;background:#0f2156;border:1px solid #1665c1;border-radius:10px;color:#88aaff;text-align:center;text-decoration:none;font-size:13px">📁 เปิดโฟลเดอร์ใน Drive</a>
+  </div>
+  <button class="btn btn-ac" onclick="newBatch()">ส่งงานใหม่ →</button>
   </div>
 </div>
 
@@ -667,26 +670,32 @@ function setProgress(p, t) {
 }
 
 function showSuccess(result, total) {
-  // Use server result first, then count from current session codePhotos only
   var fromServer = (result.codes || []).length;
   var fromSession = Object.keys(codePhotos || {}).filter(function(k){
     return codePhotos[k] && codePhotos[k].length > 0;
   }).length;
-  // Server is most accurate, session is fallback
   var codeCount = fromServer || fromSession;
+
   document.getElementById('okCodes').textContent = codeCount;
   document.getElementById('okPhotos').textContent = total;
-  document.getElementById('okSub').textContent = 'งาน: ' + (selectedJob ? selectedJob.name : '') + '\nระบบจัดโฟลเดอร์ให้แล้วค่ะ';
 
-  // Save codeLog to localStorage so admin can see folder URLs
+  // Show drive confirmation
+  var codes = result.codes || [];
+  var hasFolder = codes.some(function(c){ return c.folderUrl; });
+  var subText = 'งาน: ' + (selectedJob ? selectedJob.name : '');
+  if (hasFolder) {
+    subText += '\n✅ รูปเข้า Drive แล้วค่ะ';
+  }
+  document.getElementById('okSub').textContent = subText;
+
+  // Save codeLog
   if (result.codes && result.codes.length && selectedJob) {
     var jobId = selectedJob.id;
     var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
     if (!codeLog[jobId]) codeLog[jobId] = {};
     result.codes.forEach(function(c) {
       codeLog[jobId][c.code] = {
-        status: 'sent',
-        count: c.count || 0,
+        status: 'sent', count: c.count || 0,
         method: c.method || 'forced',
         folderUrl: c.folderUrl || '',
         afterFolderUrl: c.afterFolderUrl || c.folderUrl || '',
@@ -697,7 +706,18 @@ function showSuccess(result, total) {
     localStorage.setItem('codeLog', JSON.stringify(codeLog));
   }
 
-  // Clear after success
+  // Show Drive folder link if available
+  var firstCode = codes[0];
+  if (firstCode && firstCode.productFolderUrl) {
+    document.getElementById('okFolderBtn').style.display = 'block';
+    document.getElementById('okFolderLink').href = firstCode.productFolderUrl;
+  } else if (firstCode && firstCode.folderUrl) {
+    document.getElementById('okFolderBtn').style.display = 'block';
+    document.getElementById('okFolderLink').href = firstCode.folderUrl;
+  } else {
+    document.getElementById('okFolderBtn').style.display = 'none';
+  }
+
   codePhotos = {};
   go('s6');
 }
@@ -886,23 +906,46 @@ function renderCodeList() {
 var pickingCode = null;
 function openCodePicker(code) {
   pickingCode = code;
-  var input = document.getElementById('codeFileInput');
-  if (!input) {
-    input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.multiple = true;
-    input.id = 'codeFileInput';
-    input.style.display = 'none';
-    input.onchange = function() {
-      if (!input.files.length) return;
-      codePhotos[pickingCode] = Array.from(input.files);
-      input.value = '';
-      renderCodeList();
-      showCodePreview(pickingCode);
-    };
-    document.body.appendChild(input);
-  }
+  // Show choice: camera or gallery
+  var existing = document.getElementById('photoSourceModal');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'photoSourceModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99;display:flex;align-items:flex-end;padding:16px';
+  modal.innerHTML =
+    '<div style="background:#1a1a1a;border-radius:16px;padding:20px;width:100%;max-width:560px;margin:0 auto">' +
+      '<div style="font-size:14px;font-weight:600;color:#c8f542;margin-bottom:4px">' + code + '</div>' +
+      '<div style="font-size:12px;color:#666;margin-bottom:16px">เลือกรูปจากไหนครับ</div>' +
+      '<div style="display:flex;gap:10px;margin-bottom:10px">' +
+        '<button onclick="pickFromSource(\'' + code + '\',\'camera\')" style="flex:1;padding:16px;background:#0f2156;border:1px solid #1665c1;border-radius:12px;color:#fff;font-size:14px;cursor:pointer;font-family:var(--f)">📷 ถ่ายรูป</button>' +
+        '<button onclick="pickFromSource(\'' + code + '\',\'gallery\')" style="flex:1;padding:16px;background:#222;border:1px solid #333;border-radius:12px;color:#fff;font-size:14px;cursor:pointer;font-family:var(--f)">🖼️ Gallery</button>' +
+      '</div>' +
+      '<button onclick="document.getElementById(\'photoSourceModal\').remove()" style="width:100%;padding:12px;background:transparent;border:1px solid #333;border-radius:12px;color:#666;font-size:13px;cursor:pointer;font-family:var(--f)">ยกเลิก</button>' +
+    '</div>';
+  document.body.appendChild(modal);
+}
+
+function pickFromSource(code, source) {
+  pickingCode = code;
+  var existing = document.getElementById('photoSourceModal');
+  if (existing) existing.remove();
+
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.multiple = source === 'gallery';
+  if (source === 'camera') input.capture = 'environment';
+  input.style.display = 'none';
+  input.onchange = function() {
+    if (!input.files.length) return;
+    if (!codePhotos[pickingCode]) codePhotos[pickingCode] = [];
+    codePhotos[pickingCode] = codePhotos[pickingCode].concat(Array.from(input.files));
+    input.remove();
+    renderCodeList();
+    showCodePreview(pickingCode);
+  };
+  document.body.appendChild(input);
   input.click();
 }
 
