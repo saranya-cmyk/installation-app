@@ -220,10 +220,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
       <div class="ok-stat"><div class="ok-n" id="okCodes">0</div><div class="ok-l">จุดติดตั้ง</div></div>
       <div class="ok-stat"><div class="ok-n" id="okPhotos">0</div><div class="ok-l">รูปทั้งหมด</div></div>
     </div>
-    <div id="okFolderBtn" style="display:none;margin-bottom:12px">
-    <a id="okFolderLink" href="#" target="_blank" style="display:block;padding:12px;background:#0f2156;border:1px solid #1665c1;border-radius:10px;color:#88aaff;text-align:center;text-decoration:none;font-size:13px">📁 เปิดโฟลเดอร์ใน Drive</a>
-  </div>
-  <button class="btn btn-ac" onclick="newBatch()">ส่งงานใหม่ →</button>
+    <button class="btn btn-ac" onclick="newBatch()">ส่งงานใหม่ →</button>
   </div>
 </div>
 
@@ -707,18 +704,6 @@ function showSuccess(result, total) {
       };
     });
     localStorage.setItem('codeLog', JSON.stringify(codeLog));
-  }
-
-  // Show Drive folder link if available
-  var firstCode = codes[0];
-  if (firstCode && firstCode.productFolderUrl) {
-    document.getElementById('okFolderBtn').style.display = 'block';
-    document.getElementById('okFolderLink').href = firstCode.productFolderUrl;
-  } else if (firstCode && firstCode.folderUrl) {
-    document.getElementById('okFolderBtn').style.display = 'block';
-    document.getElementById('okFolderLink').href = firstCode.folderUrl;
-  } else {
-    document.getElementById('okFolderBtn').style.display = 'none';
   }
 
   codePhotos = {};
