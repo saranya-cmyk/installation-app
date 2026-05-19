@@ -933,10 +933,18 @@ function pickFromSource(code, source) {
 
   var input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'image/*';
-  input.multiple = source === 'gallery';
-  if (source === 'camera') input.capture = 'environment';
   input.style.display = 'none';
+
+  if (source === 'camera') {
+    // iOS: capture attribute opens camera sheet
+    input.accept = 'image/*';
+    input.setAttribute('capture', 'environment');
+    input.multiple = false;
+  } else {
+    input.accept = 'image/*';
+    input.multiple = true;
+  }
+
   input.onchange = function() {
     if (!input.files.length) return;
     if (!codePhotos[pickingCode]) codePhotos[pickingCode] = [];
@@ -946,7 +954,7 @@ function pickFromSource(code, source) {
     showCodePreview(pickingCode);
   };
   document.body.appendChild(input);
-  input.click();
+  setTimeout(function(){ input.click(); }, 100);
 }
 
 function closeCodePreview() {
