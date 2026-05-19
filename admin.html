@@ -538,6 +538,7 @@ function renderJobCards() {
         '<button class="copy-btn copy-all" onclick="copyJobMsg(\'' + j.id + '\',this)">📋 Copy for Sales</button>' +
         '<button class="copy-btn copy-sel" onclick="openSend(\'' + j.id + '\')">✉️ Select Code</button>' +
         '<button class="copy-btn" style="background:#1a1a3a;border:1px solid #4444ff;color:#8888ff" onclick="createPDF(\'' + j.id + '\',this)">📄 PDF</button>' +
+        (getJobFolderUrl(j.id) ? '<a class="copy-btn" href="' + getJobFolderUrl(j.id) + '" target="_blank" style="background:#0d1f3c;border:1px solid #1a4a8a;color:#5599ff;text-decoration:none">📁 Drive</a>' : '') +
       '</div>' +
       '<div class="jcard-del" onclick="deleteJob(\'' + j.id + '\')">🗑 Delete Job</div>' +
     '</div>';
@@ -975,6 +976,17 @@ function clearExcel() {
   document.getElementById('excelZone').classList.remove('has');
   document.getElementById('mapperWrap').style.display = 'none';
   rawExcelData = []; excelCols = []; pendingSpots = [];
+}
+
+function getJobFolderUrl(jobId) {
+  var log = codeLog[jobId] || {};
+  var codes = Object.keys(log);
+  for (var i = 0; i < codes.length; i++) {
+    var entry = log[codes[i]];
+    if (entry && entry.productFolderUrl) return entry.productFolderUrl;
+    if (entry && entry.folderUrl) return entry.folderUrl;
+  }
+  return '';
 }
 
 function save() { localStorage.setItem('jobs', JSON.stringify(jobs)); }
