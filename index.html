@@ -164,6 +164,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
       <div>
         <div style="font-size:11px;color:var(--mu);margin-bottom:2px">งานที่เลือก</div>
         <div class="jsb-name" id="jsbName">—</div>
+        <div id="jsbMedia" style="font-size:11px;color:#88aaff;margin-top:2px"></div>
       </div>
       <div class="jsb-change" onclick="go('s2')">เปลี่ยน</div>
     </div>
@@ -300,6 +301,7 @@ function renderJobs() {
     <div class="job-item ${i===0?'sel':''}" onclick="pickJob(this,'${j.id}')">
       <div class="job-dot"></div>
       <div>
+        ${j.media ? `<div style="font-size:11px;color:#88aaff;margin-bottom:2px">📺 ${j.media}</div>` : ''}
         <div class="job-name">${j.name}</div>
         <div class="job-detail">${j.spots.length} จุด${j.dateStart ? ' · ติดตั้ง ' + formatInstallDate(j.dateStart, j.dateEnd) : ''}</div>
       </div>
