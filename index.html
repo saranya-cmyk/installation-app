@@ -168,9 +168,12 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
       </div>
       <div class="jsb-change" onclick="go('s2')">เปลี่ยน</div>
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div style="font-size:12px;color:var(--mu)">กดที่ Code เพื่อเลือกรูปของจุดนั้นค่ะ</div>
       <button class="btn btn-ac" id="sendAllCodesBtnTop" onclick="sendAllCodes()" style="display:none;padding:8px 16px;width:auto;font-size:13px">📤 ส่ง</button>
+    </div>
+    <div style="position:relative;margin-bottom:12px">
+      <input type="text" id="codeSearch" placeholder="🔍 ค้นหา Code หรือที่อยู่..." oninput="filterCodeList(this.value)" autocomplete="off" style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:10px 14px;font-size:14px;color:#f0f0f0;font-family:var(--f);outline:none">
     </div>
     <div class="code-list" id="codeListEl"></div>
     <div class="prog-wrap" id="progWrap" style="display:none">
@@ -856,6 +859,15 @@ function switchMode(m) {
   document.getElementById('mode0').style.display = m===0 ? 'block' : 'none';
   document.getElementById('mode1').style.display = m===1 ? 'block' : 'none';
   if (m===1) renderCodeList();
+}
+
+function filterCodeList(query) {
+  var q = query.toLowerCase().trim();
+  var items = document.querySelectorAll('#codeListEl .code-item');
+  items.forEach(function(item) {
+    var text = item.textContent.toLowerCase();
+    item.style.display = (!q || text.indexOf(q) > -1) ? '' : 'none';
+  });
 }
 
 function renderCodeList() {
