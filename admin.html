@@ -617,7 +617,16 @@ function copyJobMsg(jobId, btn) {
   var log = codeLog[jobId] || {};
   var job = jobs.find(function(j){ return j.id === jobId; });
   if (!job) return;
-  var sent = Object.keys(log).filter(function(k){ return log[k].status === 'sent'; });
+  // Filter to today's date only
+  var today = new Date().toLocaleDateString('th-TH').split(' ')[0];
+  var todaySent = Object.keys(log).filter(function(k){
+    if (log[k].status !== 'sent') return false;
+    var installedAt = log[k].installedAt || '';
+    var installDay = installedAt.split(' ')[0];
+    return installDay === today;
+  });
+  // Fallback to all if no today's data
+  var sent = todaySent.length ? todaySent : Object.keys(log).filter(function(k){ return log[k].status === 'sent'; });
   var msg = buildMsg(jobId, sent);
   navigator.clipboard.writeText(msg).then(function() {
     btn.classList.add('copied'); btn.textContent = '✓ Copied!';
