@@ -172,7 +172,10 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div style="font-size:12px;color:var(--mu)">กดที่ Code เพื่อเลือกรูปของจุดนั้นค่ะ</div>
-      <button class="btn btn-ac" id="sendAllCodesBtnTop" onclick="sendAllCodes()" style="display:none;padding:8px 16px;width:auto;font-size:13px">📤 ส่ง</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ac" id="sendAllCodesBtnTop" onclick="sendAllCodes()" style="display:none;padding:8px 16px;width:auto;font-size:13px">📤 ส่ง</button>
+        <button onclick="openJobProblemModal()" style="padding:8px 14px;background:transparent;border:1px solid #553333;border-radius:8px;color:#ff8866;font-size:12px;cursor:pointer;font-family:var(--f);white-space:nowrap">⚠️ มีปัญหา</button>
+      </div>
     </div>
     <div style="position:relative;margin-bottom:12px">
       <input type="text" id="codeSearch" placeholder="🔍 ค้นหา Code หรือที่อยู่..." oninput="filterCodeList(this.value)" autocomplete="off" style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:10px 14px;font-size:14px;color:#f0f0f0;font-family:var(--f);outline:none">
@@ -183,6 +186,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
       <div class="prog-bar"><div class="prog-fill" id="progFill" style="width:0%"></div></div>
     </div>
     <button class="btn btn-ac" id="sendAllCodesBtn" onclick="sendAllCodes()" style="display:none;margin-top:16px">📤 ส่งทั้งหมด</button>
+    <button onclick="openJobProblemModal()" style="width:100%;margin-top:10px;padding:12px;background:transparent;border:1px solid #553333;border-radius:10px;color:#ff8866;font-size:13px;cursor:pointer;font-family:var(--f)">⚠️ มีปัญหาหน้างาน ติดตั้งไม่ได้วันนี้</button>
   </div>
 </div>
 
@@ -228,7 +232,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script>
 // ── Config ────────────────────────────────────────────────────
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwQdyLvx2kP15TQG3SWhBN9i0aDEyDBq9Tk3UC7rhRmmQvdCeSbsW0AORtrZqhqCKIlNA/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwIbujUp03S0HSLP8m5iXiAzMYANbBhYry2PVtJ3_TmdYlU4sbfrzpW757JlIj1CGGPBQ/exec';
 
 // ── State ─────────────────────────────────────────────────────
 let installerName = localStorage.getItem('installerName') || '';
@@ -959,14 +963,18 @@ function pickFromSource(code, source) {
 var problemCode = null;
 var problemReason = null;
 
-function openProblemModal(code) {
-  problemCode = code;
+function openJobProblemModal() {
+  problemCode = selectedJob ? selectedJob.id : null;
   problemReason = null;
-  document.getElementById('problemModalCode').textContent = code;
+  document.getElementById('problemJobName').textContent = selectedJob ? selectedJob.name : '';
   document.getElementById('problemNote').style.display = 'none';
   document.getElementById('problemNote').value = '';
   document.querySelectorAll('.problem-opt').forEach(function(b){ b.classList.remove('on'); });
   document.getElementById('problemModalBg').classList.add('open');
+}
+
+function openProblemModal(code) {
+  openJobProblemModal();
 }
 
 function closeProblemModal() {
@@ -1003,9 +1011,9 @@ function confirmProblem() {
     method: 'POST',
     body: JSON.stringify({
       action: 'reportProblem',
-      jobId: jobId,
+      jobId: selectedJob ? selectedJob.id : '',
       jobName: selectedJob ? selectedJob.name : '',
-      code: problemCode,
+      code: 'JOB_LEVEL',
       reason: reason,
       installer: installerName,
       timestamp: new Date().toISOString()
@@ -1013,8 +1021,7 @@ function confirmProblem() {
   }).catch(function(){});
 
   closeProblemModal();
-  renderCodeList();
-  alert('รายงานแล้วค่ะ — แอดมินจะรับทราบข้อมูลนี้ค่ะ');
+  alert('แจ้งแอดมินแล้วค่ะ — แอดมินจะรับทราบและแจ้งลูกค้าต่อค่ะ 🙏');
 }
 
 function closeCodePreview() {
