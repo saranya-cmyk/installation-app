@@ -306,6 +306,26 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
   </div>
 </div>
 
+<!-- Edit Date Modal -->
+<div class="modal-bg" id="editDateModalBg">
+  <div class="modal">
+    <div class="modal-title">📅 แก้วันที่ติดตั้ง</div>
+    <div class="modal-sub" id="editDateJobName" style="color:var(--ac);margin-bottom:16px"></div>
+    <div class="field" style="margin-bottom:10px">
+      <label>วันที่เริ่มติดตั้ง</label>
+      <input type="date" id="editDateStart" style="width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none">
+    </div>
+    <div class="field" style="margin-bottom:16px">
+      <label>วันที่สิ้นสุด</label>
+      <input type="date" id="editDateEnd" style="width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-ok" onclick="confirmEditDates()">✓ บันทึก</button>
+      <button class="modal-cancel" onclick="closeEditDateModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Fix Code Modal -->
 <div class="modal-bg" id="fixModalBg">
   <div class="modal">
@@ -544,6 +564,7 @@ function renderJobCards() {
       '<div class="jcard-actions">' +
         '<button class="copy-btn copy-all" onclick="copyJobMsg(\'' + j.id + '\',this)">📋 Copy for Sales</button>' +
         '<button class="copy-btn copy-sel" onclick="openSend(\'' + j.id + '\')">✉️ Select Code</button>' +
+        '<button class="copy-btn" style="background:#1a2a1a;border:1px solid #448844;color:#88cc88" onclick="editJobDates(\'' + j.id + '\')">📅 แก้วันที่</button>' +
         '<button class="copy-btn" style="background:#1a1a3a;border:1px solid #4444ff;color:#8888ff" onclick="createPDF(\'' + j.id + '\',this)">📄 PDF</button>' +
         (getJobFolderUrl(j.id) ? '<a class="copy-btn" href="' + getJobFolderUrl(j.id) + '" target="_blank" style="background:#0d1f3c;border:1px solid #1a4a8a;color:#5599ff;text-decoration:none">📁 Drive</a>' : '') +
       '</div>' +
@@ -1034,6 +1055,34 @@ function clearExcel() {
   document.getElementById('excelZone').classList.remove('has');
   document.getElementById('mapperWrap').style.display = 'none';
   rawExcelData = []; excelCols = []; pendingSpots = [];
+}
+
+function editJobDates(id) {
+  var job = jobs.find(function(j){ return j.id === id; });
+  if (!job) return;
+  window._editDateJobId = id;
+  document.getElementById('editDateJobName').textContent = job.name;
+  document.getElementById('editDateStart').value = job.dateStart ? job.dateStart.substring(0,10) : '';
+  document.getElementById('editDateEnd').value = job.dateEnd ? job.dateEnd.substring(0,10) : '';
+  document.getElementById('editDateModalBg').classList.add('open');
+}
+
+function closeEditDateModal() {
+  document.getElementById('editDateModalBg').classList.remove('open');
+}
+
+function confirmEditDates() {
+  var id = window._editDateJobId;
+  var job = jobs.find(function(j){ return j.id === id; });
+  if (!job) return;
+  job.dateStart = document.getElementById('editDateStart').value;
+  job.dateEnd = document.getElementById('editDateEnd').value;
+  save();
+  fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'saveJob', job: job }) })
+    .catch(function(e){ console.error(e); });
+  closeEditDateModal();
+  renderJobCards();
+  alert('แก้วันที่แล้วค่ะ');
 }
 
 function getJobFolderUrl(jobId) {
