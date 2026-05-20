@@ -976,7 +976,7 @@ function openJobProblemModal() {
   document.getElementById('problemNote').style.display = 'none';
   document.getElementById('problemNote').value = '';
   document.querySelectorAll('.problem-opt').forEach(function(b){ b.classList.remove('on'); });
-  document.getElementById('problemModalBg').classList.add('open');
+  document.getElementById('problemModalBg').style.display = 'flex';
 }
 
 function openProblemModal(code) {
@@ -984,7 +984,7 @@ function openProblemModal(code) {
 }
 
 function closeProblemModal() {
-  document.getElementById('problemModalBg').classList.remove('open');
+  document.getElementById('problemModalBg').style.display = 'none';
   problemCode = null; problemReason = null;
 }
 
