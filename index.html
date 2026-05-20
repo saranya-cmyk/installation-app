@@ -178,9 +178,9 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div style="font-size:12px;color:var(--mu)">กดที่ Code เพื่อเลือกรูปของจุดนั้นค่ะ</div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ac" id="sendAllCodesBtnTop" onclick="sendAllCodes()" style="display:none;padding:8px 16px;width:auto;font-size:13px">📤 ส่ง</button>
-        <button onclick="openJobProblemModal()" style="padding:8px 14px;background:transparent;border:1px solid #553333;border-radius:8px;color:#ff8866;font-size:12px;cursor:pointer;font-family:var(--f);white-space:nowrap">⚠️ มีปัญหา</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="sendAllCodesBtnTop" onclick="sendAllCodes()" style="display:none;padding:8px 16px;background:var(--ac);border:none;border-radius:8px;color:#0f0f0f;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--f)">📤 ส่ง</button>
+        <button onclick="openJobProblemModal()" style="padding:8px 14px;background:transparent;border:1px solid #553333;border-radius:8px;color:#ff8866;font-size:12px;cursor:pointer;font-family:var(--f);white-space:nowrap;-webkit-tap-highlight-color:transparent">⚠️ มีปัญหา</button>
       </div>
     </div>
     <div style="position:relative;margin-bottom:12px">
@@ -238,7 +238,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script>
 // ── Config ────────────────────────────────────────────────────
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwIbujUp03S0HSLP8m5iXiAzMYANbBhYry2PVtJ3_TmdYlU4sbfrzpW757JlIj1CGGPBQ/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxNjEqq385caEprl1BrovWzYfGEroJIlJxS9eCSoOCAkDpK9aNwSYHkHivaSlbWdKF6DQ/exec';
 
 // ── State ─────────────────────────────────────────────────────
 let installerName = localStorage.getItem('installerName') || '';
