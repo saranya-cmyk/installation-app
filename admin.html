@@ -322,7 +322,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwQdyLvx2kP15TQG3SWhBN9i0aDEyDBq9Tk3UC7rhRmmQvdCeSbsW0AORtrZqhqCKIlNA/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwIbujUp03S0HSLP8m5iXiAzMYANbBhYry2PVtJ3_TmdYlU4sbfrzpW757JlIj1CGGPBQ/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
 
@@ -1169,6 +1169,31 @@ function checkNewPhotos() {
         jobs = result.jobs;
         localStorage.setItem('jobs', JSON.stringify(jobs));
       }
+      // Sync install log from server
+      return fetch(SCRIPT_URL + '?action=getInstallLog');
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(logResult){
+      if (logResult.log && logResult.log.length) {
+        codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+        logResult.log.forEach(function(entry) {
+          var jid = entry.jobId;
+          if (!jid) return;
+          if (!codeLog[jid]) codeLog[jid] = {};
+          if (!codeLog[jid][entry.code]) {
+            codeLog[jid][entry.code] = {
+              status: 'sent',
+              count: entry.count || 0,
+              folderUrl: entry.folderUrl || '',
+              productFolderUrl: entry.productFolderUrl || '',
+              installedAt: entry.date || ''
+            };
+          } else if (!codeLog[jid][entry.code].installedAt) {
+            codeLog[jid][entry.code].installedAt = entry.date || '';
+          }
+        });
+        localStorage.setItem('codeLog', JSON.stringify(codeLog));
+      }
       codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
       var total = 0;
       Object.keys(codeLog).forEach(function(jid){
@@ -1187,7 +1212,10 @@ function checkNewPhotos() {
       else _lastSentCount = total;
       renderJobCards();
       if (document.getElementById('t1').classList.contains('on')) renderDash();
-    }).catch(function(){});
+    }).catch(function(){
+      codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+      renderJobCards();
+    });
 }
 checkNewPhotos();
 setInterval(checkNewPhotos, 30000);
