@@ -322,7 +322,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzmOOH85w_ohe06vPaozpjNjLMOyUzMJehbNUznD2de1y61vXenG4JMqor4VuwDHzhUOQ/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwQdyLvx2kP15TQG3SWhBN9i0aDEyDBq9Tk3UC7rhRmmQvdCeSbsW0AORtrZqhqCKIlNA/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
 
@@ -716,7 +716,8 @@ function renderDash() {
   var dayIdx = 0;
   spots.forEach(function(s) {
     if (s.installedAt) {
-      var day = s.installedAt.split(' ')[0];
+      var dayParts = s.installedAt.split(' ');
+      var day = dayParts[0] || s.installedAt;
       if (!dayColors[day]) { dayColors[day] = colorPalette[dayIdx % colorPalette.length]; dayIdx++; }
     }
   });
@@ -740,7 +741,8 @@ function renderDash() {
       if (dashFilter === 'done' && s.status !== 'done') return false;
     }
     if (dayFilter !== 'all' && s.installedAt) {
-      var day = s.installedAt.split(' ')[0];
+      var dayParts2 = s.installedAt.split(' ');
+      var day = dayParts2[0] || s.installedAt;
       if (day !== dayFilter) return false;
     }
     return true;
@@ -751,7 +753,9 @@ function renderDash() {
   var spotsList = document.createElement('div');
   spotsList.className = 'spot-list';
   spotsList.innerHTML = filteredSpots.map(function(s){
-    var dayColor = (s.installedAt && dayColors[s.installedAt.split(' ')[0]]) ? dayColors[s.installedAt.split(' ')[0]] : '';
+    var dayParts3 = s.installedAt ? s.installedAt.split(' ') : [];
+    var dayKey = dayParts3[0] || '';
+    var dayColor = dayKey && dayColors[dayKey] ? dayColors[dayKey] : '';
     // Check problem log
     var problemLog = JSON.parse(localStorage.getItem('problemLog') || '{}');
     var jobProblems = problemLog[id] || {};
@@ -1156,40 +1160,36 @@ function confirmFix() {
   renderJobCards();
 }
 
-var _lastSentCount = 0;
+var _lastSentCount = -1;
 function checkNewPhotos() {
-  var prevLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
   fetch(SCRIPT_URL + '?action=getJobs')
     .then(function(r){ return r.json(); })
     .then(function(result){
-      if (result.jobs && result.jobs.length > 0) {
-        var serverIds = result.jobs.map(function(j){ return j.id; });
-        var localOnly = jobs.filter(function(j){ return serverIds.indexOf(j.id) === -1; });
-        jobs = result.jobs.concat(localOnly);
+      if (result.jobs) {
+        jobs = result.jobs;
         localStorage.setItem('jobs', JSON.stringify(jobs));
       }
       codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
-      // Count total sent
       var total = 0;
       Object.keys(codeLog).forEach(function(jid){
-        Object.keys(codeLog[jid]).forEach(function(code){
-          if (codeLog[jid][code].status === 'sent') total++;
+        Object.keys(codeLog[jid] || {}).forEach(function(code){
+          if (codeLog[jid][code] && codeLog[jid][code].status === 'sent') total++;
         });
       });
-      if (total > _lastSentCount && _lastSentCount > 0) {
+      if (_lastSentCount >= 0 && total > _lastSentCount) {
         var badge = document.getElementById('newPhotoBadge');
-        if (badge) { badge.style.display = 'block'; badge.textContent = '🔔 มีรูปใหม่ ' + (total - _lastSentCount) + ' จุด'; }
+        if (badge) {
+          badge.style.display = 'block';
+          badge.textContent = '🔔 มีรูปใหม่ ' + (total - _lastSentCount) + ' จุด';
+        }
       }
-      _lastSentCount = total;
+      if (_lastSentCount < 0) _lastSentCount = total;
+      else _lastSentCount = total;
       renderJobCards();
       if (document.getElementById('t1').classList.contains('on')) renderDash();
-    }).catch(function(){
-      codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
-      jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
-      renderJobCards();
-      if (document.getElementById('t1').classList.contains('on')) renderDash();
-    });
+    }).catch(function(){});
 }
+checkNewPhotos();
 setInterval(checkNewPhotos, 30000);
 
 function switchTab(i) {
