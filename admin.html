@@ -342,7 +342,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzWuM1zJl2F7SnI0uC7S2LKSLXU1nd5MJ2vfgR9wdZf8I5TFwTBjHMSj9duPJYgZpk0_w/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyv_5vGk-ZDk_I13XNWcDQKWVy_tvCdb_bEg-KbBIB7cpS7FDjnByBCHAqLm3pWuPC9jA/exec';
 var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
 var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
 
@@ -1226,47 +1226,62 @@ function confirmFix() {
 }
 
 var _lastSentCount = -1;
-var _syncDone = false;
 
 function checkNewPhotos() {
-  fetch(SCRIPT_URL + '?action=getJobs')
-    .then(function(r){ return r.json(); })
-    .then(function(result){
-      if (result.jobs) {
-        jobs = result.jobs;
-        localStorage.setItem('jobs', JSON.stringify(jobs));
+  Promise.all([
+    fetch(SCRIPT_URL + '?action=getJobs').then(function(r){ return r.json(); }),
+    fetch(SCRIPT_URL + '?action=getInstallLog').then(function(r){ return r.json(); }),
+    fetch(SCRIPT_URL + '?action=getProblemLog').then(function(r){ return r.json(); })
+  ]).then(function(results) {
+    // Jobs
+    if (results[0].jobs) {
+      jobs = results[0].jobs;
+      localStorage.setItem('jobs', JSON.stringify(jobs));
+    }
+    // Rebuild codeLog from server
+    var newCodeLog = {};
+    if (results[1].log && results[1].log.length) {
+      results[1].log.forEach(function(entry) {
+        if (!entry.jobId) return;
+        if (!newCodeLog[entry.jobId]) newCodeLog[entry.jobId] = {};
+        if (!newCodeLog[entry.jobId][entry.code]) {
+          newCodeLog[entry.jobId][entry.code] = {
+            status: 'sent', count: entry.count || 0,
+            folderUrl: entry.folderUrl || '',
+            productFolderUrl: entry.productFolderUrl || '',
+            installedAt: entry.date || ''
+          };
+        }
+      });
+    }
+    // Merge with local (keep local entries not yet on server)
+    var localLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+    Object.keys(localLog).forEach(function(jid) {
+      if (!newCodeLog[jid]) newCodeLog[jid] = {};
+      Object.keys(localLog[jid]).forEach(function(code) {
+        if (!newCodeLog[jid][code]) newCodeLog[jid][code] = localLog[jid][code];
+      });
+    });
+    codeLog = newCodeLog;
+    localStorage.setItem('codeLog', JSON.stringify(codeLog));
+
+    // Problems
+    if (results[2].problems && results[2].problems.length) {
+      var problemLog = {};
+      results[2].problems.forEach(function(p) {
+        if (!p.jobId) return;
+        if (!problemLog[p.jobId]) problemLog[p.jobId] = [];
+        problemLog[p.jobId].push(p);
+      });
+      var prevProblems = JSON.parse(localStorage.getItem('problemLog') || '{}');
+      var prevCount = Object.values(prevProblems).reduce(function(s,a){ return s+a.length; }, 0);
+      var newCount = Object.values(problemLog).reduce(function(s,a){ return s+a.length; }, 0);
+      if (newCount > prevCount) {
+        var badge = document.getElementById('newPhotoBadge');
+        if (badge) { badge.style.display='block'; badge.style.background='#ff6600'; badge.textContent='⚠️ มีปัญหาหน้างาน'; }
       }
-      // Sync install log and problem log from server
-      return Promise.all([
-        fetch(SCRIPT_URL + '?action=getInstallLog'),
-        fetch(SCRIPT_URL + '?action=getProblemLog')
-      ]);
-    })
-    .then(function(responses){ return Promise.all(responses.map(function(r){ return r.json(); })); })
-    .then(function(results){
-      var logResult = results[0];
-      var problemResult = results[1];
-      // Store problems
-      if (problemResult.problems && problemResult.problems.length) {
-        var problemLog = JSON.parse(localStorage.getItem('problemLog') || '{}');
-        problemResult.problems.forEach(function(p) {
-          if (!p.jobId) return;
-          if (!problemLog[p.jobId]) problemLog[p.jobId] = [];
-          // Add if not duplicate
-          var exists = problemLog[p.jobId].some(function(e){ return e.timestamp === p.timestamp; });
-          if (!exists) {
-            problemLog[p.jobId].push(p);
-            // Show badge
-            var badge = document.getElementById('newPhotoBadge');
-            if (badge) {
-              badge.style.display = 'block';
-              badge.style.background = '#ff6600';
-              badge.textContent = '⚠️ มีปัญหาหน้างาน';
-            }
-          }
-        });
-        localStorage.setItem('problemLog', JSON.stringify(problemLog));
-      }
+      localStorage.setItem('problemLog', JSON.stringify(problemLog));
+    }
       if (logResult.log && logResult.log.length) {
         codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
         logResult.log.forEach(function(entry) {
