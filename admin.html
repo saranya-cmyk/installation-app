@@ -343,8 +343,55 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script>
 var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyv_5vGk-ZDk_I13XNWcDQKWVy_tvCdb_bEg-KbBIB7cpS7FDjnByBCHAqLm3pWuPC9jA/exec';
-var jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
-var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+var jobs = [];
+var codeLog = {};
+
+function initFromServer() {
+  Promise.all([
+    fetch(SCRIPT_URL + '?action=getJobs').then(function(r){ return r.json(); }),
+    fetch(SCRIPT_URL + '?action=getInstallLog').then(function(r){ return r.json(); }),
+    fetch(SCRIPT_URL + '?action=getProblemLog').then(function(r){ return r.json(); })
+  ]).then(function(results) {
+    if (results[0].jobs) {
+      jobs = results[0].jobs;
+      localStorage.setItem('jobs', JSON.stringify(jobs));
+    }
+    codeLog = {};
+    if (results[1].log && results[1].log.length) {
+      results[1].log.forEach(function(entry) {
+        if (!entry.jobId) return;
+        if (!codeLog[entry.jobId]) codeLog[entry.jobId] = {};
+        if (!codeLog[entry.jobId][entry.code]) {
+          codeLog[entry.jobId][entry.code] = {
+            status: 'sent',
+            count: entry.count || 0,
+            folderUrl: entry.folderUrl || '',
+            productFolderUrl: entry.productFolderUrl || '',
+            installedAt: entry.date || ''
+          };
+        }
+      });
+      localStorage.setItem('codeLog', JSON.stringify(codeLog));
+    }
+    if (results[2].problems && results[2].problems.length) {
+      var problemLog = {};
+      results[2].problems.forEach(function(p) {
+        if (!p.jobId) return;
+        if (!problemLog[p.jobId]) problemLog[p.jobId] = [];
+        problemLog[p.jobId].push(p);
+      });
+      localStorage.setItem('problemLog', JSON.stringify(problemLog));
+    }
+    renderJobCards();
+    renderDashSelect();
+    if (document.getElementById('t1').classList.contains('on')) renderDash();
+  }).catch(function() {
+    jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
+    codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+    renderJobCards();
+    renderDashSelect();
+  });
+}
 
 // Sync jobs from server on load
 fetch(SCRIPT_URL + '?action=getJobs')
@@ -1228,6 +1275,7 @@ function confirmFix() {
 var _lastSentCount = -1;
 
 function checkNewPhotos() {
+  var prevTotal = _lastSentCount;
   Promise.all([
     fetch(SCRIPT_URL + '?action=getJobs').then(function(r){ return r.json(); }),
     fetch(SCRIPT_URL + '?action=getInstallLog').then(function(r){ return r.json(); }),
@@ -1341,7 +1389,7 @@ function switchTab(i) {
   if (i===1) { renderDashSelect(); renderDash(); }
 }
 
-renderJobCards();
+initFromServer();
 </script>
 </body>
 </html>
