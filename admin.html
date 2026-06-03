@@ -143,6 +143,16 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 </style>
 </head>
 <body>
+<!-- Loading overlay -->
+<div id="loadingOverlay" style="position:fixed;inset:0;background:#0f0f0f;z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+  <div style="font-size:32px">⏳</div>
+  <div style="font-size:16px;font-weight:600;color:#f0f0f0">กำลังโหลดข้อมูล...</div>
+  <div style="font-size:12px;color:#666">กำลัง sync จาก server</div>
+  <div style="width:200px;height:4px;background:#222;border-radius:2px;overflow:hidden;margin-top:8px">
+    <div id="loadingBar" style="height:100%;background:#c8f542;border-radius:2px;width:0%;transition:width 0.3s"></div>
+  </div>
+</div>
+
 <div class="bar">
   <div class="bar-title">⚙️ Admin</div>
   <div style="display:flex;align-items:center;gap:8px">
@@ -347,10 +357,16 @@ var jobs = [];
 var codeLog = {};
 
 function initFromServer() {
+  // Show loading
+  var overlay = document.getElementById('loadingOverlay');
+  var bar = document.getElementById('loadingBar');
+  if (overlay) overlay.style.display = 'flex';
+  if (bar) bar.style.width = '30%';
+
   Promise.all([
-    fetch(SCRIPT_URL + '?action=getJobs').then(function(r){ return r.json(); }),
-    fetch(SCRIPT_URL + '?action=getInstallLog').then(function(r){ return r.json(); }),
-    fetch(SCRIPT_URL + '?action=getProblemLog').then(function(r){ return r.json(); })
+    fetch(SCRIPT_URL + '?action=getJobs').then(function(r){ if(bar) bar.style.width='60%'; return r.json(); }),
+    fetch(SCRIPT_URL + '?action=getInstallLog').then(function(r){ if(bar) bar.style.width='80%'; return r.json(); }),
+    fetch(SCRIPT_URL + '?action=getProblemLog').then(function(r){ if(bar) bar.style.width='95%'; return r.json(); })
   ]).then(function(results) {
     if (results[0].jobs) {
       jobs = results[0].jobs;
@@ -385,11 +401,18 @@ function initFromServer() {
     renderJobCards();
     renderDashSelect();
     if (document.getElementById('t1').classList.contains('on')) renderDash();
+    // Hide loading
+    setTimeout(function(){
+      var ov = document.getElementById('loadingOverlay');
+      if (ov) { ov.style.opacity='0'; ov.style.transition='opacity 0.4s'; setTimeout(function(){ ov.style.display='none'; }, 400); }
+    }, 300);
   }).catch(function() {
     jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
     codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
     renderJobCards();
     renderDashSelect();
+    var ov = document.getElementById('loadingOverlay');
+    if (ov) ov.style.display = 'none';
   });
 }
 
