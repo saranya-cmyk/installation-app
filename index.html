@@ -775,6 +775,16 @@ function syncJobs() {
   if (stored.length !== jobs.length) {
     jobs = stored;
     if (document.getElementById('s2').classList.contains('on')) renderJobs();
+
+// Warn before closing if unsent photos exist
+window.addEventListener('beforeunload', function(e) {
+  var hasUnsent = Object.keys(codePhotos || {}).some(function(k){ return codePhotos[k] && codePhotos[k].length > 0; });
+  if (hasUnsent) {
+    e.preventDefault();
+    e.returnValue = 'มีรูปที่ยังไม่ได้ส่ง';
+    return e.returnValue;
+  }
+});
   }
 }
 setInterval(syncJobs, 3000);
@@ -1176,7 +1186,7 @@ async function sendAllCodes() {
     var files = codePhotos[code];
     for (var fi = 0; fi < files.length; fi++) {
       done++;
-      setProgress(done/total*50, 'เตรียมรูป ' + done + '/' + total + ' ค่ะ');
+      setProgress(done/total*40, 'เตรียมรูป ' + done + '/' + total + ' ค่ะ');
       try {
         var b64 = await compressImage(files[fi], 800);
         allFileData.push({ name: files[fi].name, type: 'image/jpeg', lastModified: files[fi].lastModified, data: b64, _forceCode: code });
@@ -1187,13 +1197,14 @@ async function sendAllCodes() {
     }
   }
 
-  // Step 2: Send all codes together in batches
+  // Step 2: Send in batches - track failures
   var batchSize = 5;
   var batches = Math.ceil(allFileData.length / batchSize);
+  var failedBatches = [];
 
   for (var b = 0; b < batches; b++) {
     var batch = allFileData.slice(b*batchSize, (b+1)*batchSize);
-    var pct = 50 + Math.round((b+1)/batches*45);
+    var pct = 40 + Math.round((b+1)/batches*40);
     setProgress(pct, 'กำลังส่ง ' + (b+1) + '/' + batches + '...');
     try {
       var result = await uploadWithRetry({
@@ -1207,21 +1218,105 @@ async function sendAllCodes() {
         files: batch,
         timestamp: new Date().toISOString()
       }, 3);
-      if (result && result.codes) {
+      if (result && result.codes && result.codes.length) {
         result.codes.forEach(function(c) {
           var existing = allResults.findIndex(function(r){ return r.code === c.code; });
           if (existing >= 0) allResults[existing] = c;
           else allResults.push(c);
         });
+      } else {
+        failedBatches.push(b);
       }
     } catch(err) {
       console.error('Batch failed:', err.message);
+      failedBatches.push(b);
     }
   }
 
+  // Step 3: Retry failed batches once more (extra safety)
+  if (failedBatches.length > 0) {
+    setProgress(82, 'ส่งซ้ำรอบที่ 2... (' + failedBatches.length + ' ชุด)');
+    var stillFailed = [];
+    for (var rb = 0; rb < failedBatches.length; rb++) {
+      var bIdx = failedBatches[rb];
+      var rBatch = allFileData.slice(bIdx*batchSize, (bIdx+1)*batchSize);
+      try {
+        var rResult = await uploadWithRetry({
+          action: 'uploadBatch',
+          installer: installerName,
+          jobId: sendJob.id,
+          jobName: sendJob.name,
+          spots: sendJob.spots,
+          batchIndex: bIdx,
+          totalBatches: batches,
+          files: rBatch,
+          timestamp: new Date().toISOString()
+        }, 3);
+        if (rResult && rResult.codes && rResult.codes.length) {
+          rResult.codes.forEach(function(c) {
+            var existing = allResults.findIndex(function(r){ return r.code === c.code; });
+            if (existing >= 0) allResults[existing] = c;
+            else allResults.push(c);
+          });
+        } else {
+          stillFailed.push(bIdx);
+        }
+      } catch(err) {
+        stillFailed.push(bIdx);
+      }
+    }
+    failedBatches = stillFailed;
+  }
+
+  // Step 4: VERIFY - every code that was sent must appear in results with folderUrl
+  setProgress(92, 'ตรวจสอบความถูกต้อง...');
+  var confirmedCodes = allResults.filter(function(r){ return r.folderUrl; }).map(function(r){ return r.code; });
+  var missingCodes = codes.filter(function(c){ return confirmedCodes.indexOf(c) === -1; });
+
+  if (missingCodes.length > 0 || failedBatches.length > 0) {
+    // PARTIAL FAILURE - keep photos of failed codes, show retry screen
+    var okCodes = codes.filter(function(c){ return confirmedCodes.indexOf(c) > -1; });
+    // Remove successful codes from codePhotos - keep only failed ones
+    okCodes.forEach(function(c){ delete codePhotos[c]; });
+
+    setProgress(100, '⚠️ ส่งได้บางส่วน');
+    setTimeout(function(){
+      // Save what succeeded to codeLog
+      if (allResults.length) saveCodeLogResults(allResults, sendJob);
+      alert('⚠️ ส่งสำเร็จ ' + okCodes.length + ' จุด\n\n❌ ส่งไม่สำเร็จ ' + missingCodes.length + ' จุด:\n' + missingCodes.join(', ') + '\n\nรูปของจุดที่ไม่สำเร็จยังอยู่ในแอป กด "ส่งทั้งหมด" อีกครั้งเพื่อส่งซ้ำค่ะ');
+      go('s3');
+      renderCodeList();
+      var btn2 = document.getElementById('sendAllCodesBtn');
+      if (btn2) { btn2.disabled = false; btn2.textContent = '📤 ส่งทั้งหมด'; }
+      var btnTop2 = document.getElementById('sendAllCodesBtnTop');
+      if (btnTop2) btnTop2.disabled = false;
+    }, 400);
+    return;
+  }
+
+  // ALL CONFIRMED - safe to clear and show success
   setProgress(100, 'สำเร็จค่ะ! ✓');
   setTimeout(function(){ showSuccess({ codes: allResults }, total, sendJob); }, 400);
 }
+
+function saveCodeLogResults(resultCodes, theJob) {
+  if (!resultCodes || !resultCodes.length || !theJob) return;
+  var jobId = theJob.id;
+  var cLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+  if (!cLog[jobId]) cLog[jobId] = {};
+  resultCodes.forEach(function(c) {
+    cLog[jobId][c.code] = {
+      status: 'sent', count: c.count || 0,
+      method: c.method || 'forced',
+      folderUrl: c.folderUrl || '',
+      afterFolderUrl: c.afterFolderUrl || c.folderUrl || '',
+      productFolderUrl: c.productFolderUrl || '',
+      installedAt: new Date().toLocaleString('th-TH')
+    };
+  });
+  localStorage.setItem('codeLog', JSON.stringify(cLog));
+}
+
 </script>
 
 </body>
