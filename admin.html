@@ -176,11 +176,19 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
     </div>
   </div>
   <div class="field" id="jobMediaField">
-    <label>สื่อ (Media) — ถ้าไม่ระบุ จะดึงจาก Excel อัตโนมัติ</label>
-    <div style="display:flex;gap:8px;align-items:center">
-      <input type="text" id="jobMediaInput" placeholder="เช่น Cookies, Bus Wrap, Static" autocomplete="off" style="flex:1">
-      <button onclick="document.getElementById('jobMediaInput').value=''" style="background:transparent;border:1px solid var(--err);color:var(--err);border-radius:6px;padding:5px 8px;cursor:pointer;font-size:10px;white-space:nowrap;font-family:var(--f)">✕</button>
-    </div>
+    <label>สื่อ (Media) — ถ้าไม่เลือก จะดึงจาก Excel อัตโนมัติ</label>
+    <select id="jobMediaInput" style="width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:12px 14px;font-size:14px;color:var(--tx);font-family:var(--f);outline:none">
+      <option value="">-- ไม่ระบุ (ดึงจาก Excel) --</option>
+      <option value="Serie Poster">Serie Poster</option>
+      <option value="Cookies">Cookies</option>
+      <option value="Metro Poster">Metro Poster</option>
+      <option value="Gateway Billboard">Gateway Billboard</option>
+      <option value="Pole Wrap (เสากลม)">Pole Wrap (เสากลม)</option>
+      <option value="Pole Wrap (เสาเหลี่ยม)">Pole Wrap (เสาเหลี่ยม)</option>
+      <option value="Flyover 2.0">Flyover 2.0</option>
+      <option value="NCA Station">NCA Station</option>
+      <option value="Muvads">Muvads</option>
+    </select>
   </div>
   <div style="display:flex;gap:10px;margin-bottom:14px">
     <div class="field" style="flex:1;margin-bottom:0">
@@ -450,31 +458,50 @@ function loadExcel(file) {
   var reader = new FileReader();
   reader.onload = function(e) {
     var wb = XLSX.read(e.target.result, { type: 'binary' });
-    var ws = wb.Sheets[wb.SheetNames[0]];
     rawExcelData = [];
     excelCols = [];
 
-    // Try every header row - pick the one with most useful columns
+    // Scan ALL sheets and ALL header rows (0-15) - pick best
     var bestScore = 0;
-    for (var r = 0; r <= 8; r++) {
-      var attempt = XLSX.utils.sheet_to_json(ws, { defval: '', range: r });
-      if (attempt.length < 2) continue;
-      var cols = Object.keys(attempt[0]);
-      var colStr = cols.join(' ').toLowerCase();
-      // Score by presence of key columns
-      var score = 0;
-      if (colStr.indexOf('code') > -1) score += 3;
-      if (colStr.indexOf('location') > -1) score += 3;
-      if (colStr.indexOf('media') > -1) score += 2;
-      if (colStr.indexOf('product') > -1 || colStr.indexOf('ad.on') > -1) score += 2;
-      if (colStr.indexOf('co_y') > -1 || colStr.indexOf('lat') > -1) score += 1;
-      if (score > bestScore) {
-        bestScore = score;
-        rawExcelData = attempt;
-        excelCols = cols;
+    for (var sh = 0; sh < wb.SheetNames.length; sh++) {
+      var ws = wb.Sheets[wb.SheetNames[sh]];
+      for (var r = 0; r <= 15; r++) {
+        var attempt;
+        try { attempt = XLSX.utils.sheet_to_json(ws, { defval: '', range: r }); } catch(err) { continue; }
+        if (attempt.length < 1) continue;
+        var cols = Object.keys(attempt[0]);
+        var colStr = cols.join(' ').toLowerCase();
+        var score = 0;
+        // Identity columns (any ONE of these is essential)
+        if (colStr.indexOf('code') > -1) score += 4;
+        if (colStr.indexOf('รหัส') > -1) score += 4;
+        if (colStr.indexOf('ทะเบียน') > -1) score += 4;
+        if (colStr.indexOf('license') > -1) score += 4;
+        if (colStr.indexOf('plate') > -1) score += 4;
+        if (colStr.indexOf('เลขรถ') > -1) score += 4;
+        if (colStr.indexOf('no.') > -1) score += 1;
+        // Location
+        if (colStr.indexOf('location') > -1) score += 3;
+        if (colStr.indexOf('ที่อยู่') > -1) score += 3;
+        if (colStr.indexOf('สถานที่') > -1) score += 3;
+        if (colStr.indexOf('เส้นทาง') > -1) score += 3;
+        if (colStr.indexOf('route') > -1) score += 3;
+        if (colStr.indexOf('สาย') > -1) score += 2;
+        // Other useful
+        if (colStr.indexOf('media') > -1) score += 2;
+        if (colStr.indexOf('สื่อ') > -1) score += 2;
+        if (colStr.indexOf('product') > -1 || colStr.indexOf('ad.on') > -1) score += 2;
+        if (colStr.indexOf('สินค้า') > -1) score += 2;
+        if (colStr.indexOf('co_y') > -1 || colStr.indexOf('lat') > -1) score += 1;
+        if (colStr.indexOf('อู่') > -1 || colStr.indexOf('garage') > -1) score += 1;
+        if (score > bestScore) {
+          bestScore = score;
+          rawExcelData = attempt;
+          excelCols = cols;
+        }
       }
     }
-    if (!rawExcelData.length) { alert('ไม่พบข้อมูลในไฟล์'); return; }
+    if (!rawExcelData.length || bestScore < 4) { alert('ไม่พบข้อมูลที่ใช้ได้ในไฟล์ — ต้องมีคอลัมน์ Code / รหัส / ทะเบียนรถ อย่างใดอย่างหนึ่งค่ะ'); return; }
 
     // Auto-detect columns by data pattern (no header name required)
     autoDetectAndBuild();
@@ -498,10 +525,11 @@ function loadExcel(file) {
 }
 
 function autoDetectAndBuild() {
-  var codeCol=null, productCol=null, addrCol=null, latCol=null, lngCol=null;
+  var codeCol=null, productCol=null, addrCol=null, latCol=null, lngCol=null, mediaCol=null;
   var codePattern = /^[A-Za-z]{1,4}[-]?[0-9]{2,5}([A-Za-z]{0,4}[-]?[0-9]{0,5})?$/;
+  // Thai vehicle plate pattern e.g. 12-3456, 1กข2345, กข-1234
+  var platePattern = /^[0-9]{1,2}[-][0-9]{3,4}$|^[0-9]{1,2}[ก-ฮ]{1,2}[-]?[0-9]{3,4}$|^[ก-ฮ]{1,3}[-]?[0-9]{3,4}$/;
 
-  // Detect by column name keywords ONLY - more reliable than data pattern
   function findByName(keywords) {
     return excelCols.find(function(col) {
       var colName = col.toString().toLowerCase().trim();
@@ -509,30 +537,48 @@ function autoDetectAndBuild() {
     }) || null;
   }
 
-  codeCol    = findByName(['code id','code','รหัส','code.id']);
-  productCol = findByName(['ad.on','product','adsone','สินค้า','campaign','แคมเปญ']);
-  addrCol    = findByName(['location','ที่อยู่','สถานที่','address']);
+  // Identity column - Code OR vehicle plate OR any unique ID
+  codeCol = findByName(['code id','code','รหัส','code.id','ทะเบียนรถ','ทะเบียน','license','plate','เลขรถ','หมายเลขรถ']);
+  productCol = findByName(['ad.on','product','adsone','สินค้า','campaign','แคมเปญ','ลูกค้า','brand']);
+  addrCol    = findByName(['location','ที่อยู่','สถานที่','address','เส้นทาง','route','สาย','พื้นที่','จุดติดตั้ง']);
   latCol     = findByName(['co_y','latitude','lat']);
   lngCol     = findByName(['co_x','longitude','lng','lon']);
-  var mediaCol   = findByName(['media type','media','สื่อ','ประเภท']);
+  mediaCol   = findByName(['media type','media','สื่อ','ประเภทสื่อ']);
 
-  // Fallback by data pattern ONLY for code/GPS columns (NOT product)
-  if (!codeCol || !latCol || !lngCol) {
+  // Fallback by data pattern - check for code OR plate patterns
+  if (!codeCol) {
+    excelCols.forEach(function(col) {
+      if (codeCol) return;
+      var vals = rawExcelData.slice(0,8).map(function(r){ return String(r[col]||'').trim(); }).filter(Boolean);
+      if (!vals.length) return;
+      if (col===productCol||col===addrCol||col===latCol||col===lngCol) return;
+      var matchCount = vals.filter(function(v){ return codePattern.test(v) || platePattern.test(v); }).length;
+      if (matchCount >= Math.min(2, vals.length)) { codeCol = col; }
+    });
+  }
+  if (!latCol || !lngCol) {
     excelCols.forEach(function(col) {
       var vals = rawExcelData.slice(0,5).map(function(r){ return String(r[col]||'').trim(); }).filter(Boolean);
       if (!vals.length) return;
-      if (col===codeCol||col===productCol||col===addrCol||col===latCol||col===lngCol) return;
-      if (!codeCol && vals.some(function(v){ return codePattern.test(v); })) { codeCol = col; return; }
+      if (col===codeCol||col===productCol||col===addrCol) return;
       if (!latCol && vals.every(function(v){ var n=parseFloat(v); return !isNaN(n)&&n>5&&n<21; })) { latCol = col; return; }
       if (!lngCol && vals.every(function(v){ var n=parseFloat(v); return !isNaN(n)&&n>95&&n<110; })) { lngCol = col; return; }
-      if (!addrCol && vals.some(function(v){ return v.length > 15 && isNaN(parseFloat(v)); })) { addrCol = col; return; }
     });
   }
-  // Product MUST come from keyword match only - never guess from data
+  if (!addrCol) {
+    excelCols.forEach(function(col) {
+      if (addrCol) return;
+      if (col===codeCol||col===productCol||col===latCol||col===lngCol) return;
+      var vals = rawExcelData.slice(0,5).map(function(r){ return String(r[col]||'').trim(); }).filter(Boolean);
+      if (vals.some(function(v){ return v.length > 15 && isNaN(parseFloat(v)); })) { addrCol = col; }
+    });
+  }
 
-  // Build spots
+  // Build spots - accept anything non-empty in identity column
   pendingSpots = rawExcelData.filter(function(r){
-    return codeCol && codePattern.test(String(r[codeCol]||'').trim());
+    if (!codeCol) return false;
+    var v = String(r[codeCol]||'').trim();
+    return v.length > 0 && v.length < 30;
   }).map(function(r){
     return {
       code:    String(r[codeCol]||'').trim().toUpperCase(),
