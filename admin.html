@@ -8,6 +8,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin — Installation Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <style>
 :root{--bg:#0f0f0f;--s:#1a1a1a;--s2:#222;--b:#2a2a2a;--ac:#c8f542;--tx:#f0f0f0;--mu:#666;--ok:#4caf50;--warn:#ffa94d;--err:#ff5c5c;--r:10px;--f:'IBM Plex Sans Thai',sans-serif}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -252,6 +254,13 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
     <button onclick="setFilter('all')" id="fAll" style="padding:6px 14px;border-radius:20px;border:1px solid var(--ac);background:#1a2a00;color:var(--ac);cursor:pointer;font-size:12px;font-family:var(--f)">ทั้งหมด</button>
     <button onclick="setFilter('pending')" id="fPending" style="padding:6px 14px;border-radius:20px;border:1px solid var(--b);background:transparent;color:var(--mu);cursor:pointer;font-size:12px;font-family:var(--f)">Pending</button>
     <button onclick="setFilter('done')" id="fDone" style="padding:6px 14px;border-radius:20px;border:1px solid var(--b);background:transparent;color:var(--mu);cursor:pointer;font-size:12px;font-family:var(--f)">✅ ติดแล้ว</button>
+    <button onclick="toggleMap()" id="fMap" style="padding:6px 14px;border-radius:20px;border:1px solid #4488ff;background:transparent;color:#4488ff;cursor:pointer;font-size:12px;font-family:var(--f)">🗺️ แผนที่</button>
+  </div>
+  <div id="mapWrap" style="display:none;margin-bottom:14px;border-radius:12px;overflow:hidden;border:1px solid var(--b)">
+    <div id="spotMap" style="height:420px;width:100%"></div>
+    <div style="background:var(--s2);padding:8px 14px;display:flex;gap:16px;font-size:11px;color:var(--mu)">
+      <span>🟢 ติดแล้ว</span><span>⚪ ยังไม่ติด</span><span>🟠 มีปัญหา</span>
+    </div>
   </div>
   <div id="dashContent" style="display:none">
     <div class="stat-grid">
@@ -262,6 +271,13 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
     <div class="prog-wrap">
       <div class="prog-label"><span id="dsPct" style="color:var(--ac);font-weight:600">0%</span><span id="dsCount" style="color:var(--mu)"></span></div>
       <div class="prog-bar"><div class="prog-fill" id="dsFill" style="width:0%"></div></div>
+    </div>
+    <div style="margin-bottom:14px">
+      <button onclick="toggleMap()" id="mapToggleBtn" style="width:100%;padding:10px;background:var(--s2);border:1px solid var(--b);border-radius:8px;color:var(--tx);font-size:13px;cursor:pointer;font-family:var(--f)">🗺️ แสดงแผนที่จุดติดตั้ง</button>
+      <div id="mapContainer" style="display:none;height:380px;border-radius:10px;overflow:hidden;margin-top:10px;border:1px solid var(--b)"></div>
+      <div id="mapLegend" style="display:none;gap:14px;margin-top:8px;font-size:11px;color:var(--mu);justify-content:center">
+        <span>🟢 ติดแล้ว</span><span>⚪ ยังไม่ติด</span><span>🔴 Off-plan</span>
+      </div>
     </div>
     <div class="spot-list" id="dashSpots"></div>
   </div>
@@ -366,6 +382,8 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
 var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZzGPddIfW6ofHy463oOGOvjUIXYg2nIK154l4gcnUnVyXMHtLAUtdE8ufQUmXeb2hSg/exec';
 var jobs = [];
@@ -942,11 +960,82 @@ function renderDash() {
     '</div>';
   }).join('');
   spotsContainer.appendChild(spotsList);
+  // Refresh map if visible
+  if (mapVisible && spotMap) setTimeout(renderMap, 100);
 }
 
 function setDayFilter(day) {
   window._dayFilter = day;
   renderDash();
+}
+
+// ── Map View ──────────────────────────────────────────────────
+var spotMap = null;
+var mapMarkers = [];
+var mapVisible = false;
+
+function toggleMap() {
+  mapVisible = !mapVisible;
+  var wrap = document.getElementById('mapWrap');
+  var btn = document.getElementById('fMap');
+  wrap.style.display = mapVisible ? 'block' : 'none';
+  if (btn) {
+    btn.style.background = mapVisible ? '#0d1f3c' : 'transparent';
+  }
+  if (mapVisible) {
+    setTimeout(renderMap, 100);
+  }
+}
+
+function renderMap() {
+  var id = document.getElementById('dashSelect').value;
+  if (!id) { alert('เลือกงานก่อนค่ะ'); return; }
+  var job = jobs.find(function(j){ return j.id === id; });
+  if (!job) return;
+
+  var log = codeLog[id] || {};
+  var problemLog = JSON.parse(localStorage.getItem('problemLog') || '{}');
+  var hasProblems = (problemLog[id] || []).length > 0;
+
+  // Init map once
+  if (!spotMap) {
+    spotMap = L.map('spotMap').setView([13.7563, 100.5018], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap', maxZoom: 19
+    }).addTo(spotMap);
+  }
+
+  // Clear old markers
+  mapMarkers.forEach(function(m){ spotMap.removeLayer(m); });
+  mapMarkers = [];
+
+  var bounds = [];
+  job.spots.forEach(function(s) {
+    if (!s.lat || !s.lng) return;
+    var logEntry = log[s.code];
+    var isDone = logEntry && logEntry.status === 'sent';
+    var color = isDone ? '#22bb44' : '#999999';
+    var marker = L.circleMarker([s.lat, s.lng], {
+      radius: 8, fillColor: color, color: '#fff',
+      weight: 2, opacity: 1, fillOpacity: 0.9
+    }).addTo(spotMap);
+
+    var popupHtml = '<div style="font-family:sans-serif;min-width:180px">' +
+      '<b style="font-size:14px">' + s.code + '</b> ' +
+      (isDone ? '<span style="color:#22bb44">✓ ติดแล้ว</span>' : '<span style="color:#999">รอติดตั้ง</span>') +
+      '<br><span style="font-size:12px;color:#555">' + (s.address||'') + '</span>' +
+      (isDone && logEntry.folderUrl ? '<br><a href="' + logEntry.folderUrl + '" target="_blank" style="font-size:12px">📁 ดูรูป</a>' : '') +
+      (isDone && logEntry.installedAt ? '<br><span style="font-size:11px;color:#888">📅 ' + logEntry.installedAt + '</span>' : '') +
+      '</div>';
+    marker.bindPopup(popupHtml);
+    mapMarkers.push(marker);
+    bounds.push([s.lat, s.lng]);
+  });
+
+  if (bounds.length) {
+    spotMap.fitBounds(bounds, { padding: [30, 30] });
+  }
+  setTimeout(function(){ spotMap.invalidateSize(); }, 200);
 }
 
 function copySpot(jobId, code, btn) {
