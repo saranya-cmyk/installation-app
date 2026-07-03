@@ -313,7 +313,7 @@ function renderJobs() {
     return;
   }
   el.innerHTML = jobs.map((j, i) => `
-    <div class="job-item ${i===0?'sel':''}" onclick="pickJob(this,'${j.id}')">
+    <div class="job-item" data-jobid="${j.id}" onclick="pickJob(this,'${j.id}')">
       <div class="job-dot"></div>
       <div>
         ${j.media ? `<div style="font-size:11px;color:#88aaff;margin-bottom:2px">📺 ${j.media}</div>` : ''}
@@ -321,22 +321,44 @@ function renderJobs() {
         <div class="job-detail">${j.spots.length} จุด${j.dateStart ? ' · ติดตั้ง ' + formatInstallDate(j.dateStart, j.dateEnd) : ''}</div>
       </div>
     </div>`).join('');
-  if (jobs.length) {
-    selectedJob = jobs[0];
-    document.getElementById('pickJobBtn').disabled = false;
+  // NEVER auto-select. Restore user's previous selection only if it still exists.
+  if (selectedJob) {
+    var still = jobs.find(function(j){ return j.id === selectedJob.id; });
+    if (still) {
+      selectedJob = still;
+      var selEl = el.querySelector('.job-item[data-jobid="' + still.id + '"]');
+      if (selEl) selEl.classList.add('sel');
+      document.getElementById('pickJobBtn').disabled = false;
+    } else {
+      selectedJob = null;
+      document.getElementById('pickJobBtn').disabled = true;
+    }
+  } else {
+    document.getElementById('pickJobBtn').disabled = true;
   }
 }
 
 function pickJob(el, id) {
   document.querySelectorAll('.job-item').forEach(x => x.classList.remove('sel'));
   el.classList.add('sel');
-  selectedJob = jobs.find(j => j.id === id);
+  var newJob = jobs.find(j => j.id === id);
+  // Clear photos if switching to a different job
+  if (selectedJob && selectedJob.id !== id) {
+    codePhotos = {};
+  }
+  selectedJob = newJob;
+  sessionStorage.setItem('selectedJobId', id);
   document.getElementById('pickJobBtn').disabled = false;
 }
 
 function goUpload() {
-  if (!selectedJob) return;
+  if (!selectedJob) { alert('กรุณาเลือกงานก่อนค่ะ'); return; }
   document.getElementById('jsbName').textContent = selectedJob.name;
+  var mediaEl = document.getElementById('jsbMedia');
+  if (mediaEl) mediaEl.textContent = selectedJob.media ? '📺 ' + selectedJob.media : '';
+  var searchEl = document.getElementById('codeSearch');
+  if (searchEl) searchEl.value = '';
+  renderCodeList();
   go('s3');
 }
 
@@ -663,7 +685,7 @@ async function doUpload() {
   }
 
   setProgress(100, 'สำเร็จค่ะ! ✓');
-  setTimeout(function(){ showSuccess({ codes: allResults }, total); }, 400);
+  setTimeout(function(){ showSuccess({ codes: allResults }, total, sendJob); }, 400);
 }
 
 function toB64(f) {
@@ -681,7 +703,8 @@ function setProgress(p, t) {
   document.getElementById('progTxt').textContent = t;
 }
 
-function showSuccess(result, total) {
+function showSuccess(result, total, jobUsed) {
+  var theJob = jobUsed || selectedJob;
   var fromServer = (result.codes || []).length;
   var fromSession = Object.keys(codePhotos || {}).filter(function(k){
     return codePhotos[k] && codePhotos[k].length > 0;
@@ -694,15 +717,15 @@ function showSuccess(result, total) {
   // Show drive confirmation
   var codes = result.codes || [];
   var hasFolder = codes.some(function(c){ return c.folderUrl; });
-  var subText = 'งาน: ' + (selectedJob ? selectedJob.name : '');
+  var subText = 'งาน: ' + (theJob ? theJob.name : '');
   if (hasFolder) {
     subText += '\n✅ รูปเข้า Drive แล้วค่ะ';
   }
   document.getElementById('okSub').textContent = subText;
 
   // Save codeLog
-  if (result.codes && result.codes.length && selectedJob) {
-    var jobId = selectedJob.id;
+  if (result.codes && result.codes.length && theJob) {
+    var jobId = theJob.id;
     var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
     if (!codeLog[jobId]) codeLog[jobId] = {};
     result.codes.forEach(function(c) {
@@ -925,11 +948,19 @@ function renderCodeList() {
     el.appendChild(div);
   });
 
-  // Show send button if any code has photos
+  // Show send button if any code has photos - and re-enable them
   var hasAny = Object.keys(codePhotos).some(function(k){ return codePhotos[k] && codePhotos[k].length > 0; });
-  document.getElementById('sendAllCodesBtn').style.display = hasAny ? 'flex' : 'none';
+  var sendBtn = document.getElementById('sendAllCodesBtn');
+  if (sendBtn) {
+    sendBtn.style.display = hasAny ? 'flex' : 'none';
+    sendBtn.disabled = false;
+    sendBtn.textContent = '📤 ส่งทั้งหมด';
+  }
   var topBtn = document.getElementById('sendAllCodesBtnTop');
-  if (topBtn) topBtn.style.display = hasAny ? 'inline-block' : 'none';
+  if (topBtn) {
+    topBtn.style.display = hasAny ? 'inline-block' : 'none';
+    topBtn.disabled = false;
+  }
 }
 
 // Hidden file input for per-code picking
@@ -1107,13 +1138,33 @@ function deletePhotoFromPreview(code, idx) {
 }
 
 async function sendAllCodes() {
+  // Validate job selection first
+  if (!selectedJob || !selectedJob.id) {
+    alert('กรุณาเลือกงานก่อนค่ะ');
+    return;
+  }
+  // Snapshot the job NOW - so background sync can't change it mid-send
+  var sendJob = JSON.parse(JSON.stringify(selectedJob));
+
+  // Validate codes belong to this job
+  var jobCodes = sendJob.spots.map(function(s){ return s.code; });
+  var codes = Object.keys(codePhotos).filter(function(k){ return codePhotos[k] && codePhotos[k].length > 0; });
+  var wrongCodes = codes.filter(function(c){ return jobCodes.indexOf(c) === -1; });
+  if (wrongCodes.length > 0) {
+    if (!confirm('⚠️ Code เหล่านี้ไม่อยู่ในงาน "' + sendJob.name + '":\n' + wrongCodes.join(', ') + '\n\nยังต้องการส่งต่อไหมคะ?')) {
+      return;
+    }
+  }
+  if (!codes.length) {
+    alert('ยังไม่มีรูปที่เลือกไว้ค่ะ');
+    return;
+  }
+
   var btn = document.getElementById('sendAllCodesBtn');
   var btnTop = document.getElementById('sendAllCodesBtnTop');
   if (btn) { btn.disabled = true; btn.textContent = 'กำลังส่ง...'; }
   if (btnTop) { btnTop.disabled = true; }
   go('s5');
-
-  var codes = Object.keys(codePhotos).filter(function(k){ return codePhotos[k] && codePhotos[k].length > 0; });
   var total = codes.reduce(function(s,k){ return s + codePhotos[k].length; }, 0);
   var done = 0;
   var allResults = [];
@@ -1148,9 +1199,9 @@ async function sendAllCodes() {
       var result = await uploadWithRetry({
         action: 'uploadBatch',
         installer: installerName,
-        jobId: selectedJob.id,
-        jobName: selectedJob.name,
-        spots: selectedJob.spots,
+        jobId: sendJob.id,
+        jobName: sendJob.name,
+        spots: sendJob.spots,
         batchIndex: b,
         totalBatches: batches,
         files: batch,
@@ -1169,7 +1220,7 @@ async function sendAllCodes() {
   }
 
   setProgress(100, 'สำเร็จค่ะ! ✓');
-  setTimeout(function(){ showSuccess({ codes: allResults }, total); }, 400);
+  setTimeout(function(){ showSuccess({ codes: allResults }, total, sendJob); }, 400);
 }
 </script>
 
