@@ -175,6 +175,13 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
       <button onclick="document.getElementById('jobNameInput').value='';document.getElementById('jobNameInput').focus()" style="background:transparent;border:1px solid var(--err);color:var(--err);border-radius:6px;padding:5px 8px;cursor:pointer;font-size:10px;white-space:nowrap;font-family:var(--f)">✕</button>
     </div>
   </div>
+  <div class="field" id="jobMediaField">
+    <label>สื่อ (Media) — ถ้าไม่ระบุ จะดึงจาก Excel อัตโนมัติ</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" id="jobMediaInput" placeholder="เช่น Cookies, Bus Wrap, Static" autocomplete="off" style="flex:1">
+      <button onclick="document.getElementById('jobMediaInput').value=''" style="background:transparent;border:1px solid var(--err);color:var(--err);border-radius:6px;padding:5px 8px;cursor:pointer;font-size:10px;white-space:nowrap;font-family:var(--f)">✕</button>
+    </div>
+  </div>
   <div style="display:flex;gap:10px;margin-bottom:14px">
     <div class="field" style="flex:1;margin-bottom:0">
       <label>วันที่เริ่มติดตั้ง</label>
@@ -577,15 +584,22 @@ function createJob() {
 
   var dateStart = document.getElementById('jobDateStart').value;
   var dateEnd   = document.getElementById('jobDateEnd').value;
+  var manualMedia = document.getElementById('jobMediaInput').value.trim();
+  var mediaStr;
+  if (manualMedia) {
+    mediaStr = manualMedia;
+  } else {
     // Get unique media types from spots
-  var mediaTypes = [];
-  pendingSpots.forEach(function(s) {
-    if (s.media && mediaTypes.indexOf(s.media) === -1) mediaTypes.push(s.media);
-  });
+    var mediaTypes = [];
+    pendingSpots.forEach(function(s) {
+      if (s.media && mediaTypes.indexOf(s.media) === -1) mediaTypes.push(s.media);
+    });
+    mediaStr = mediaTypes.join(', ');
+  }
   var job = { id: 'j_' + Date.now(), name: name, spots: pendingSpots,
     created: new Date().toLocaleString('th-TH'),
     dateStart: dateStart, dateEnd: dateEnd,
-    media: mediaTypes.join(', ') };
+    media: mediaStr };
   jobs.unshift(job);
   save();
   // Save to server so installers can see it
@@ -593,6 +607,7 @@ function createJob() {
     .catch(function(e){ console.error('Save job failed:', e); });
 
   document.getElementById('jobNameInput').value = '';
+  document.getElementById('jobMediaInput').value = '';
   document.getElementById('jobDateStart').value = '';
   document.getElementById('jobDateEnd').value = '';
   document.getElementById('excelInput').value = '';
