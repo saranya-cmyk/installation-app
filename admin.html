@@ -772,12 +772,13 @@ function copyJobMsg(jobId, btn) {
   var job = jobs.find(function(j){ return j.id === jobId; });
   if (!job) return;
   // Filter to today's date only
-  var today = new Date().toLocaleDateString('th-TH').split(' ')[0];
+  var now = new Date();
+  var todayISO = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+  var todayThai = now.toLocaleDateString('th-TH').split(' ')[0];
   var todaySent = Object.keys(log).filter(function(k){
     if (log[k].status !== 'sent') return false;
-    var installedAt = log[k].installedAt || '';
-    var installDay = installedAt.split(' ')[0];
-    return installDay === today;
+    var installDay = normalizeDay(log[k].installedAt || '');
+    return installDay === todayISO || installDay === todayThai;
   });
   // Fallback to all if no today's data
   var sent = todaySent.length ? todaySent : Object.keys(log).filter(function(k){ return log[k].status === 'sent'; });
@@ -907,9 +908,8 @@ function renderDash() {
   var dayIdx = 0;
   spots.forEach(function(s) {
     if (s.installedAt) {
-      var dayParts = s.installedAt.split(' ');
-      var day = dayParts[0] || s.installedAt;
-      if (!dayColors[day]) { dayColors[day] = colorPalette[dayIdx % colorPalette.length]; dayIdx++; }
+      var day = normalizeDay(s.installedAt);
+      if (day && !dayColors[day]) { dayColors[day] = colorPalette[dayIdx % colorPalette.length]; dayIdx++; }
     }
   });
 
@@ -932,9 +932,7 @@ function renderDash() {
       if (dashFilter === 'done' && s.status !== 'done') return false;
     }
     if (dayFilter !== 'all' && s.installedAt) {
-      var dayParts2 = s.installedAt.split(' ');
-      var day = dayParts2[0] || s.installedAt;
-      if (day !== dayFilter) return false;
+      if (normalizeDay(s.installedAt) !== dayFilter) return false;
     }
     return true;
   });
@@ -944,8 +942,7 @@ function renderDash() {
   var spotsList = document.createElement('div');
   spotsList.className = 'spot-list';
   spotsList.innerHTML = filteredSpots.map(function(s){
-    var dayParts3 = s.installedAt ? s.installedAt.split(' ') : [];
-    var dayKey = dayParts3[0] || '';
+    var dayKey = s.installedAt ? normalizeDay(s.installedAt) : '';
     var dayColor = dayKey && dayColors[dayKey] ? dayColors[dayKey] : '';
     // Check problem log
     var problemLog = JSON.parse(localStorage.getItem('problemLog') || '{}');
@@ -967,6 +964,22 @@ function renderDash() {
   spotsContainer.appendChild(spotsList);
   // Refresh map if visible
   if (mapVisible && spotMap) setTimeout(renderMap, 100);
+}
+
+function normalizeDay(v) {
+  var s = String(v || '').trim();
+  if (!s) return '';
+  // ISO format: 2026-05-20T17:00:00.000Z -> convert to Bangkok date
+  if (s.indexOf('T') > -1) {
+    var d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      // Bangkok = UTC+7
+      var bk = new Date(d.getTime() + 7*3600*1000);
+      return bk.getUTCFullYear() + '-' + String(bk.getUTCMonth()+1).padStart(2,'0') + '-' + String(bk.getUTCDate()).padStart(2,'0');
+    }
+  }
+  // Thai locale: "20/5/2569 18:30" -> take date part
+  return s.split(' ')[0];
 }
 
 function setDayFilter(day) {
