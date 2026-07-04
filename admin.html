@@ -554,19 +554,37 @@ function autoDetectAndBuild() {
   var platePattern = /^[0-9]{1,2}[-][0-9]{3,4}$|^[0-9]{1,2}[ก-ฮ]{1,2}[-]?[0-9]{3,4}$|^[ก-ฮ]{1,3}[-]?[0-9]{3,4}$/;
 
   function findByName(keywords) {
-    return excelCols.find(function(col) {
-      var colName = col.toString().toLowerCase().trim();
-      return keywords.some(function(k){ return colName.indexOf(k.toLowerCase()) > -1; });
-    }) || null;
+    // Pass 1: exact match
+    for (var ki = 0; ki < keywords.length; ki++) {
+      var exact = excelCols.find(function(col) {
+        return col.toString().toLowerCase().trim() === keywords[ki].toLowerCase();
+      });
+      if (exact) return exact;
+    }
+    // Pass 2: contains
+    for (var ki2 = 0; ki2 < keywords.length; ki2++) {
+      var partial = excelCols.find(function(col) {
+        return col.toString().toLowerCase().trim().indexOf(keywords[ki2].toLowerCase()) > -1;
+      });
+      if (partial) return partial;
+    }
+    return null;
   }
 
-  // Identity column - Code OR vehicle plate OR any unique ID
-  codeCol = findByName(['code id','code','รหัส','code.id','ทะเบียนรถ','ทะเบียน','license','plate','เลขรถ','หมายเลขรถ']);
-  productCol = findByName(['ad.on','product','adsone','สินค้า','campaign','แคมเปญ','ลูกค้า','brand']);
-  addrCol    = findByName(['location','ที่อยู่','สถานที่','address','เส้นทาง','route','สาย','พื้นที่','จุดติดตั้ง']);
+  // Identity: ทะเบียนรถ first (bus), then Code (billboard)
+  codeCol = findByName(['ทะเบียนรถ','code id','code','รหัส','code.id','license plate','license','plate','เลขรถ','หมายเลขรถ','ทะเบียน']);
+  // Product: โฆษณา (bus = brand name), then standard
+  productCol = findByName(['โฆษณา','ad.on','product','adsone','campaign','แคมเปญ','ลูกค้า','brand','สินค้า']);
+  addrCol    = findByName(['location','ที่อยู่','สถานที่','address','เส้นทาง','route','จุดติดตั้ง','พื้นที่']);
   latCol     = findByName(['co_y','latitude','lat']);
   lngCol     = findByName(['co_x','longitude','lng','lon']);
-  mediaCol   = findByName(['media type','media','สื่อ','ประเภทสื่อ']);
+  mediaCol   = findByName(['media type','ประเภทโฆษณา','media','สื่อ','ประเภทสื่อ']);
+
+  // Bus-specific: build address from สาย + อู่ + หมายเลขรถ if no address col
+  var busLine = findByName(['สาย']);
+  var busGarage = findByName(['อู่']);
+  var busNum = findByName(['หมายเลขรถ']);
+  var isBusFile = busLine && busGarage && codeCol;
 
   // Fallback by data pattern - check for code OR plate patterns
   if (!codeCol) {
@@ -598,15 +616,32 @@ function autoDetectAndBuild() {
   }
 
   // Build spots - accept anything non-empty in identity column
+  var seen = {};
   pendingSpots = rawExcelData.filter(function(r){
     if (!codeCol) return false;
     var v = String(r[codeCol]||'').trim();
-    return v.length > 0 && v.length < 30;
+    if (!(v.length > 0 && v.length < 30)) return false;
+    // Skip duplicates (same vehicle can appear twice)
+    var key = v.toUpperCase();
+    if (seen[key]) return false;
+    seen[key] = true;
+    return true;
   }).map(function(r){
+    var addr = '';
+    if (addrCol) {
+      addr = String(r[addrCol]||'').trim();
+    } else if (isBusFile) {
+      // Bus: address = สาย + อู่ + เบอร์รถ
+      var parts = [];
+      if (busLine && r[busLine]) parts.push('สาย ' + String(r[busLine]).trim());
+      if (busGarage && r[busGarage]) parts.push('อู่' + String(r[busGarage]).trim());
+      if (busNum && r[busNum]) parts.push('รถ ' + String(r[busNum]).trim());
+      addr = parts.join(' · ');
+    }
     return {
       code:    String(r[codeCol]||'').trim().toUpperCase(),
       product: productCol ? String(r[productCol]||'').trim().split('_')[0].trim() : '',
-      address: addrCol    ? String(r[addrCol]||'').trim()    : '',
+      address: addr,
       lat:     latCol     ? parseFloat(r[latCol])  || null   : null,
       lng:     lngCol     ? parseFloat(r[lngCol])  || null   : null,
       media:   mediaCol   ? String(r[mediaCol]||'').trim()   : '',
