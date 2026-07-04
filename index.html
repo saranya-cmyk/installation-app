@@ -776,6 +776,11 @@ function syncJobs() {
     jobs = stored;
     if (document.getElementById('s2').classList.contains('on')) renderJobs();
 
+// Register service worker for PWA
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(function(){});
+}
+
 // Warn before closing if unsent photos exist
 window.addEventListener('beforeunload', function(e) {
   var hasUnsent = Object.keys(codePhotos || {}).some(function(k){ return codePhotos[k] && codePhotos[k].length > 0; });
