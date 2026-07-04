@@ -1,13 +1,7 @@
-// Plan B Installation App - Service Worker
-var CACHE_NAME = 'planb-install-v1';
-var urlsToCache = ['./index.html', './admin.html', './manifest.json', './icon-192.png'];
+// Plan B Installation App - Service Worker v2
+var CACHE_NAME = 'planb-v2';
 
 self.addEventListener('install', function(event) {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(function(cache) {
-      return cache.addAll(urlsToCache).catch(function(){});
-    })
-  );
   self.skipWaiting();
 });
 
@@ -15,18 +9,37 @@ self.addEventListener('activate', function(event) {
   event.waitUntil(
     caches.keys().then(function(names) {
       return Promise.all(names.map(function(name) {
-        if (name !== CACHE_NAME) return caches.delete(name);
+        return caches.delete(name);
       }));
     })
   );
   self.clients.claim();
 });
 
-// Network-first for everything (app needs fresh data), fallback to cache
+// ALWAYS network-first for HTML - never serve stale pages
 self.addEventListener('fetch', function(event) {
   if (event.request.method !== 'GET') return;
+  var url = event.request.url;
+
+  // HTML pages: network only, no cache (prevents admin/installer mixing)
+  if (url.indexOf('.html') > -1 || url.endsWith('/') || url.indexOf('installation-app') > -1 && url.indexOf('.') === -1) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' }).catch(function() {
+        return caches.match(event.request);
+      })
+    );
+    return;
+  }
+
+  // Static assets (icons, manifest): network first, cache fallback
   event.respondWith(
     fetch(event.request).then(function(response) {
+      if (response.ok) {
+        var clone = response.clone();
+        caches.open(CACHE_NAME).then(function(cache) {
+          cache.put(event.request, clone);
+        });
+      }
       return response;
     }).catch(function() {
       return caches.match(event.request);
