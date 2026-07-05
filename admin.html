@@ -986,45 +986,51 @@ function renderDashSelect() {
     if (!_dashMediaGroups[m]) _dashMediaGroups[m] = [];
     _dashMediaGroups[m].push(j);
   });
+  drawMediaChips();
+  // Re-draw job chips if a media is already selected and still valid
+  if (_selectedMedia && _dashMediaGroups[_selectedMedia]) {
+    drawJobChips(_selectedMedia);
+  } else {
+    _selectedMedia = null;
+    var wrap = document.getElementById('jobChipsWrap');
+    if (wrap) wrap.style.display = 'none';
+  }
+}
 
+function drawMediaChips() {
   var mediaKeys = Object.keys(_dashMediaGroups).sort(function(a,b){
     if (a === '__nomedia__') return 1;
     if (b === '__nomedia__') return -1;
     return a.localeCompare(b);
   });
-
   var chipsEl = document.getElementById('mediaChips');
   if (!mediaKeys.length) {
     chipsEl.innerHTML = '<div style="color:var(--mu);font-size:13px">ยังไม่มีงาน</div>';
     return;
   }
-
   chipsEl.innerHTML = mediaKeys.map(function(m) {
     var count = _dashMediaGroups[m].length;
     var label = m === '__nomedia__' ? '📋 ไม่ระบุสื่อ' : '📺 ' + m;
     var isActive = _selectedMedia === m;
-    return '<button onclick="selectDashMedia(\'' + m.replace(/'/g,"\\'") + '\')" ' +
+    return '<button data-media="' + encodeURIComponent(m) + '" onclick="selectDashMedia(decodeURIComponent(this.getAttribute(\'data-media\')))" ' +
       'style="padding:10px 16px;border-radius:24px;border:1px solid ' + (isActive ? '#4488ff' : 'var(--b)') + ';' +
       'background:' + (isActive ? '#0d2244' : 'var(--s2)') + ';color:' + (isActive ? '#88bbff' : 'var(--tx)') + ';' +
       'cursor:pointer;font-size:13px;font-family:var(--f);font-weight:' + (isActive ? '600' : '400') + '">' +
       label + ' <span style="opacity:.6">(' + count + ')</span></button>';
   }).join('');
-
-  // Keep selection if still valid
-  if (_selectedMedia && _dashMediaGroups[_selectedMedia]) {
-    selectDashMedia(_selectedMedia);
-  }
 }
 
 function selectDashMedia(media) {
   _selectedMedia = media;
-  renderDashSelect(); // refresh chip highlight
+  drawMediaChips();      // update highlight only - NO recursion
+  drawJobChips(media);   // show jobs in this media
+}
 
+function drawJobChips(media) {
   var jobsInMedia = _dashMediaGroups[media] || [];
   var wrap = document.getElementById('jobChipsWrap');
   var jc = document.getElementById('jobChips');
   wrap.style.display = 'block';
-
   var sel = document.getElementById('dashSelect');
   var currentJob = sel.value;
 
@@ -1034,7 +1040,7 @@ function selectDashMedia(media) {
     var done = sent.filter(function(c){ return j.spots.find(function(s){ return s.code === c; }); }).length;
     var pct = Math.round(done / (j.spots.length || 1) * 100);
     var isActive = currentJob === j.id;
-    return '<button onclick="pickDashJob(\'' + j.id + '\')" ' +
+    return '<button data-jobid="' + j.id + '" onclick="pickDashJob(this.getAttribute(\'data-jobid\'))" ' +
       'style="padding:10px 14px;border-radius:12px;border:1px solid ' + (isActive ? '#44cc88' : 'var(--b)') + ';' +
       'background:' + (isActive ? '#0d2a1a' : 'var(--s2)') + ';color:' + (isActive ? '#88ffbb' : 'var(--tx)') + ';' +
       'cursor:pointer;font-size:13px;font-family:var(--f);text-align:left">' +
@@ -1047,7 +1053,7 @@ function selectDashMedia(media) {
 function pickDashJob(jobId) {
   var sel = document.getElementById('dashSelect');
   sel.value = jobId;
-  if (_selectedMedia) selectDashMedia(_selectedMedia); // refresh job chip highlight
+  drawJobChips(_selectedMedia); // refresh highlight only
   renderDash();
 }
 
