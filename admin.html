@@ -775,10 +775,7 @@ function createJob() {
   alert('สร้างงาน "' + name + '" แล้ว — ช่างจะเห็นงานนี้ทันที');
 }
 
-function renderJobCards() {
-  var el = document.getElementById('jobCards');
-  if (!jobs.length) { el.innerHTML = '<div class="empty">No jobs yet<br>สร้างงานแรกด้านบนได้เลย</div>'; return; }
-  el.innerHTML = jobs.map(function(j) {
+function renderOneJobCard(j) {
     var log = codeLog[j.id] || {};
     var sent = Object.keys(log).filter(function(k){ return log[k].status === 'sent'; });
     var done = sent.filter(function(c){ return j.spots.find(function(s){ return s.code === c; }); }).length;
@@ -809,7 +806,51 @@ function renderJobCards() {
       '</div>' +
       '<div class="jcard-del" onclick="deleteJob(\'' + j.id + '\')">🗑 Delete Job</div>' +
     '</div>';
-  }).join('');
+    }
+
+function renderJobCards() {
+  var el = document.getElementById('jobCards');
+  if (!jobs.length) { el.innerHTML = '<div class="empty">No jobs yet<br>สร้างงานแรกด้านบนได้เลย</div>'; return; }
+
+  // Group jobs by media category
+  var groups = {};
+  var noMedia = [];
+  jobs.forEach(function(j) {
+    var m = (j.media || '').trim();
+    if (m) {
+      if (!groups[m]) groups[m] = [];
+      groups[m].push(j);
+    } else {
+      noMedia.push(j);
+    }
+  });
+
+  var html = '';
+  Object.keys(groups).sort().forEach(function(media) {
+    var jobsInGroup = groups[media];
+    // Count total progress for this media group
+    var totalSpots = 0, totalDone = 0;
+    jobsInGroup.forEach(function(j) {
+      var log = codeLog[j.id] || {};
+      var sent = Object.keys(log).filter(function(k){ return log[k].status === 'sent'; });
+      var done = sent.filter(function(c){ return j.spots.find(function(s){ return s.code === c; }); }).length;
+      totalSpots += j.spots.length;
+      totalDone += done;
+    });
+    html += '<div style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--b)">' +
+      '<span style="font-size:14px;font-weight:600;color:#88aaff">📺 ' + media + '</span>' +
+      '<span style="font-size:11px;color:var(--mu)">(' + jobsInGroup.length + ' งาน · ' + totalDone + '/' + totalSpots + ' จุด)</span>' +
+      '</div>';
+    html += jobsInGroup.map(renderOneJobCard).join('');
+  });
+  if (noMedia.length) {
+    html += '<div style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--b)">' +
+      '<span style="font-size:14px;font-weight:600;color:var(--mu)">📋 ไม่ระบุสื่อ</span>' +
+      '<span style="font-size:11px;color:var(--mu)">(' + noMedia.length + ' งาน)</span>' +
+      '</div>';
+    html += noMedia.map(renderOneJobCard).join('');
+  }
+  el.innerHTML = html;
 }
 
 function deleteJob(id) {
