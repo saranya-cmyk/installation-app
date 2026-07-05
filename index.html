@@ -317,15 +317,37 @@ function renderJobs() {
     el.innerHTML = `<div class="no-jobs">⏳ ยังไม่มีงาน<br><br>รอแอดมินอัปโหลด<br>ข้อมูลงานก่อนนะค่ะ</div>`;
     return;
   }
-  el.innerHTML = jobs.map((j, i) => `
-    <div class="job-item" data-jobid="${j.id}" onclick="pickJob(this,'${j.id}')">
-      <div class="job-dot"></div>
-      <div>
-        ${j.media ? `<div style="font-size:11px;color:#88aaff;margin-bottom:2px">📺 ${j.media}</div>` : ''}
-        <div class="job-name">${j.name}</div>
-        <div class="job-detail">${j.spots.length} จุด${j.dateStart ? ' · ติดตั้ง ' + formatInstallDate(j.dateStart, j.dateEnd) : ''}</div>
-      </div>
-    </div>`).join('');
+
+  // Group jobs by media category
+  var groups = {};
+  var noMedia = [];
+  jobs.forEach(function(j) {
+    var m = (j.media || '').trim();
+    if (!m) { noMedia.push(j); return; }
+    if (!groups[m]) groups[m] = [];
+    groups[m].push(j);
+  });
+
+  function jobItemHtml(j) {
+    return '<div class="job-item" data-jobid="' + j.id + '" onclick="pickJob(this,\'' + j.id + '\')">' +
+      '<div class="job-dot"></div>' +
+      '<div>' +
+        '<div class="job-name">' + j.name + '</div>' +
+        '<div class="job-detail">' + j.spots.length + ' จุด' + (j.dateStart ? ' · ติดตั้ง ' + formatInstallDate(j.dateStart, j.dateEnd) : '') + '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  var html = '';
+  Object.keys(groups).sort().forEach(function(media) {
+    html += '<div style="font-size:12px;font-weight:700;color:#88aaff;margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid #223">📺 ' + media + ' <span style="color:#555;font-weight:400">(' + groups[media].length + ' งาน)</span></div>';
+    html += groups[media].map(jobItemHtml).join('');
+  });
+  if (noMedia.length) {
+    html += '<div style="font-size:12px;font-weight:700;color:#888;margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid #223">📋 อื่นๆ</div>';
+    html += noMedia.map(jobItemHtml).join('');
+  }
+  el.innerHTML = html;
   // NEVER auto-select. Restore user's previous selection only if it still exists.
   if (selectedJob) {
     var still = jobs.find(function(j){ return j.id === selectedJob.id; });
