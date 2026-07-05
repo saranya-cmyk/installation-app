@@ -256,8 +256,13 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <!-- TAB 1 -->
 <div class="screen" id="t1">
-  <div class="section-label" style="margin-bottom:12px">Select a job to view</div>
-  <select class="dash-select" id="dashSelect" onchange="renderDash()"><option value="">-- Select Job --</option></select>
+  <div class="section-label" style="margin-bottom:12px">เลือกสื่อ</div>
+  <div id="mediaChips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
+  <div id="jobChipsWrap" style="display:none">
+    <div class="section-label" style="margin-bottom:10px">เลือกงาน</div>
+    <div id="jobChips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
+  </div>
+  <select class="dash-select" id="dashSelect" onchange="renderDash()" style="display:none"><option value="">-- Select Job --</option></select>
   <div id="dashFilter" style="display:none;display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
     <button onclick="setFilter('all')" id="fAll" style="padding:6px 14px;border-radius:20px;border:1px solid var(--ac);background:#1a2a00;color:var(--ac);cursor:pointer;font-size:12px;font-family:var(--f)">ทั้งหมด</button>
     <button onclick="setFilter('pending')" id="fPending" style="padding:6px 14px;border-radius:20px;border:1px solid var(--b);background:transparent;color:var(--mu);cursor:pointer;font-size:12px;font-family:var(--f)">Pending</button>
@@ -970,32 +975,80 @@ function setFilter(f) {
   renderDash();
 }
 
+var _dashMediaGroups = {};
+var _selectedMedia = null;
+
 function renderDashSelect() {
-  var sel = document.getElementById('dashSelect');
-  var prev = sel.value;
-
-  // Group by media using optgroup
-  var groups = {};
-  var noMedia = [];
+  // Group jobs by media
+  _dashMediaGroups = {};
   jobs.forEach(function(j) {
-    var m = (j.media || '').trim();
-    if (m) { if (!groups[m]) groups[m] = []; groups[m].push(j); }
-    else noMedia.push(j);
+    var m = (j.media || '').trim() || '__nomedia__';
+    if (!_dashMediaGroups[m]) _dashMediaGroups[m] = [];
+    _dashMediaGroups[m].push(j);
   });
 
-  var html = '<option value="">-- เลือกงาน --</option>';
-  Object.keys(groups).sort().forEach(function(media) {
-    html += '<optgroup label="📺 ' + media + '">';
-    html += groups[media].map(function(j){ return '<option value="' + j.id + '">' + j.name + '</option>'; }).join('');
-    html += '</optgroup>';
+  var mediaKeys = Object.keys(_dashMediaGroups).sort(function(a,b){
+    if (a === '__nomedia__') return 1;
+    if (b === '__nomedia__') return -1;
+    return a.localeCompare(b);
   });
-  if (noMedia.length) {
-    html += '<optgroup label="📋 ไม่ระบุสื่อ">';
-    html += noMedia.map(function(j){ return '<option value="' + j.id + '">' + j.name + '</option>'; }).join('');
-    html += '</optgroup>';
+
+  var chipsEl = document.getElementById('mediaChips');
+  if (!mediaKeys.length) {
+    chipsEl.innerHTML = '<div style="color:var(--mu);font-size:13px">ยังไม่มีงาน</div>';
+    return;
   }
-  sel.innerHTML = html;
-  if (prev) sel.value = prev;
+
+  chipsEl.innerHTML = mediaKeys.map(function(m) {
+    var count = _dashMediaGroups[m].length;
+    var label = m === '__nomedia__' ? '📋 ไม่ระบุสื่อ' : '📺 ' + m;
+    var isActive = _selectedMedia === m;
+    return '<button onclick="selectDashMedia(\'' + m.replace(/'/g,"\\'") + '\')" ' +
+      'style="padding:10px 16px;border-radius:24px;border:1px solid ' + (isActive ? '#4488ff' : 'var(--b)') + ';' +
+      'background:' + (isActive ? '#0d2244' : 'var(--s2)') + ';color:' + (isActive ? '#88bbff' : 'var(--tx)') + ';' +
+      'cursor:pointer;font-size:13px;font-family:var(--f);font-weight:' + (isActive ? '600' : '400') + '">' +
+      label + ' <span style="opacity:.6">(' + count + ')</span></button>';
+  }).join('');
+
+  // Keep selection if still valid
+  if (_selectedMedia && _dashMediaGroups[_selectedMedia]) {
+    selectDashMedia(_selectedMedia);
+  }
+}
+
+function selectDashMedia(media) {
+  _selectedMedia = media;
+  renderDashSelect(); // refresh chip highlight
+
+  var jobsInMedia = _dashMediaGroups[media] || [];
+  var wrap = document.getElementById('jobChipsWrap');
+  var jc = document.getElementById('jobChips');
+  wrap.style.display = 'block';
+
+  var sel = document.getElementById('dashSelect');
+  var currentJob = sel.value;
+
+  jc.innerHTML = jobsInMedia.map(function(j) {
+    var log = codeLog[j.id] || {};
+    var sent = Object.keys(log).filter(function(k){ return log[k].status === 'sent'; });
+    var done = sent.filter(function(c){ return j.spots.find(function(s){ return s.code === c; }); }).length;
+    var pct = Math.round(done / (j.spots.length || 1) * 100);
+    var isActive = currentJob === j.id;
+    return '<button onclick="pickDashJob(\'' + j.id + '\')" ' +
+      'style="padding:10px 14px;border-radius:12px;border:1px solid ' + (isActive ? '#44cc88' : 'var(--b)') + ';' +
+      'background:' + (isActive ? '#0d2a1a' : 'var(--s2)') + ';color:' + (isActive ? '#88ffbb' : 'var(--tx)') + ';' +
+      'cursor:pointer;font-size:13px;font-family:var(--f);text-align:left">' +
+      '<div style="font-weight:600">' + j.name + '</div>' +
+      '<div style="font-size:11px;opacity:.7;margin-top:2px">' + pct + '% · ' + done + '/' + j.spots.length + ' จุด</div>' +
+      '</button>';
+  }).join('');
+}
+
+function pickDashJob(jobId) {
+  var sel = document.getElementById('dashSelect');
+  sel.value = jobId;
+  if (_selectedMedia) selectDashMedia(_selectedMedia); // refresh job chip highlight
+  renderDash();
 }
 
 function renderDash() {
