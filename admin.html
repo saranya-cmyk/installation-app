@@ -1031,8 +1031,7 @@ function drawJobChips(media) {
   var wrap = document.getElementById('jobChipsWrap');
   var jc = document.getElementById('jobChips');
   wrap.style.display = 'block';
-  var sel = document.getElementById('dashSelect');
-  var currentJob = sel.value;
+  var currentJob = _selectedDashJob;
 
   jc.innerHTML = jobsInMedia.map(function(j) {
     var log = codeLog[j.id] || {};
@@ -1050,8 +1049,18 @@ function drawJobChips(media) {
   }).join('');
 }
 
+var _selectedDashJob = '';
 function pickDashJob(jobId) {
+  _selectedDashJob = jobId;
+  // Ensure hidden select has this option so renderDash can read it
   var sel = document.getElementById('dashSelect');
+  if (!sel.querySelector('option[value="' + jobId + '"]')) {
+    var opt = document.createElement('option');
+    opt.value = jobId;
+    var j = jobs.find(function(x){ return x.id === jobId; });
+    opt.textContent = j ? j.name : jobId;
+    sel.appendChild(opt);
+  }
   sel.value = jobId;
   drawJobChips(_selectedMedia); // refresh highlight only
   renderDash();
