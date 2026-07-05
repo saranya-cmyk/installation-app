@@ -184,7 +184,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
   </div>
   <div class="field" id="jobMediaField">
     <label>สื่อ (Media) — ถ้าไม่เลือก จะดึงจาก Excel อัตโนมัติ</label>
-    <select id="jobMediaInput" style="width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:12px 14px;font-size:14px;color:var(--tx);font-family:var(--f);outline:none">
+    <select id="jobMediaInput" onchange="onMediaSelect(this)" style="width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:12px 14px;font-size:14px;color:var(--tx);font-family:var(--f);outline:none">
       <option value="">-- ไม่ระบุ (ดึงจาก Excel) --</option>
       <option value="Serie Poster">Serie Poster</option>
       <option value="Cookies">Cookies</option>
@@ -195,7 +195,10 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
       <option value="Flyover 2.0">Flyover 2.0</option>
       <option value="NCA Station">NCA Station</option>
       <option value="Muvads">Muvads</option>
+      <option value="Bus">Bus</option>
+      <option value="__custom__">➕ พิมพ์สื่อใหม่เอง...</option>
     </select>
+    <input type="text" id="jobMediaCustom" placeholder="พิมพ์ชื่อสื่อใหม่" autocomplete="off" style="display:none;width:100%;background:var(--s2);border:1px solid var(--warn);border-radius:8px;padding:12px 14px;font-size:14px;color:var(--tx);font-family:var(--f);outline:none;margin-top:8px">
   </div>
   <div style="display:flex;gap:10px;margin-bottom:14px">
     <div class="field" style="flex:1;margin-bottom:0">
@@ -673,6 +676,12 @@ function showProductChips() { }
 
 function updatePreview() { } // legacy — no longer needed
 
+function onMediaSelect(sel) {
+  var custom = document.getElementById('jobMediaCustom');
+  custom.style.display = sel.value === '__custom__' ? 'block' : 'none';
+  if (sel.value === '__custom__') custom.focus();
+}
+
 function pickProduct(el, product) {
   document.querySelectorAll('.prod-chip').forEach(function(c){ c.classList.remove('on'); });
   el.classList.add('on');
@@ -688,7 +697,10 @@ function createJob() {
 
   var dateStart = document.getElementById('jobDateStart').value;
   var dateEnd   = document.getElementById('jobDateEnd').value;
-  var manualMedia = document.getElementById('jobMediaInput').value.trim();
+  var mediaSelVal = document.getElementById('jobMediaInput').value;
+  var manualMedia = mediaSelVal === '__custom__'
+    ? document.getElementById('jobMediaCustom').value.trim()
+    : mediaSelVal.trim();
   var mediaStr;
   if (manualMedia) {
     mediaStr = manualMedia;
@@ -712,6 +724,8 @@ function createJob() {
 
   document.getElementById('jobNameInput').value = '';
   document.getElementById('jobMediaInput').value = '';
+  document.getElementById('jobMediaCustom').value = '';
+  document.getElementById('jobMediaCustom').style.display = 'none';
   document.getElementById('jobDateStart').value = '';
   document.getElementById('jobDateEnd').value = '';
   document.getElementById('excelInput').value = '';
@@ -999,6 +1013,12 @@ function renderDash() {
   spotsContainer.appendChild(spotsList);
   // Refresh map if visible
   if (mapVisible && spotMap) setTimeout(renderMap, 100);
+}
+
+function onMediaSelect(sel) {
+  var custom = document.getElementById('jobMediaCustom');
+  custom.style.display = sel.value === '__custom__' ? 'block' : 'none';
+  if (sel.value === '__custom__') custom.focus();
 }
 
 function normalizeDay(v) {
