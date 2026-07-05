@@ -972,8 +972,30 @@ function setFilter(f) {
 
 function renderDashSelect() {
   var sel = document.getElementById('dashSelect');
-  sel.innerHTML = '<option value="">-- Select Job --</option>' +
-    jobs.map(function(j){ return '<option value="' + j.id + '">' + j.name + '</option>'; }).join('');
+  var prev = sel.value;
+
+  // Group by media using optgroup
+  var groups = {};
+  var noMedia = [];
+  jobs.forEach(function(j) {
+    var m = (j.media || '').trim();
+    if (m) { if (!groups[m]) groups[m] = []; groups[m].push(j); }
+    else noMedia.push(j);
+  });
+
+  var html = '<option value="">-- เลือกงาน --</option>';
+  Object.keys(groups).sort().forEach(function(media) {
+    html += '<optgroup label="📺 ' + media + '">';
+    html += groups[media].map(function(j){ return '<option value="' + j.id + '">' + j.name + '</option>'; }).join('');
+    html += '</optgroup>';
+  });
+  if (noMedia.length) {
+    html += '<optgroup label="📋 ไม่ระบุสื่อ">';
+    html += noMedia.map(function(j){ return '<option value="' + j.id + '">' + j.name + '</option>'; }).join('');
+    html += '</optgroup>';
+  }
+  sel.innerHTML = html;
+  if (prev) sel.value = prev;
 }
 
 function renderDash() {
