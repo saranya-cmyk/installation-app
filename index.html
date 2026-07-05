@@ -263,10 +263,12 @@ function loadJobsFromServer() {
         jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
       }
       renderJobs();
+      if (typeof checkPendingQueueBanner === 'function') checkPendingQueueBanner();
     })
     .catch(function(){
       jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
       renderJobs();
+      if (typeof checkPendingQueueBanner === 'function') checkPendingQueueBanner();
     });
 }
 loadJobsFromServer();
@@ -385,6 +387,11 @@ function goUpload() {
   if (mediaEl) mediaEl.textContent = selectedJob.media ? '📺 ' + selectedJob.media : '';
   var searchEl = document.getElementById('codeSearch');
   if (searchEl) searchEl.value = '';
+  // Restore any queued photos from IndexedDB for this job
+  restoreQueueToApp(selectedJob.id).then(function(n) {
+    renderCodeList();
+    if (n > 0) showNetToast('📦 กู้คืนรูปค้าง ' + n + ' รูปจากเครื่องค่ะ', '#1b2a3a', '#4488ff');
+  });
   renderCodeList();
   go('s3');
 }
@@ -1005,6 +1012,156 @@ function renderCodeList() {
   }
 }
 
+// ── IndexedDB Offline Photo Queue ─────────────────────────────
+// รูปถูกเก็บลงเครื่องถาวรทันทีที่เลือก - ปิดแอป/เน็ตหลุด รูปไม่หาย
+var photoDB = null;
+
+function openPhotoDB() {
+  return new Promise(function(resolve, reject) {
+    if (photoDB) return resolve(photoDB);
+    var req = indexedDB.open('planb-photos', 1);
+    req.onupgradeneeded = function(e) {
+      var db = e.target.result;
+      if (!db.objectStoreNames.contains('photos')) {
+        var store = db.createObjectStore('photos', { keyPath: 'id', autoIncrement: true });
+        store.createIndex('jobCode', ['jobId', 'code']);
+        store.createIndex('jobId', 'jobId');
+      }
+    };
+    req.onsuccess = function(e) { photoDB = e.target.result; resolve(photoDB); };
+    req.onerror = function() { reject(req.error); };
+  });
+}
+
+function savePhotoToQueue(jobId, code, file) {
+  return openPhotoDB().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction('photos', 'readwrite');
+      tx.objectStore('photos').add({
+        jobId: jobId, code: code, blob: file,
+        name: file.name, type: file.type, lastModified: file.lastModified,
+        savedAt: Date.now()
+      });
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+  }).catch(function(){});
+}
+
+function loadQueueForJob(jobId) {
+  return openPhotoDB().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction('photos', 'readonly');
+      var req = tx.objectStore('photos').index('jobId').getAll(jobId);
+      req.onsuccess = function() { resolve(req.result || []); };
+      req.onerror = function() { resolve([]); };
+    });
+  }).catch(function(){ return []; });
+}
+
+function getAllQueued() {
+  return openPhotoDB().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction('photos', 'readonly');
+      var req = tx.objectStore('photos').getAll();
+      req.onsuccess = function() { resolve(req.result || []); };
+      req.onerror = function() { resolve([]); };
+    });
+  }).catch(function(){ return []; });
+}
+
+function clearQueueForCode(jobId, code) {
+  return openPhotoDB().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction('photos', 'readwrite');
+      var req = tx.objectStore('photos').index('jobCode').openCursor(IDBKeyRange.only([jobId, code]));
+      req.onsuccess = function(e) {
+        var cursor = e.target.result;
+        if (cursor) { cursor.delete(); cursor.continue(); }
+      };
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+  }).catch(function(){});
+}
+
+function restoreQueueToApp(jobId) {
+  // Restore queued photos into codePhotos (merge, no duplicates by name+size)
+  return loadQueueForJob(jobId).then(function(records) {
+    if (!records.length) return 0;
+    var restored = 0;
+    records.forEach(function(rec) {
+      if (!codePhotos[rec.code]) codePhotos[rec.code] = [];
+      var exists = codePhotos[rec.code].some(function(f) {
+        return f.name === rec.name && f.lastModified === rec.lastModified;
+      });
+      if (!exists) {
+        try {
+          var file = new File([rec.blob], rec.name, { type: rec.type, lastModified: rec.lastModified });
+          codePhotos[rec.code].push(file);
+          restored++;
+        } catch(e) {}
+      }
+    });
+    return restored;
+  });
+}
+
+function checkPendingQueueBanner() {
+  // On app open: if queued photos exist, show recovery banner in job list
+  getAllQueued().then(function(records) {
+    var old = document.getElementById('queueBanner');
+    if (old) old.remove();
+    if (!records.length) return;
+    var byJob = {};
+    records.forEach(function(r) {
+      if (!byJob[r.jobId]) byJob[r.jobId] = 0;
+      byJob[r.jobId]++;
+    });
+    var jobIds = Object.keys(byJob);
+    var banner = document.createElement('div');
+    banner.id = 'queueBanner';
+    banner.style.cssText = 'background:#2a2200;border:1px solid #ffa94d;border-radius:12px;padding:12px 14px;margin-bottom:12px;cursor:pointer';
+    var jobNames = jobIds.map(function(jid) {
+      var j = jobs.find(function(x){ return x.id === jid; });
+      return (j ? j.name : 'งานเก่า') + ' (' + byJob[jid] + ' รูป)';
+    }).join(', ');
+    banner.innerHTML = '<div style="font-size:13px;font-weight:600;color:#ffa94d">📦 มีรูปค้างที่ยังไม่ได้ส่ง</div>' +
+      '<div style="font-size:11px;color:#ccc;margin-top:4px">' + jobNames + '</div>' +
+      '<div style="font-size:11px;color:#888;margin-top:4px">แตะเพื่อเปิดงานและส่งต่อ →</div>';
+    banner.onclick = function() {
+      var jid = jobIds[0];
+      var j = jobs.find(function(x){ return x.id === jid; });
+      if (!j) { alert('ไม่พบงานนี้แล้ว — อาจถูกลบไป'); return; }
+      selectedJob = j;
+      restoreQueueToApp(jid).then(function() {
+        goUpload();
+      });
+    };
+    var jobList = document.getElementById('jobListEl');
+    if (jobList && jobList.parentNode) jobList.parentNode.insertBefore(banner, jobList);
+  });
+}
+
+// Online/offline awareness
+window.addEventListener('online', function() {
+  showNetToast('🟢 กลับมาออนไลน์แล้ว — ส่งรูปได้เลยค่ะ', '#1b3a1b', '#4caf50');
+});
+window.addEventListener('offline', function() {
+  showNetToast('🔴 ออฟไลน์ — รูปถูกเก็บในเครื่องปลอดภัย จะส่งได้เมื่อมีเน็ตค่ะ', '#3a1b1b', '#ff5c5c');
+});
+
+function showNetToast(msg, bg, border) {
+  var old = document.getElementById('netToast');
+  if (old) old.remove();
+  var t = document.createElement('div');
+  t.id = 'netToast';
+  t.style.cssText = 'position:fixed;top:12px;left:12px;right:12px;z-index:999;background:' + bg + ';border:1px solid ' + border + ';border-radius:12px;padding:12px 14px;font-size:13px;color:#f0f0f0;text-align:center;font-family:var(--f)';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(function(){ if (t.parentNode) t.remove(); }, 4000);
+}
+
 // Hidden file input for per-code picking
 var pickingCode = null;
 function openCodePicker(code) {
@@ -1051,7 +1208,12 @@ function pickFromSource(code, source) {
   input.onchange = function() {
     if (!input.files.length) return;
     if (!codePhotos[pickingCode]) codePhotos[pickingCode] = [];
-    codePhotos[pickingCode] = codePhotos[pickingCode].concat(Array.from(input.files));
+    var newFiles = Array.from(input.files);
+    codePhotos[pickingCode] = codePhotos[pickingCode].concat(newFiles);
+    // Save to IndexedDB immediately - survives app close
+    if (selectedJob) {
+      newFiles.forEach(function(f) { savePhotoToQueue(selectedJob.id, pickingCode, f); });
+    }
     input.remove();
     renderCodeList();
     showCodePreview(pickingCode);
@@ -1180,6 +1342,11 @@ function deletePhotoFromPreview(code, idx) {
 }
 
 async function sendAllCodes() {
+  // Offline check - photos are safe in IndexedDB
+  if (!navigator.onLine) {
+    alert('📴 ยังไม่มีสัญญาณอินเทอร์เน็ตค่ะ\n\nรูปทั้งหมดถูกเก็บไว้ในเครื่องแล้ว ปลอดภัย ไม่หาย\nเมื่อมีเน็ตแล้วกดส่งอีกครั้งได้เลยค่ะ');
+    return;
+  }
   // Validate job selection first
   if (!selectedJob || !selectedJob.id) {
     alert('กรุณาเลือกงานก่อนค่ะ');
@@ -1308,8 +1475,11 @@ async function sendAllCodes() {
   if (missingCodes.length > 0 || failedBatches.length > 0) {
     // PARTIAL FAILURE - keep photos of failed codes, show retry screen
     var okCodes = codes.filter(function(c){ return confirmedCodes.indexOf(c) > -1; });
-    // Remove successful codes from codePhotos - keep only failed ones
-    okCodes.forEach(function(c){ delete codePhotos[c]; });
+    // Remove successful codes from codePhotos AND IndexedDB - keep only failed ones
+    okCodes.forEach(function(c){
+      delete codePhotos[c];
+      clearQueueForCode(sendJob.id, c);
+    });
 
     setProgress(100, '⚠️ ส่งได้บางส่วน');
     setTimeout(function(){
@@ -1326,7 +1496,8 @@ async function sendAllCodes() {
     return;
   }
 
-  // ALL CONFIRMED - safe to clear and show success
+  // ALL CONFIRMED - safe to clear IndexedDB and show success
+  codes.forEach(function(c){ clearQueueForCode(sendJob.id, c); });
   setProgress(100, 'สำเร็จค่ะ! ✓');
   setTimeout(function(){ showSuccess({ codes: allResults }, total, sendJob); }, 400);
 }
