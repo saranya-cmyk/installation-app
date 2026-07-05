@@ -363,8 +363,26 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 <!-- Edit Date Modal -->
 <div class="modal-bg" id="editDateModalBg">
   <div class="modal">
-    <div class="modal-title">📅 แก้วันที่ติดตั้ง</div>
+    <div class="modal-title">📅 แก้ไขงาน</div>
     <div class="modal-sub" id="editDateJobName" style="color:var(--ac);margin-bottom:16px"></div>
+    <div class="field" style="margin-bottom:10px">
+      <label>สื่อ (Media)</label>
+      <select id="editMedia" onchange="onEditMediaSelect(this)" style="width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none">
+        <option value="">-- ไม่ระบุ --</option>
+        <option value="Serie Poster">Serie Poster</option>
+        <option value="Cookies">Cookies</option>
+        <option value="Metro Poster">Metro Poster</option>
+        <option value="Gateway Billboard">Gateway Billboard</option>
+        <option value="Pole Wrap (เสากลม)">Pole Wrap (เสากลม)</option>
+        <option value="Pole Wrap (เสาเหลี่ยม)">Pole Wrap (เสาเหลี่ยม)</option>
+        <option value="Flyover 2.0">Flyover 2.0</option>
+        <option value="NCA Station">NCA Station</option>
+        <option value="Muvads">Muvads</option>
+        <option value="Bus">Bus</option>
+        <option value="__custom__">➕ พิมพ์สื่อใหม่เอง...</option>
+      </select>
+      <input type="text" id="editMediaCustom" placeholder="พิมพ์ชื่อสื่อใหม่" style="display:none;width:100%;margin-top:8px;background:var(--s2);border:1px solid var(--ac);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none">
+    </div>
     <div class="field" style="margin-bottom:10px">
       <label>วันที่เริ่มติดตั้ง</label>
       <input type="date" id="editDateStart" style="width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none">
@@ -398,7 +416,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwfBC54DXtSvX2uklcacPC1BkIHsD0i_2eCsglUDaDKD2ee8MbJN0sE9o6Kwtfy6bYZXg/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxjkcvIMUPj5LnzZQKuuMCWRlAtyFQNIZ2f8CHv8Fn-jazABXZo2ZVUmd9Dk7POJo8biw/exec';
 var jobs = [];
 var codeLog = {};
 
@@ -805,7 +823,7 @@ function renderOneJobCard(j) {
       '<div class="jcard-actions">' +
         '<button class="copy-btn copy-all" onclick="copyJobMsg(\'' + j.id + '\',this)">📋 Copy for Sales</button>' +
         '<button class="copy-btn copy-sel" onclick="openSend(\'' + j.id + '\')">✉️ Select Code</button>' +
-        '<button class="copy-btn" style="background:#1a2a1a;border:1px solid #448844;color:#88cc88" onclick="editJobDates(\'' + j.id + '\')">📅 แก้วันที่</button>' +
+        '<button class="copy-btn" style="background:#1a2a1a;border:1px solid #448844;color:#88cc88" onclick="editJobDates(\'' + j.id + '\')">📅 แก้ไข</button>' +
         '<button class="copy-btn" style="background:#1a1a3a;border:1px solid #4444ff;color:#8888ff" onclick="createPDF(\'' + j.id + '\',this)">📄 PDF</button>' +
         (getJobFolderUrl(j.id) ? '<a class="copy-btn" href="' + getJobFolderUrl(j.id) + '" target="_blank" style="background:#0d1f3c;border:1px solid #1a4a8a;color:#5599ff;text-decoration:none">📁 Drive</a>' : '') +
       '</div>' +
@@ -1523,7 +1541,30 @@ function editJobDates(id) {
   document.getElementById('editDateJobName').textContent = job.name;
   document.getElementById('editDateStart').value = job.dateStart ? job.dateStart.substring(0,10) : '';
   document.getElementById('editDateEnd').value = job.dateEnd ? job.dateEnd.substring(0,10) : '';
+  // Populate media dropdown
+  var mediaSel = document.getElementById('editMedia');
+  var custom = document.getElementById('editMediaCustom');
+  custom.style.display = 'none';
+  custom.value = '';
+  var jm = job.media || '';
+  var found = false;
+  for (var i = 0; i < mediaSel.options.length; i++) {
+    if (mediaSel.options[i].value === jm) { mediaSel.value = jm; found = true; break; }
+  }
+  if (!found && jm) {
+    mediaSel.value = '__custom__';
+    custom.style.display = 'block';
+    custom.value = jm;
+  } else if (!jm) {
+    mediaSel.value = '';
+  }
   document.getElementById('editDateModalBg').classList.add('open');
+}
+
+function onEditMediaSelect(sel) {
+  var custom = document.getElementById('editMediaCustom');
+  custom.style.display = sel.value === '__custom__' ? 'block' : 'none';
+  if (sel.value === '__custom__') custom.focus();
 }
 
 function closeEditDateModal() {
@@ -1536,12 +1577,19 @@ function confirmEditDates() {
   if (!job) return;
   job.dateStart = document.getElementById('editDateStart').value;
   job.dateEnd = document.getElementById('editDateEnd').value;
+  // Save media
+  var mediaSel = document.getElementById('editMedia');
+  var mediaVal = mediaSel.value === '__custom__'
+    ? document.getElementById('editMediaCustom').value.trim()
+    : mediaSel.value.trim();
+  job.media = mediaVal;
   save();
   fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'saveJob', job: job }) })
     .catch(function(e){ console.error(e); });
   closeEditDateModal();
   renderJobCards();
-  alert('แก้วันที่แล้วค่ะ');
+  renderDashSelect();
+  alert('บันทึกแล้วค่ะ');
 }
 
 function getJobFolderUrl(jobId) {
