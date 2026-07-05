@@ -487,15 +487,27 @@ function loadExcel(file) {
     rawExcelData = [];
     excelCols = [];
 
-    // Scan ALL sheets and ALL header rows (0-15) - pick best
+    // Scan ALL sheets and ALL header rows (0-20) - pick best
     var bestScore = 0;
     for (var sh = 0; sh < wb.SheetNames.length; sh++) {
       var ws = wb.Sheets[wb.SheetNames[sh]];
-      for (var r = 0; r <= 15; r++) {
+      for (var r = 0; r <= 20; r++) {
         var attempt;
         try { attempt = XLSX.utils.sheet_to_json(ws, { defval: '', range: r }); } catch(err) { continue; }
         if (attempt.length < 1) continue;
         var cols = Object.keys(attempt[0]);
+        // Merged-cell/2-row header handling: if >40% cols are __EMPTY, try merging with next row values
+        var emptyCount = cols.filter(function(c){ return c.indexOf('__EMPTY') === 0; }).length;
+        if (emptyCount > cols.length * 0.4 && attempt.length > 1) {
+          // Header likely spans 2 rows - use row r as group + row r+1 as sub-header
+          var attempt2;
+          try { attempt2 = XLSX.utils.sheet_to_json(ws, { defval: '', range: r+1 }); } catch(err) { attempt2 = null; }
+          if (attempt2 && attempt2.length) {
+            var cols2 = Object.keys(attempt2[0]);
+            var empty2 = cols2.filter(function(c){ return c.indexOf('__EMPTY') === 0; }).length;
+            if (empty2 < emptyCount) { attempt = attempt2; cols = cols2; }
+          }
+        }
         var colStr = cols.join(' ').toLowerCase();
         var score = 0;
         // Identity columns (any ONE of these is essential)
@@ -575,7 +587,7 @@ function autoDetectAndBuild() {
   }
 
   // Identity: ทะเบียนรถ first (bus), then Code (billboard)
-  codeCol = findByName(['ทะเบียนรถ','code id','code','รหัส','code.id','license plate','license','plate','เลขรถ','หมายเลขรถ','ทะเบียน']);
+  codeCol = findByName(['ทะเบียนรถ','code id','code','รหัส','code.id','license plate','license','plate','เลขรถ','หมายเลขรถ','ทะเบียน','เบอร์ป้าย','เลขป้าย','ป้ายที่','จุดที่','site id','site','id','asset']);
   // Product: โฆษณา (bus = brand name), then standard
   productCol = findByName(['โฆษณา','ad.on','product','adsone','campaign','แคมเปญ','ลูกค้า','brand','สินค้า']);
   addrCol    = findByName(['location','ที่อยู่','สถานที่','address','เส้นทาง','route','จุดติดตั้ง','พื้นที่']);
@@ -618,6 +630,16 @@ function autoDetectAndBuild() {
     });
   }
 
+  // Store detected mapping for preview display
+  window._detectedCols = {
+    code: codeCol,
+    product: productCol,
+    address: addrCol,
+    busParts: (!addrCol && isBusFile) ? [busLine, busGarage, busNum].filter(Boolean).join(' + ') : null,
+    media: mediaCol,
+    gps: (latCol && lngCol) ? latCol + ' + ' + lngCol : null
+  };
+
   // Build spots - accept anything non-empty in identity column
   var seen = {};
   pendingSpots = rawExcelData.filter(function(r){
@@ -656,10 +678,24 @@ function showAutoPreview() {
   var pd = document.getElementById('previewData');
   if (!pendingSpots.length) { pd.style.display='none'; return; }
   var s = pendingSpots[0];
-  var html = 'ตัวอย่างแถวแรก:<br>';
+
+  // Show detected column mapping so admin can verify
+  var mapping = window._detectedCols || {};
+  var mapHtml = '<div style="background:var(--s2);border-radius:8px;padding:10px;margin-bottom:8px;font-size:11px;line-height:1.8">';
+  mapHtml += '<div style="font-weight:600;color:var(--ac);margin-bottom:4px">📋 คอลัมน์ที่ระบบอ่าน:</div>';
+  mapHtml += '🔑 Code ← <b>' + (mapping.code || '?') + '</b><br>';
+  if (mapping.product) mapHtml += '📦 สินค้า ← <b>' + mapping.product + '</b><br>';
+  if (mapping.address) mapHtml += '📍 ที่อยู่ ← <b>' + mapping.address + '</b><br>';
+  else if (mapping.busParts) mapHtml += '📍 ที่อยู่ ← <b>' + mapping.busParts + '</b> (รวมอัตโนมัติ)<br>';
+  if (mapping.media) mapHtml += '📺 สื่อ ← <b>' + mapping.media + '</b><br>';
+  if (mapping.gps) mapHtml += '🗺️ GPS ← <b>' + mapping.gps + '</b><br>';
+  mapHtml += '</div>';
+
+  var html = mapHtml + 'ตัวอย่างแถวแรก:<br>';
   html += 'Code: <b>' + s.code + '</b><br>';
   if (s.product) html += 'สินค้า: <b>' + s.product + '</b><br>';
-  if (s.address) html += 'ที่อยู่: <b>' + s.address.substring(0,45) + '...</b><br>';
+  if (s.address) html += 'ที่อยู่: <b>' + s.address.substring(0,50) + (s.address.length>50?'...':'') + '</b><br>';
+  if (s.media) html += 'สื่อ: <b>' + s.media + '</b><br>';
   if (s.lat && s.lng) html += 'GPS: <b>' + s.lat.toFixed(4) + ', ' + s.lng.toFixed(4) + '</b>';
   pd.innerHTML = html;
   pd.style.display = 'block';
