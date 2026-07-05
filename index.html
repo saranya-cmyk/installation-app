@@ -637,6 +637,7 @@ async function doUpload() {
     }
   }
 
+  window._sending = false;
   setProgress(100, 'สำเร็จค่ะ! ✓');
   setTimeout(function(){ showSuccess({ codes: allResults }, total, sendJob); }, 400);
 }
@@ -1027,8 +1028,11 @@ function restoreQueueToApp(jobId) {
 }
 
 function checkPendingQueueBanner() {
+  // Don't show while actively sending (avoids flash of "ค้าง" during upload)
+  if (window._sending) return;
   // On app open: if queued photos exist, show recovery banner in job list
   getAllQueued().then(function(records) {
+    if (window._sending) return;
     var old = document.getElementById('queueBanner');
     if (old) old.remove();
     if (!records.length) return;
@@ -1259,8 +1263,10 @@ function deletePhotoFromPreview(code, idx) {
 }
 
 async function sendAllCodes() {
+  window._sending = true;
   // Offline check - photos are safe in IndexedDB
   if (!navigator.onLine) {
+    window._sending = false;
     alert('📴 ยังไม่มีสัญญาณอินเทอร์เน็ตค่ะ\n\nรูปทั้งหมดถูกเก็บไว้ในเครื่องแล้ว ปลอดภัย ไม่หาย\nเมื่อมีเน็ตแล้วกดส่งอีกครั้งได้เลยค่ะ');
     return;
   }
@@ -1393,10 +1399,11 @@ async function sendAllCodes() {
     // PARTIAL FAILURE - keep photos of failed codes, show retry screen
     var okCodes = codes.filter(function(c){ return confirmedCodes.indexOf(c) > -1; });
     // Remove successful codes from codePhotos AND IndexedDB - keep only failed ones
-    okCodes.forEach(function(c){
+    // Await clears so recovery banner reflects true state (only failed codes remain)
+    await Promise.all(okCodes.map(function(c){
       delete codePhotos[c];
-      clearQueueForCode(sendJob.id, c);
-    });
+      return clearQueueForCode(sendJob.id, c);
+    }));
 
     setProgress(100, '⚠️ ส่งได้บางส่วน');
     setTimeout(function(){
@@ -1410,11 +1417,14 @@ async function sendAllCodes() {
       var btnTop2 = document.getElementById('sendAllCodesBtnTop');
       if (btnTop2) btnTop2.disabled = false;
     }, 400);
+    window._sending = false;
     return;
   }
 
-  // ALL CONFIRMED - safe to clear IndexedDB and show success
-  codes.forEach(function(c){ clearQueueForCode(sendJob.id, c); });
+  // ALL CONFIRMED - clear IndexedDB completely BEFORE showing success (await so banner won't show stale "ค้าง")
+  setProgress(98, 'บันทึกผล...');
+  await Promise.all(codes.map(function(c){ return clearQueueForCode(sendJob.id, c); }));
+  window._sending = false;
   setProgress(100, 'สำเร็จค่ะ! ✓');
   setTimeout(function(){ showSuccess({ codes: allResults }, total, sendJob); }, 400);
 }
