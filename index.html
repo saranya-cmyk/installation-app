@@ -300,18 +300,7 @@ function setName(n) {
 }
 
 // ── S2: เลือกงาน ──────────────────────────────────────────────
-function deleteJobFromList(e, id) {
-  e.stopPropagation();
-  if (!confirm('ลบงานนี้ออกจากรายการค่ะ?')) return;
-  jobs = jobs.filter(function(j){ return j.id !== id; });
-  localStorage.setItem('jobs', JSON.stringify(jobs));
-  if (selectedJob && selectedJob.id === id) {
-    selectedJob = null;
-    sessionStorage.removeItem('selectedJobId');
-    document.getElementById('iPickBtn').disabled = true;
-  }
-  renderJobs();
-}
+
 
 function renderJobs() {
   const el = document.getElementById('jobListEl');
@@ -397,73 +386,9 @@ function goUpload() {
 }
 
 // ── S3: โยนรูป ────────────────────────────────────────────────
-function pickFiles(files) {
-  allFiles = Array.from(files).sort(function(a, b) {
-    var ta = extractTs(a.name) || a.lastModified || 0;
-    var tb = extractTs(b.name) || b.lastModified || 0;
-    return ta - tb;
-  });
-  if (!allFiles.length) return;
 
-  // Show preview grid
-  var grid = document.getElementById('previewGrid');
-  var section = document.getElementById('previewSection');
-  var countTxt = document.getElementById('previewCountTxt');
-  if (countTxt) countTxt.textContent = allFiles.length + ' รูปที่เลือกค่ะ';
-  if (grid) {
-    grid.innerHTML = '';
-    var show = allFiles.slice(0, 11);
-    var rest = allFiles.length - 11;
-    show.forEach(function(f) {
-      var div = document.createElement('div');
-      div.className = 'preview-thumb';
-      var img = document.createElement('img');
-      img.src = URL.createObjectURL(f);
-      img.alt = 'รูป';
-      img.loading = 'lazy';
-      div.appendChild(img);
-      grid.appendChild(div);
-    });
-    if (rest > 0) {
-      var more = document.createElement('div');
-      more.className = 'preview-more';
-      more.textContent = '+' + rest;
-      grid.appendChild(more);
-    }
-  }
-  if (section) section.style.display = 'block';
 
-  var uzBefore = document.getElementById('uzBefore');
-  var uzAfter = document.getElementById('uzAfter');
-  var fileCount = document.getElementById('fileCount');
-  var uploadZone = document.getElementById('uploadZone');
-  var sendBtn = document.getElementById('sendBtn');
 
-  if (uzBefore) uzBefore.style.display = 'none';
-  if (uzAfter) uzAfter.style.display = 'block';
-  var fileCountEl = document.getElementById('fileCountEl');
-  if (fileCountEl) fileCountEl.textContent = allFiles.length;
-  if (uploadZone) uploadZone.className = 'upload-zone has';
-  if (sendBtn) sendBtn.disabled = false;
-}
-
-function clearAllFiles() {
-  allFiles = [];
-  var fi = document.getElementById('fileInput');
-  if (fi) fi.value = '';
-  var uzB = document.getElementById('uzBefore');
-  var uzA = document.getElementById('uzAfter');
-  var uz = document.getElementById('uploadZone');
-  var sb = document.getElementById('sendBtn');
-  var ps = document.getElementById('previewSection');
-  var pg = document.getElementById('previewGrid');
-  if (uzB) uzB.style.display = 'block';
-  if (uzA) uzA.style.display = 'none';
-  if (uz) uz.className = 'upload-zone';
-  if (sb) sb.disabled = true;
-  if (ps) ps.style.display = 'none';
-  if (pg) pg.innerHTML = '';
-}
 
 function clearFiles() {
   allFiles = [];
@@ -482,13 +407,7 @@ function clearFiles() {
 function extractTs(n) { const m = n.match(/^(\d{10,13})/); return m ? +m[1] : null; }
 
 // ── S4: Verify (OCR client-side preview) ──────────────────────
-async function startVerify() {
-  go('s4');
-  // Group files by detecting code photos via filename heuristics
-  // Actual OCR happens server-side; client shows placeholder groups by timestamp gaps
-  verifyGroups = buildClientGroups(allFiles, selectedJob.spots);
-  renderVerify();
-}
+
 
 function buildClientGroups(files, spots) {
   // Heuristic: if time gap > 60s between files, likely new group
@@ -1235,9 +1154,7 @@ function openJobProblemModal() {
   document.getElementById('problemModalBg').style.display = 'flex';
 }
 
-function openProblemModal(code) {
-  openJobProblemModal();
-}
+
 
 function closeProblemModal() {
   document.getElementById('problemModalBg').style.display = 'none';
