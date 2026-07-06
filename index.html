@@ -1101,7 +1101,7 @@ function openCodePicker(code) {
       '<div style="font-size:14px;font-weight:600;color:#c8f542;margin-bottom:4px">' + code + '</div>' +
       '<div style="font-size:12px;color:#666;margin-bottom:16px">เลือกรูปจากไหนครับ</div>' +
       '<div style="display:flex;gap:10px;margin-bottom:10px">' +
-        '<button onclick="pickFromSource(\'' + code + '\',\'camera\')" style="flex:1;padding:16px;background:#0f2156;border:1px solid #1665c1;border-radius:12px;color:#fff;font-size:14px;cursor:pointer;font-family:var(--f)">📷 ถ่ายรูป</button>' +
+        '<button onclick="pickFromSource(\'' + code + '\',\'camera\')" style="flex:1;padding:16px;background:#0f2156;border:1px solid #1665c1;border-radius:12px;color:#fff;font-size:14px;cursor:pointer;font-family:var(--f)">📷 ถ่ายรูป<div style="font-size:9px;color:#88aadd;margin-top:2px">บันทึกลงเครื่องอัตโนมัติ</div></button>' +
         '<button onclick="pickFromSource(\'' + code + '\',\'gallery\')" style="flex:1;padding:16px;background:#222;border:1px solid #333;border-radius:12px;color:#fff;font-size:14px;cursor:pointer;font-family:var(--f)">🖼️ Gallery</button>' +
       '</div>' +
       '<button onclick="document.getElementById(\'photoSourceModal\').remove()" style="width:100%;padding:12px;background:transparent;border:1px solid #333;border-radius:12px;color:#666;font-size:13px;cursor:pointer;font-family:var(--f)">ยกเลิก</button>' +
@@ -1137,12 +1137,36 @@ function pickFromSource(code, source) {
     if (selectedJob) {
       newFiles.forEach(function(f) { savePhotoToQueue(selectedJob.id, pickingCode, f); });
     }
+    // If from camera, auto-save each photo to device (backup layer)
+    if (source === 'camera') {
+      newFiles.forEach(function(f, i) {
+        saveToDevice(f, pickingCode + '_' + Date.now() + '_' + (i+1));
+      });
+    }
     input.remove();
     renderCodeList();
     showCodePreview(pickingCode);
   };
   document.body.appendChild(input);
   setTimeout(function(){ input.click(); }, 100);
+}
+
+// Auto-save a photo to the device (download to Gallery/Downloads)
+function saveToDevice(file, filename) {
+  try {
+    var ext = (file.name && file.name.split('.').pop()) || 'jpg';
+    var url = URL.createObjectURL(file);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename + '.' + ext;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  } catch(e) { /* silent - IndexedDB is primary backup */ }
 }
 
 var problemCode = null;
