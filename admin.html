@@ -263,7 +263,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
     <div id="jobChips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
   </div>
   <select class="dash-select" id="dashSelect" onchange="renderDash()" style="display:none"><option value="">-- Select Job --</option></select>
-  <div id="dashFilter" style="display:none;display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+  <div id="dashFilter" style="display:none;gap:6px;margin-bottom:12px;flex-wrap:wrap">
     <button onclick="setFilter('all')" id="fAll" style="padding:6px 14px;border-radius:20px;border:1px solid var(--ac);background:#1a2a00;color:var(--ac);cursor:pointer;font-size:12px;font-family:var(--f)">ทั้งหมด</button>
     <button onclick="setFilter('pending')" id="fPending" style="padding:6px 14px;border-radius:20px;border:1px solid var(--b);background:transparent;color:var(--mu);cursor:pointer;font-size:12px;font-family:var(--f)">Pending</button>
     <button onclick="setFilter('done')" id="fDone" style="padding:6px 14px;border-radius:20px;border:1px solid var(--b);background:transparent;color:var(--mu);cursor:pointer;font-size:12px;font-family:var(--f)">✅ ติดแล้ว</button>
@@ -1077,7 +1077,13 @@ function pickDashJob(jobId) {
 function renderDash(directId) {
   var id = directId || _selectedDashJob || document.getElementById('dashSelect').value;
   var c = document.getElementById('dashContent');
-  if (!id) { c.style.display = 'none'; return; }
+  if (!id) {
+    c.style.display = 'none';
+    document.getElementById('dashFilter').style.display = 'none';
+    var mw = document.getElementById('mapWrap');
+    if (mw) mw.style.display = 'none';
+    return;
+  }
   c.style.display = 'block';
   document.getElementById('dashFilter').style.display = 'flex';
   var job = jobs.find(function(j){ return j.id === id; });
