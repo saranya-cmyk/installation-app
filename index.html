@@ -157,7 +157,9 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
     </div>
   </div>
   <div class="body">
-    <div class="section-title">งานที่มีอยู่ — กดเลือก 1 งาน</div>
+    <div class="section-title">เลือกสื่อก่อน</div>
+    <div id="mediaChipsInstaller" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;overflow-x:auto"></div>
+    <div class="section-title">งานในสื่อนี้ — กดเลือก 1 งาน</div>
     <div class="job-list" id="jobListEl"></div>
     <button class="btn btn-ac" id="pickJobBtn" onclick="goUpload()" disabled>เลือกงานนี้ →</button>
   </div>
@@ -302,6 +304,9 @@ function setName(n) {
 // ── S2: เลือกงาน ──────────────────────────────────────────────
 
 
+var _installerMediaGroups = {};
+var _installerSelectedMedia = null;
+
 function renderJobs() {
   const el = document.getElementById('jobListEl');
   if (!jobs.length) {
@@ -310,14 +315,59 @@ function renderJobs() {
   }
 
   // Group jobs by media category
-  var groups = {};
-  var noMedia = [];
+  _installerMediaGroups = {};
   jobs.forEach(function(j) {
-    var m = (j.media || '').trim();
-    if (!m) { noMedia.push(j); return; }
-    if (!groups[m]) groups[m] = [];
-    groups[m].push(j);
+    var m = (j.media || '').trim() || '__nomedia__';
+    if (!_installerMediaGroups[m]) _installerMediaGroups[m] = [];
+    _installerMediaGroups[m].push(j);
   });
+
+  drawInstallerMediaChips();
+
+  // If a media was selected and still valid, show its jobs; else prompt to pick media
+  if (_installerSelectedMedia && _installerMediaGroups[_installerSelectedMedia]) {
+    drawInstallerJobs(_installerSelectedMedia);
+  } else {
+    _installerSelectedMedia = null;
+    document.getElementById('jobListEl').innerHTML = '<div class="no-jobs" style="padding:30px 20px">👆 เลือกสื่อด้านบนก่อนนะคะ</div>';
+    document.getElementById('pickJobBtn').disabled = true;
+  }
+}
+
+function drawInstallerMediaChips() {
+  var chipsEl = document.getElementById('mediaChipsInstaller');
+  if (!chipsEl) return;
+  var mediaKeys = Object.keys(_installerMediaGroups).sort(function(a,b){
+    if (a === '__nomedia__') return 1;
+    if (b === '__nomedia__') return -1;
+    return a.localeCompare(b);
+  });
+  chipsEl.innerHTML = mediaKeys.map(function(m) {
+    var count = _installerMediaGroups[m].length;
+    var label = m === '__nomedia__' ? '📋 อื่นๆ' : '📺 ' + m;
+    var isActive = _installerSelectedMedia === m;
+    return '<button data-media="' + encodeURIComponent(m) + '" onclick="selectInstallerMedia(decodeURIComponent(this.getAttribute(\'data-media\')))" ' +
+      'style="padding:12px 18px;border-radius:24px;border:1px solid ' + (isActive ? '#c8f542' : '#2a2a2a') + ';' +
+      'background:' + (isActive ? '#1a2a0a' : '#1a1a1a') + ';color:' + (isActive ? '#c8f542' : '#f0f0f0') + ';' +
+      'cursor:pointer;font-size:14px;font-family:var(--f);font-weight:' + (isActive ? '600' : '400') + ';white-space:nowrap">' +
+      label + ' <span style="opacity:.6">(' + count + ')</span></button>';
+  }).join('');
+}
+
+function selectInstallerMedia(media) {
+  _installerSelectedMedia = media;
+  // Clear job selection when switching media
+  if (selectedJob) {
+    var stillInMedia = (_installerMediaGroups[media] || []).some(function(j){ return j.id === selectedJob.id; });
+    if (!stillInMedia) { selectedJob = null; codePhotos = {}; }
+  }
+  drawInstallerMediaChips();
+  drawInstallerJobs(media);
+}
+
+function drawInstallerJobs(media) {
+  var el = document.getElementById('jobListEl');
+  var jobsInMedia = _installerMediaGroups[media] || [];
 
   function jobItemHtml(j) {
     return '<div class="job-item" data-jobid="' + j.id + '" onclick="pickJob(this,\'' + j.id + '\')">' +
@@ -329,26 +379,17 @@ function renderJobs() {
     '</div>';
   }
 
-  var html = '';
-  Object.keys(groups).sort().forEach(function(media) {
-    html += '<div style="font-size:12px;font-weight:700;color:#88aaff;margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid #223">📺 ' + media + ' <span style="color:#555;font-weight:400">(' + groups[media].length + ' งาน)</span></div>';
-    html += groups[media].map(jobItemHtml).join('');
-  });
-  if (noMedia.length) {
-    html += '<div style="font-size:12px;font-weight:700;color:#888;margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid #223">📋 อื่นๆ</div>';
-    html += noMedia.map(jobItemHtml).join('');
-  }
-  el.innerHTML = html;
-  // NEVER auto-select. Restore user's previous selection only if it still exists.
+  el.innerHTML = jobsInMedia.map(jobItemHtml).join('');
+
+  // Restore selection highlight if still valid
   if (selectedJob) {
-    var still = jobs.find(function(j){ return j.id === selectedJob.id; });
+    var still = jobsInMedia.find(function(j){ return j.id === selectedJob.id; });
     if (still) {
       selectedJob = still;
       var selEl = el.querySelector('.job-item[data-jobid="' + still.id + '"]');
       if (selEl) selEl.classList.add('sel');
       document.getElementById('pickJobBtn').disabled = false;
     } else {
-      selectedJob = null;
       document.getElementById('pickJobBtn').disabled = true;
     }
   } else {
