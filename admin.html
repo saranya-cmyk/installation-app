@@ -1409,12 +1409,6 @@ function renderDash(directId) {
   if (mapVisible && spotMap) setTimeout(renderMap, 100);
 }
 
-function onMediaSelect(sel) {
-  var custom = document.getElementById('jobMediaCustom');
-  custom.style.display = sel.value === '__custom__' ? 'block' : 'none';
-  if (sel.value === '__custom__') custom.focus();
-}
-
 function normalizeDay(v) {
   var s = String(v || '').trim();
   if (!s) return '';
