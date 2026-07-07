@@ -1088,6 +1088,19 @@ function checkPendingQueueBanner() {
     var old = document.getElementById('queueBanner');
     if (old) old.remove();
     if (!records.length) return;
+
+    // Auto-purge orphan entries: jobId no longer exists (job deleted/recreated)
+    // These can never be sent so they'd show "ค้าง" forever - clean them silently
+    var validJobIds = jobs.map(function(j){ return j.id; });
+    var orphans = records.filter(function(r){ return validJobIds.indexOf(r.jobId) === -1; });
+    if (orphans.length && jobs.length > 0) {
+      orphans.forEach(function(r) {
+        clearQueueForCode(r.jobId, r.code);
+      });
+      records = records.filter(function(r){ return validJobIds.indexOf(r.jobId) > -1; });
+      if (!records.length) return;
+    }
+
     var byJob = {};
     records.forEach(function(r) {
       if (!byJob[r.jobId]) byJob[r.jobId] = 0;
@@ -1185,26 +1198,35 @@ function pickFromSource(code, source) {
   var existing = document.getElementById('photoSourceModal');
   if (existing) existing.remove();
 
+  if (source === 'camera') {
+    // Try in-app continuous camera first (multi-shot without leaving)
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      openLiveCamera(code);
+      return;
+    }
+    // Fallback: system camera (one shot per open)
+    openFileInput(code, true);
+    return;
+  }
+  openFileInput(code, false);
+}
+
+function openFileInput(code, isCamera) {
   var input = document.createElement('input');
   input.type = 'file';
   input.style.display = 'none';
-
-  if (source === 'camera') {
-    // iOS: capture attribute opens camera sheet
-    input.accept = 'image/*';
+  input.accept = 'image/*';
+  if (isCamera) {
     input.setAttribute('capture', 'environment');
     input.multiple = false;
   } else {
-    input.accept = 'image/*';
     input.multiple = true;
   }
-
   input.onchange = function() {
     if (!input.files.length) return;
     if (!codePhotos[pickingCode]) codePhotos[pickingCode] = [];
     var newFiles = Array.from(input.files);
     codePhotos[pickingCode] = codePhotos[pickingCode].concat(newFiles);
-    // Save to IndexedDB immediately - survives app close
     if (selectedJob) {
       newFiles.forEach(function(f) { savePhotoToQueue(selectedJob.id, pickingCode, f); });
     }
@@ -1214,6 +1236,80 @@ function pickFromSource(code, source) {
   };
   document.body.appendChild(input);
   setTimeout(function(){ input.click(); }, 100);
+}
+
+// ── In-app continuous camera - ถ่ายหลายรูปติดกันไม่ต้องออก ──
+var _camStream = null;
+var _camShotCount = 0;
+
+function openLiveCamera(code) {
+  _camShotCount = 0;
+  var overlay = document.createElement('div');
+  overlay.id = 'liveCamOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:#000;z-index:9999;display:flex;flex-direction:column';
+  overlay.innerHTML =
+    '<div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,.6);position:absolute;top:0;left:0;right:0;z-index:2">' +
+      '<div style="color:#c8f542;font-weight:600;font-family:var(--f);font-size:14px">📍 ' + code + '</div>' +
+      '<div id="camCount" style="color:#fff;font-family:var(--f);font-size:13px">0 รูป</div>' +
+    '</div>' +
+    '<video id="camVideo" autoplay playsinline style="flex:1;width:100%;object-fit:cover"></video>' +
+    '<div style="padding:20px;display:flex;justify-content:space-around;align-items:center;background:rgba(0,0,0,.7);position:absolute;bottom:0;left:0;right:0">' +
+      '<button onclick="closeLiveCamera(false)" style="background:transparent;border:1px solid #666;color:#ccc;border-radius:24px;padding:12px 20px;font-size:14px;font-family:var(--f);cursor:pointer">ยกเลิก</button>' +
+      '<button id="camShutter" onclick="captureLiveShot()" style="width:72px;height:72px;border-radius:50%;background:#fff;border:5px solid #c8f542;cursor:pointer;font-size:24px">📷</button>' +
+      '<button onclick="closeLiveCamera(true)" style="background:#c8f542;border:none;color:#000;border-radius:24px;padding:12px 20px;font-size:14px;font-weight:600;font-family:var(--f);cursor:pointer">✓ เสร็จ</button>' +
+    '</div>' +
+    '<canvas id="camCanvas" style="display:none"></canvas>';
+  document.body.appendChild(overlay);
+
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+    audio: false
+  }).then(function(stream) {
+    _camStream = stream;
+    document.getElementById('camVideo').srcObject = stream;
+  }).catch(function(err) {
+    // Camera blocked/unavailable - fallback to system camera
+    overlay.remove();
+    openFileInput(code, true);
+  });
+}
+
+function captureLiveShot() {
+  var video = document.getElementById('camVideo');
+  var canvas = document.getElementById('camCanvas');
+  if (!video || !video.videoWidth) return;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  canvas.toBlob(function(blob) {
+    if (!blob) return;
+    var file = new File([blob], pickingCode + '_' + Date.now() + '.jpg', { type: 'image/jpeg', lastModified: Date.now() });
+    if (!codePhotos[pickingCode]) codePhotos[pickingCode] = [];
+    codePhotos[pickingCode].push(file);
+    if (selectedJob) savePhotoToQueue(selectedJob.id, pickingCode, file);
+    _camShotCount++;
+    var cnt = document.getElementById('camCount');
+    if (cnt) cnt.textContent = _camShotCount + ' รูป';
+    // Flash effect
+    var video2 = document.getElementById('camVideo');
+    if (video2) {
+      video2.style.opacity = '0.3';
+      setTimeout(function(){ video2.style.opacity = '1'; }, 120);
+    }
+  }, 'image/jpeg', 0.92);
+}
+
+function closeLiveCamera(done) {
+  if (_camStream) {
+    _camStream.getTracks().forEach(function(t){ t.stop(); });
+    _camStream = null;
+  }
+  var overlay = document.getElementById('liveCamOverlay');
+  if (overlay) overlay.remove();
+  renderCodeList();
+  if (done && _camShotCount > 0) {
+    showCodePreview(pickingCode);
+  }
 }
 
 
@@ -1524,6 +1620,9 @@ async function sendAllCodes() {
   // ALL CONFIRMED - clear IndexedDB completely BEFORE showing success (await so banner won't show stale "ค้าง")
   setProgress(98, 'บันทึกผล...');
   await Promise.all(codes.map(function(c){ return clearQueueForCode(sendJob.id, c); }));
+  // Remove any visible banner immediately
+  var vb = document.getElementById('queueBanner');
+  if (vb) vb.remove();
   window._sending = false;
   setProgress(100, 'สำเร็จค่ะ! ✓');
   setTimeout(function(){ showSuccess({ codes: allResults }, total, sendJob); }, 400);
