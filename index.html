@@ -1242,6 +1242,7 @@ function openFileInput(code, isCamera) {
 // ── In-app continuous camera - ถ่ายหลายรูปติดกันไม่ต้องออก ──
 var _camStream = null;
 var _camShotCount = 0;
+var _camShotSeq = 0;
 
 function openLiveCamera(code) {
   _camShotCount = 0;
@@ -1277,14 +1278,16 @@ function openLiveCamera(code) {
 
 function captureLiveShot() {
   var video = document.getElementById('camVideo');
-  var canvas = document.getElementById('camCanvas');
   if (!video || !video.videoWidth) return;
+  // Fresh canvas per shot - rapid taps never overwrite a pending encode
+  var canvas = document.createElement('canvas');
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   canvas.getContext('2d').drawImage(video, 0, 0);
   canvas.toBlob(function(blob) {
     if (!blob) return;
-    var file = new File([blob], pickingCode + '_' + Date.now() + '.jpg', { type: 'image/jpeg', lastModified: Date.now() });
+    _camShotSeq = (_camShotSeq || 0) + 1;
+    var file = new File([blob], pickingCode + '_' + Date.now() + '_' + _camShotSeq + '.jpg', { type: 'image/jpeg', lastModified: Date.now() });
     if (!codePhotos[pickingCode]) codePhotos[pickingCode] = [];
     codePhotos[pickingCode].push(file);
     if (selectedJob) savePhotoToQueue(selectedJob.id, pickingCode, file);
@@ -1514,13 +1517,31 @@ async function sendAllCodes() {
     }
   }
 
-  // Step 2: Send in batches - track failures
+  // Step 2: Send in batches - CRITICAL: photos of one code must NEVER split across batches.
+  // Server deletes old CODE_* files before writing each batch's files for that code,
+  // so a code split across batches would have earlier photos deleted by the later batch.
   var batchSize = 5;
-  var batches = Math.ceil(allFileData.length / batchSize);
+  var batchList = [];
+  (function buildBatches() {
+    var current = [];
+    for (var bc = 0; bc < codes.length; bc++) {
+      var codeFiles = allFileData.filter(function(f){ return f._forceCode === codes[bc]; });
+      if (!codeFiles.length) continue;
+      // If adding this code would overflow the batch, close current batch first
+      if (current.length > 0 && (current.length + codeFiles.length) > batchSize) {
+        batchList.push(current);
+        current = [];
+      }
+      // Whole code goes in together - even if it alone exceeds batchSize
+      current = current.concat(codeFiles);
+    }
+    if (current.length) batchList.push(current);
+  })();
+  var batches = batchList.length;
   var failedBatches = [];
 
   for (var b = 0; b < batches; b++) {
-    var batch = allFileData.slice(b*batchSize, (b+1)*batchSize);
+    var batch = batchList[b];
     var pct = 40 + Math.round((b+1)/batches*40);
     setProgress(pct, 'กำลังส่ง ' + (b+1) + '/' + batches + '...');
     try {
@@ -1557,7 +1578,7 @@ async function sendAllCodes() {
     var stillFailed = [];
     for (var rb = 0; rb < failedBatches.length; rb++) {
       var bIdx = failedBatches[rb];
-      var rBatch = allFileData.slice(bIdx*batchSize, (bIdx+1)*batchSize);
+      var rBatch = batchList[bIdx];
       try {
         var rResult = await uploadWithRetry({
           action: 'uploadBatch',
