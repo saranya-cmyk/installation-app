@@ -1069,6 +1069,12 @@ function restoreQueueToApp(jobId) {
   });
 }
 
+function openInBrowser() {
+  // LINE in-app browser: openExternalBrowser param forces external browser
+  var url = location.href.split('?')[0] + '?openExternalBrowser=1';
+  location.href = url;
+}
+
 function clearAllQueue() {
   return openPhotoDB().then(function(db) {
     return new Promise(function(resolve) {
@@ -1260,7 +1266,7 @@ function openLiveCamera(code) {
       '<button id="camShutter" onclick="captureLiveShot()" style="width:72px;height:72px;border-radius:50%;background:#fff;border:5px solid #c8f542;cursor:pointer;font-size:24px">📷</button>' +
       '<button onclick="closeLiveCamera(true)" style="background:#c8f542;border:none;color:#000;border-radius:24px;padding:12px 20px;font-size:14px;font-weight:600;font-family:var(--f);cursor:pointer">✓ เสร็จ</button>' +
     '</div>' +
-    '<canvas id="camCanvas" style="display:none"></canvas>';
+    '';
   document.body.appendChild(overlay);
 
   navigator.mediaDevices.getUserMedia({
