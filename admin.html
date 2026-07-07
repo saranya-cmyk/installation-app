@@ -510,11 +510,24 @@ var selectedSendCodes = new Set();
 
 function loadExcel(file) {
   if (!file) return;
+  window._excelFileName = file.name || '';
   var reader = new FileReader();
   reader.onload = function(e) {
     var wb = XLSX.read(e.target.result, { type: 'binary' });
     rawExcelData = [];
     excelCols = [];
+    // Collect top rows text from all sheets (title rows often contain media/campaign name)
+    window._excelTopText = '';
+    try {
+      for (var ts = 0; ts < wb.SheetNames.length; ts++) {
+        var tws = wb.Sheets[wb.SheetNames[ts]];
+        var topRows = XLSX.utils.sheet_to_json(tws, { header: 1, range: 0, defval: '' }).slice(0, 6);
+        topRows.forEach(function(row) {
+          window._excelTopText += ' ' + row.join(' ');
+        });
+        window._excelTopText += ' ' + wb.SheetNames[ts];
+      }
+    } catch(e2) {}
 
     // Scan ALL sheets and ALL header rows (0-20) - pick best
     var bestScore = 0;
@@ -729,15 +742,43 @@ function autoFillJobForm() {
     if (topProduct) nameInput.value = topProduct;
   }
 
-  // 2. Media: most common media in file - match against dropdown, else custom
+  // 2. Media: column data > filename/title-rows keyword match > skip
   var mediaSel = document.getElementById('jobMediaInput');
   var mediaCustom = document.getElementById('jobMediaCustom');
   if (mediaSel && !mediaSel.value) {
+    var topMedia = null;
+    // 2a. From media column in data
     var mediaCounts = {};
     pendingSpots.forEach(function(s) {
       if (s.media) mediaCounts[s.media] = (mediaCounts[s.media] || 0) + 1;
     });
-    var topMedia = Object.keys(mediaCounts).sort(function(a,b){ return mediaCounts[b]-mediaCounts[a]; })[0];
+    var keys = Object.keys(mediaCounts);
+    if (keys.length) {
+      topMedia = keys.sort(function(a,b){ return mediaCounts[b]-mediaCounts[a]; })[0];
+    }
+    // 2b. From filename + top rows text - match known media names
+    if (!topMedia) {
+      var searchText = ((window._excelFileName || '') + ' ' + (window._excelTopText || '')).toLowerCase();
+      var knownMedia = [
+        { name: 'Serie Poster', keys: ['serie poster', 'serie'] },
+        { name: 'Cookies', keys: ['cookies', 'cookie'] },
+        { name: 'Metro Poster', keys: ['metro poster', 'metro'] },
+        { name: 'Gateway Billboard', keys: ['gateway'] },
+        { name: 'Pole Wrap (เสากลม)', keys: ['เสากลม'] },
+        { name: 'Pole Wrap (เสาเหลี่ยม)', keys: ['เสาเหลี่ยม'] },
+        { name: 'Pole Wrap (เสากลม)', keys: ['pole wrap', 'pole'] },
+        { name: 'Flyover 2.0', keys: ['flyover'] },
+        { name: 'NCA Station', keys: ['nca'] },
+        { name: 'Muvads', keys: ['muvads', 'muvad'] },
+        { name: 'Bus', keys: ['bus', 'รถเมล์', 'รถบัส', 'ทะเบียนรถ'] },
+      ];
+      for (var km = 0; km < knownMedia.length; km++) {
+        if (knownMedia[km].keys.some(function(k){ return searchText.indexOf(k) > -1; })) {
+          topMedia = knownMedia[km].name;
+          break;
+        }
+      }
+    }
     if (topMedia) {
       var matched = false;
       for (var i = 0; i < mediaSel.options.length; i++) {
