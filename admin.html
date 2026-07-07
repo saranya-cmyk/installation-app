@@ -574,6 +574,28 @@ function loadExcel(file) {
         if (colStr.indexOf('สินค้า') > -1) score += 2;
         if (colStr.indexOf('co_y') > -1 || colStr.indexOf('lat') > -1) score += 1;
         if (colStr.indexOf('อู่') > -1 || colStr.indexOf('garage') > -1) score += 1;
+        // DATA-pattern scoring: if any column's values look like codes/plates, add points
+        // This rescues files whose headers don't match any keyword
+        if (score < 4 && attempt.length >= 2) {
+          var codeLikePattern = /^[A-Za-z]{1,5}[\s\-]?[A-Za-z]?[0-9]{1,5}([A-Za-z0-9\-\(\)\s]{0,10})?$/;
+          var platePattern2 = /^[0-9]{1,2}[ก-ฮ]{0,2}[\-\s]?[0-9]{3,4}$/;
+          for (var ci2 = 0; ci2 < cols.length; ci2++) {
+            var vals2 = attempt.slice(0, 8).map(function(r2){ return String(r2[cols[ci2]]||'').trim(); }).filter(Boolean);
+            if (vals2.length < 2) continue;
+            var codeMatches = vals2.filter(function(v2){
+              return v2.length >= 3 && v2.length <= 20 && (codeLikePattern.test(v2) || platePattern2.test(v2));
+            }).length;
+            // Most values look like codes AND they're mostly unique
+            if (codeMatches >= vals2.length * 0.7) {
+              var uniq = {};
+              vals2.forEach(function(v2){ uniq[v2] = 1; });
+              if (Object.keys(uniq).length >= vals2.length * 0.7) {
+                score += 4;
+                break;
+              }
+            }
+          }
+        }
         if (score > bestScore) {
           bestScore = score;
           rawExcelData = attempt;
@@ -581,7 +603,11 @@ function loadExcel(file) {
         }
       }
     }
-    if (!rawExcelData.length || bestScore < 4) { alert('ไม่พบข้อมูลที่ใช้ได้ในไฟล์ — ต้องมีคอลัมน์ Code / รหัส / ทะเบียนรถ อย่างใดอย่างหนึ่งค่ะ'); return; }
+    if (!rawExcelData.length || bestScore < 4) {
+      var foundCols = excelCols.length ? '\n\nคอลัมน์ที่เจอ: ' + excelCols.slice(0,10).join(', ') : '';
+      alert('ไม่พบข้อมูลที่ใช้ได้ในไฟล์ — ต้องมีคอลัมน์ Code / รหัส / ทะเบียนรถ หรือคอลัมน์ที่มีรหัสจุดติดตั้ง' + foundCols + '\n\nส่งหัวคอลัมน์นี้ให้ผู้ดูแลระบบเพื่อเพิ่มการรองรับได้ค่ะ');
+      return;
+    }
 
     // Auto-detect columns by data pattern (no header name required)
     autoDetectAndBuild();
@@ -731,7 +757,7 @@ function toggleCreateForm() {
 function autoFillJobForm() {
   if (!pendingSpots.length) return;
 
-  // 1. Job name: most common product in file
+  // 1. Job name: most common product in file > parse from filename
   var nameInput = document.getElementById('jobNameInput');
   if (nameInput && !nameInput.value.trim()) {
     var productCounts = {};
@@ -739,7 +765,35 @@ function autoFillJobForm() {
       if (s.product) productCounts[s.product] = (productCounts[s.product] || 0) + 1;
     });
     var topProduct = Object.keys(productCounts).sort(function(a,b){ return productCounts[b]-productCounts[a]; })[0];
-    if (topProduct) nameInput.value = topProduct;
+    if (topProduct) {
+      nameInput.value = topProduct;
+    } else {
+      // Parse from filename: strip extension, known media names, dates, common words
+      var fname = (window._excelFileName || '').replace(/\.(xlsx|xls|csv)$/i, '');
+      if (fname) {
+        var cleaned = fname
+          .replace(/serie\s*poster/ig, '')
+          .replace(/metro\s*poster/ig, '')
+          .replace(/gateway\s*billboard/ig, '')
+          .replace(/pole\s*wrap/ig, '')
+          .replace(/flyover\s*(2\.0)?/ig, '')
+          .replace(/nca\s*station/ig, '')
+          .replace(/cookies|muvads|gateway|nca|bus/ig, '')
+          .replace(/เสากลม|เสาเหลี่ยม|รถเมล์|จุดติดตั้ง|ติดตั้ง|รายชื่อ|รายการ|ข้อมูล/g, '')
+          .replace(/แก้ไข|แบบเรียงป้าย|เรียงป้าย|แบบเรียง|ตำแหน่ง|สรุป|final|update|updated|new|copy|draft|version|ver|rev/ig, '')
+          .replace(/location|pack\s*[0-9]*|แพ็ค\s*[0-9]*|part\s*[0-9]*|ชุด\s*[0-9]*|เฟส\s*[0-9]*|phase\s*[0-9]*/ig, '')
+          .replace(/\([0-9]+\)/g, '')
+          .replace(/[0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4}/g, '')
+          .replace(/(19|20|25)[0-9]{2}/g, '')
+          .replace(/(january|february|march|april|may|june|july|august|september|october|november|december)/ig, '')
+          .replace(/(jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b/ig, '')
+          .replace(/(มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)/g, '')
+          .replace(/[_\-\.]+/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (cleaned && cleaned.length >= 2) nameInput.value = cleaned;
+      }
+    }
   }
 
   // 2. Media: column data > filename/title-rows keyword match > skip
