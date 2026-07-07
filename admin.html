@@ -1472,14 +1472,18 @@ function renderMap() {
       weight: 2, opacity: 1, fillOpacity: 0.9
     }).addTo(spotMap);
 
-    var popupHtml = '<div style="font-family:sans-serif;min-width:180px">' +
+    var popupHtml = '<div style="font-family:sans-serif;min-width:200px;max-width:240px">' +
       '<b style="font-size:14px">' + s.code + '</b> ' +
       (isDone ? '<span style="color:#22bb44">✓ ติดแล้ว</span>' : '<span style="color:#999">รอติดตั้ง</span>') +
       '<br><span style="font-size:12px;color:#555">' + (s.address||'') + '</span>' +
-      (isDone && logEntry.folderUrl ? '<br><a href="' + logEntry.folderUrl + '" target="_blank" style="font-size:12px">📁 ดูรูป</a>' : '') +
       (isDone && logEntry.installedAt ? '<br><span style="font-size:11px;color:#888">📅 ' + logEntry.installedAt + '</span>' : '') +
+      (isDone ? '<div id="mapPhotos_' + encodeURIComponent(s.code) + '" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px"><span style="font-size:11px;color:#999">⏳ โหลดรูป...</span></div>' : '') +
+      (isDone && logEntry.folderUrl ? '<a href="' + logEntry.folderUrl + '" target="_blank" style="font-size:12px">📁 เปิดโฟลเดอร์</a>' : '') +
       '</div>';
     marker.bindPopup(popupHtml);
+    if (isDone) {
+      marker.on('popupopen', (function(codeVal){ return function(){ loadMapPhotos(codeVal); }; })(s.code));
+    }
     mapMarkers.push(marker);
     bounds.push([s.lat, s.lng]);
   });
@@ -1488,6 +1492,38 @@ function renderMap() {
     spotMap.fitBounds(bounds, { padding: [30, 30] });
   }
   setTimeout(function(){ spotMap.invalidateSize(); }, 200);
+}
+
+var _mapPhotoCache = {};
+
+function loadMapPhotos(code) {
+  var el = document.getElementById('mapPhotos_' + encodeURIComponent(code));
+  if (!el) return;
+
+  function render(photos) {
+    if (!photos.length) {
+      el.innerHTML = '<span style="font-size:11px;color:#999">ไม่พบรูป</span>';
+      return;
+    }
+    el.innerHTML = photos.slice(0, 4).map(function(p) {
+      return '<a href="' + p.url + '" target="_blank">' +
+        '<img src="' + p.thumbnail + '" style="width:52px;height:52px;object-fit:cover;border-radius:6px;border:1px solid #ddd" loading="lazy" ' +
+        'onerror="this.parentNode.style.display=\'none\'"></a>';
+    }).join('') + (photos.length > 4 ? '<span style="font-size:11px;color:#666;align-self:center">+' + (photos.length-4) + '</span>' : '');
+  }
+
+  if (_mapPhotoCache[code]) { render(_mapPhotoCache[code]); return; }
+
+  fetch(SCRIPT_URL + '?action=getPhotos&code=' + encodeURIComponent(code))
+    .then(function(r){ return r.json(); })
+    .then(function(res) {
+      var photos = res.photos || [];
+      _mapPhotoCache[code] = photos;
+      render(photos);
+    })
+    .catch(function() {
+      el.innerHTML = '<span style="font-size:11px;color:#999">โหลดรูปไม่สำเร็จ</span>';
+    });
 }
 
 function copySpot(jobId, code, btn) {
