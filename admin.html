@@ -1035,21 +1035,22 @@ function renderJobCards() {
 
   // Group jobs by media category
   var groups = {};
-  var noMedia = [];
   jobs.forEach(function(j) {
-    var m = (j.media || '').trim();
-    if (m) {
-      if (!groups[m]) groups[m] = [];
-      groups[m].push(j);
-    } else {
-      noMedia.push(j);
-    }
+    var m = (j.media || '').trim() || '__nomedia__';
+    if (!groups[m]) groups[m] = [];
+    groups[m].push(j);
+  });
+
+  if (!window._expandedMedia) window._expandedMedia = {};
+  var mediaKeys = Object.keys(groups).sort(function(a,b){
+    if (a === '__nomedia__') return 1;
+    if (b === '__nomedia__') return -1;
+    return a.localeCompare(b);
   });
 
   var html = '';
-  Object.keys(groups).sort().forEach(function(media) {
+  mediaKeys.forEach(function(media) {
     var jobsInGroup = groups[media];
-    // Count total progress for this media group
     var totalSpots = 0, totalDone = 0;
     jobsInGroup.forEach(function(j) {
       var log = codeLog[j.id] || {};
@@ -1058,20 +1059,34 @@ function renderJobCards() {
       totalSpots += j.spots.length;
       totalDone += done;
     });
-    html += '<div style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--b)">' +
-      '<span style="font-size:14px;font-weight:600;color:#88aaff">📺 ' + media + '</span>' +
-      '<span style="font-size:11px;color:var(--mu)">(' + jobsInGroup.length + ' งาน · ' + totalDone + '/' + totalSpots + ' จุด)</span>' +
+    var isOpen = !!window._expandedMedia[media];
+    var label = media === '__nomedia__' ? '📋 ไม่ระบุสื่อ' : '📺 ' + media;
+    var pct = totalSpots ? Math.round(totalDone/totalSpots*100) : 0;
+    var pctColor = pct >= 100 ? '#22bb44' : (pct > 0 ? '#ffa94d' : 'var(--mu)');
+
+    html += '<div data-media="' + encodeURIComponent(media) + '" onclick="toggleMediaSection(this.getAttribute(\'data-media\'))" ' +
+      'style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;margin-bottom:' + (isOpen ? '10px' : '10px') + ';' +
+      'background:var(--s2);border:1px solid ' + (isOpen ? '#4488ff' : 'var(--b)') + ';border-radius:12px;cursor:pointer">' +
+        '<div>' +
+          '<div style="font-size:14px;font-weight:600;color:' + (isOpen ? '#88bbff' : 'var(--tx)') + '">' + label + '</div>' +
+          '<div style="font-size:11px;color:var(--mu);margin-top:3px">' + jobsInGroup.length + ' งาน · <span style="color:' + pctColor + '">' + totalDone + '/' + totalSpots + ' จุด (' + pct + '%)</span></div>' +
+        '</div>' +
+        '<span style="color:var(--mu);font-size:14px">' + (isOpen ? '▾' : '▸') + '</span>' +
       '</div>';
-    html += jobsInGroup.map(renderOneJobCard).join('');
+
+    if (isOpen) {
+      html += '<div style="margin:0 0 14px 8px;padding-left:10px;border-left:2px solid #2a3a55">' +
+        jobsInGroup.map(renderOneJobCard).join('') + '</div>';
+    }
   });
-  if (noMedia.length) {
-    html += '<div style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--b)">' +
-      '<span style="font-size:14px;font-weight:600;color:var(--mu)">📋 ไม่ระบุสื่อ</span>' +
-      '<span style="font-size:11px;color:var(--mu)">(' + noMedia.length + ' งาน)</span>' +
-      '</div>';
-    html += noMedia.map(renderOneJobCard).join('');
-  }
   el.innerHTML = html;
+}
+
+function toggleMediaSection(encMedia) {
+  var media = decodeURIComponent(encMedia);
+  if (!window._expandedMedia) window._expandedMedia = {};
+  window._expandedMedia[media] = !window._expandedMedia[media];
+  renderJobCards();
 }
 
 function deleteJob(id) {
