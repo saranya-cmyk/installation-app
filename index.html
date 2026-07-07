@@ -1068,6 +1068,17 @@ function restoreQueueToApp(jobId) {
   });
 }
 
+function clearAllQueue() {
+  return openPhotoDB().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction('photos', 'readwrite');
+      tx.objectStore('photos').clear();
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+  }).catch(function(){});
+}
+
 function checkPendingQueueBanner() {
   // Don't show while actively sending (avoids flash of "ค้าง" during upload)
   if (window._sending) return;
@@ -1090,9 +1101,28 @@ function checkPendingQueueBanner() {
       var j = jobs.find(function(x){ return x.id === jid; });
       return (j ? j.name : 'งานเก่า') + ' (' + byJob[jid] + ' รูป)';
     }).join(', ');
-    banner.innerHTML = '<div style="font-size:13px;font-weight:600;color:#ffa94d">📦 มีรูปค้างที่ยังไม่ได้ส่ง</div>' +
-      '<div style="font-size:11px;color:#ccc;margin-top:4px">' + jobNames + '</div>' +
-      '<div style="font-size:11px;color:#888;margin-top:4px">แตะเพื่อเปิดงานและส่งต่อ →</div>';
+    banner.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
+      '<div style="flex:1">' +
+        '<div style="font-size:13px;font-weight:600;color:#ffa94d">📦 มีรูปค้างที่ยังไม่ได้ส่ง</div>' +
+        '<div style="font-size:11px;color:#ccc;margin-top:4px">' + jobNames + '</div>' +
+        '<div style="font-size:11px;color:#888;margin-top:4px">แตะเพื่อเปิดงานและส่งต่อ →</div>' +
+      '</div>' +
+      '<button id="queueBannerClear" style="background:transparent;border:1px solid #555;color:#888;border-radius:8px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:var(--f);margin-left:8px;flex-shrink:0">🗑 ล้าง</button>' +
+    '</div>';
+    // Clear button - deletes stale queue after confirmation
+    setTimeout(function() {
+      var clearBtn = document.getElementById('queueBannerClear');
+      if (clearBtn) {
+        clearBtn.onclick = function(e) {
+          e.stopPropagation();
+          if (confirm('ลบรูปค้างทั้งหมดออกจากแอป?\n\n⚠️ ทำเฉพาะเมื่อแน่ใจว่ารูปพวกนี้ส่งไปแล้ว หรือไม่ใช้แล้วเท่านั้นค่ะ')) {
+            clearAllQueue().then(function() {
+              banner.remove();
+            });
+          }
+        };
+      }
+    }, 100);
     banner.onclick = function() {
       var jid = jobIds[0];
       var j = jobs.find(function(x){ return x.id === jid; });
@@ -1142,7 +1172,7 @@ function openCodePicker(code) {
       '<div style="font-size:14px;font-weight:600;color:#c8f542;margin-bottom:4px">' + code + '</div>' +
       '<div style="font-size:12px;color:#666;margin-bottom:16px">เลือกรูปจากไหนครับ</div>' +
       '<div style="display:flex;gap:10px;margin-bottom:10px">' +
-        '<button onclick="pickFromSource(\'' + code + '\',\'camera\')" style="flex:1;padding:16px;background:#0f2156;border:1px solid #1665c1;border-radius:12px;color:#fff;font-size:14px;cursor:pointer;font-family:var(--f)">📷 ถ่ายรูป<div style="font-size:9px;color:#88aadd;margin-top:2px">บันทึกลงเครื่องอัตโนมัติ</div></button>' +
+        '<button onclick="pickFromSource(\'' + code + '\',\'camera\')" style="flex:1;padding:16px;background:#0f2156;border:1px solid #1665c1;border-radius:12px;color:#fff;font-size:14px;cursor:pointer;font-family:var(--f)">📷 ถ่ายรูป<div style="font-size:9px;color:#88aadd;margin-top:2px">รูปถูกเก็บในแอปอัตโนมัติ</div></button>' +
         '<button onclick="pickFromSource(\'' + code + '\',\'gallery\')" style="flex:1;padding:16px;background:#222;border:1px solid #333;border-radius:12px;color:#fff;font-size:14px;cursor:pointer;font-family:var(--f)">🖼️ Gallery</button>' +
       '</div>' +
       '<button onclick="document.getElementById(\'photoSourceModal\').remove()" style="width:100%;padding:12px;background:transparent;border:1px solid #333;border-radius:12px;color:#666;font-size:13px;cursor:pointer;font-family:var(--f)">ยกเลิก</button>' +
@@ -1178,12 +1208,6 @@ function pickFromSource(code, source) {
     if (selectedJob) {
       newFiles.forEach(function(f) { savePhotoToQueue(selectedJob.id, pickingCode, f); });
     }
-    // If from camera, auto-save each photo to device (backup layer)
-    if (source === 'camera') {
-      newFiles.forEach(function(f, i) {
-        saveToDevice(f, pickingCode + '_' + Date.now() + '_' + (i+1));
-      });
-    }
     input.remove();
     renderCodeList();
     showCodePreview(pickingCode);
@@ -1192,23 +1216,7 @@ function pickFromSource(code, source) {
   setTimeout(function(){ input.click(); }, 100);
 }
 
-// Auto-save a photo to the device (download to Gallery/Downloads)
-function saveToDevice(file, filename) {
-  try {
-    var ext = (file.name && file.name.split('.').pop()) || 'jpg';
-    var url = URL.createObjectURL(file);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = filename + '.' + ext;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function(){
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 1000);
-  } catch(e) { /* silent - IndexedDB is primary backup */ }
-}
+
 
 var problemCode = null;
 var problemReason = null;
@@ -1316,7 +1324,12 @@ function renderCodePreviewModal(code) {
 }
 
 function deletePhotoFromPreview(code, idx) {
+  var removed = codePhotos[code][idx];
   codePhotos[code].splice(idx, 1);
+  // Also remove from IndexedDB so recovery banner stays accurate
+  if (selectedJob && removed) {
+    removePhotoFromQueue(selectedJob.id, code, removed.name, removed.lastModified);
+  }
   if (codePhotos[code].length === 0) {
     delete codePhotos[code];
     closeCodePreview();
@@ -1325,6 +1338,26 @@ function deletePhotoFromPreview(code, idx) {
   }
   renderCodePreviewModal(code);
   renderCodeList();
+}
+
+function removePhotoFromQueue(jobId, code, name, lastModified) {
+  return openPhotoDB().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction('photos', 'readwrite');
+      var req = tx.objectStore('photos').index('jobCode').openCursor(IDBKeyRange.only([jobId, code]));
+      req.onsuccess = function(e) {
+        var cursor = e.target.result;
+        if (cursor) {
+          if (cursor.value.name === name && cursor.value.lastModified === lastModified) {
+            cursor.delete();
+          }
+          cursor.continue();
+        }
+      };
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+  }).catch(function(){});
 }
 
 async function sendAllCodes() {
