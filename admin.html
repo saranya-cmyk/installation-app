@@ -416,7 +416,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyD7d6dUoBn0wzOcONra2b0-i9GiT0b5euAmWS_bpsFO6382NIFPrSpohpTCNwlPBmYkg/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxCupouYSghtZf8EiiiXdd3N12CcpnirPtEw_xykUHAxJUSj-f8iCAya1oazJ11jhy5LA/exec';
 var jobs = [];
 var codeLog = {};
 
@@ -695,6 +695,94 @@ function autoDetectAndBuild() {
       media:   mediaCol   ? String(r[mediaCol]||'').trim()   : '',
     };
   });
+
+  // ── Auto-fill form from file (user can still edit) ──
+  autoFillJobForm();
+}
+
+function autoFillJobForm() {
+  if (!pendingSpots.length) return;
+
+  // 1. Job name: most common product in file
+  var nameInput = document.getElementById('jobNameInput');
+  if (nameInput && !nameInput.value.trim()) {
+    var productCounts = {};
+    pendingSpots.forEach(function(s) {
+      if (s.product) productCounts[s.product] = (productCounts[s.product] || 0) + 1;
+    });
+    var topProduct = Object.keys(productCounts).sort(function(a,b){ return productCounts[b]-productCounts[a]; })[0];
+    if (topProduct) nameInput.value = topProduct;
+  }
+
+  // 2. Media: most common media in file - match against dropdown, else custom
+  var mediaSel = document.getElementById('jobMediaInput');
+  var mediaCustom = document.getElementById('jobMediaCustom');
+  if (mediaSel && !mediaSel.value) {
+    var mediaCounts = {};
+    pendingSpots.forEach(function(s) {
+      if (s.media) mediaCounts[s.media] = (mediaCounts[s.media] || 0) + 1;
+    });
+    var topMedia = Object.keys(mediaCounts).sort(function(a,b){ return mediaCounts[b]-mediaCounts[a]; })[0];
+    if (topMedia) {
+      var matched = false;
+      for (var i = 0; i < mediaSel.options.length; i++) {
+        if (mediaSel.options[i].value.toLowerCase() === topMedia.toLowerCase()) {
+          mediaSel.value = mediaSel.options[i].value;
+          matched = true; break;
+        }
+      }
+      if (!matched) {
+        mediaSel.value = '__custom__';
+        if (mediaCustom) { mediaCustom.style.display = 'block'; mediaCustom.value = topMedia; }
+      }
+    }
+  }
+
+  // 3. Dates: find date column in raw data
+  var dateStart = document.getElementById('jobDateStart');
+  var dateEnd = document.getElementById('jobDateEnd');
+  if (dateStart && !dateStart.value) {
+    var dateCol = excelCols.find(function(col) {
+      var c = col.toString().toLowerCase();
+      return c.indexOf('วันที่ติดตั้ง') > -1 || c.indexOf('วันติดตั้ง') > -1 ||
+             c.indexOf('install date') > -1 || c.indexOf('วันที่') > -1 || c.indexOf('date') > -1;
+    });
+    if (dateCol) {
+      var dates = rawExcelData.map(function(r) {
+        return parseAnyDate(r[dateCol]);
+      }).filter(Boolean).sort();
+      if (dates.length) {
+        dateStart.value = dates[0];
+        if (dateEnd && !dateEnd.value && dates.length > 1) {
+          dateEnd.value = dates[dates.length - 1];
+        }
+      }
+    }
+  }
+}
+
+function parseAnyDate(v) {
+  if (!v) return null;
+  var s = String(v).trim();
+  // Excel serial number
+  if (/^[0-9]{5}$/.test(s)) {
+    var d0 = new Date((parseInt(s) - 25569) * 86400 * 1000);
+    if (!isNaN(d0.getTime())) return d0.toISOString().substring(0,10);
+  }
+  // dd/mm/yyyy or dd-mm-yyyy (Thai year supported)
+  var m = s.match(/^([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{4})/);
+  if (m) {
+    var yr = parseInt(m[3]);
+    if (yr > 2400) yr -= 543; // Buddhist year
+    var dt = new Date(yr, parseInt(m[2])-1, parseInt(m[1]));
+    if (!isNaN(dt.getTime())) {
+      return yr + '-' + String(parseInt(m[2])).padStart(2,'0') + '-' + String(parseInt(m[1])).padStart(2,'0');
+    }
+  }
+  // ISO
+  var d = new Date(s);
+  if (!isNaN(d.getTime()) && d.getFullYear() > 2000) return d.toISOString().substring(0,10);
+  return null;
 }
 
 function showAutoPreview() {
