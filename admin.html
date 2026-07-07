@@ -174,15 +174,28 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <!-- TAB 0 -->
 <div class="screen on" id="t0">
+  <button id="toggleCreateBtn" onclick="toggleCreateForm()" style="width:100%;padding:14px;background:var(--s2);border:1px dashed var(--ac);border-radius:12px;color:var(--ac);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--f);margin-bottom:16px">➕ สร้างงานใหม่</button>
+  <div id="createFormWrap" style="display:none">
   <div class="section-label" style="margin-bottom:16px">Create New Job</div>
-  <div class="field" id="jobNameField">
+  <div style="font-size:11px;color:var(--mu);margin-bottom:6px;font-weight:600">① โยนไฟล์ Excel — ระบบอ่านและเติมข้อมูลให้อัตโนมัติ</div>
+<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:14px">
+<div class="excel-zone" id="excelZone" style="margin-bottom:0;flex:1">
+    <input type="file" accept=".xlsx,.xls,.csv" id="excelInput" onchange="loadExcel(this.files[0])">
+    <div id="ezBefore"><div class="ez-icon">📋</div><div class="ez-title">Upload Excel / CSV</div><div class="ez-sub">Any format supported — auto-detects columns</div></div>
+    <div id="ezAfter" style="display:none"><div class="ez-icon">✅</div><div class="ez-title" id="ezTitle">โหลดแล้ว</div><div class="ez-sub" id="ezSub">—</div></div>
+  </div>
+  <button onclick="clearExcel()" style="background:transparent;border:1px solid var(--err);color:var(--err);border-radius:6px;padding:5px 8px;cursor:pointer;font-size:10px;white-space:nowrap;font-family:var(--f);align-self:flex-start;margin-top:0">✕</button>
+</div>
+
+  <div style="font-size:11px;color:var(--mu);margin:18px 0 6px;font-weight:600">② ตรวจข้อมูล — แก้ไขได้ทุกช่อง (หรือพิมพ์เองถ้าไม่มีไฟล์)</div>
+<div class="field" id="jobNameField">
     <label>Job Name / Campaign</label>
     <div style="display:flex;gap:8px;align-items:center">
       <input type="text" id="jobNameInput" placeholder="ใส่ชื่องาน" autocomplete="off" style="flex:1">
       <button onclick="document.getElementById('jobNameInput').value='';document.getElementById('jobNameInput').focus()" style="background:transparent;border:1px solid var(--err);color:var(--err);border-radius:6px;padding:5px 8px;cursor:pointer;font-size:10px;white-space:nowrap;font-family:var(--f)">✕</button>
     </div>
   </div>
-  <div class="field" id="jobMediaField">
+<div class="field" id="jobMediaField">
     <label>สื่อ (Media) — ถ้าไม่เลือก จะดึงจาก Excel อัตโนมัติ</label>
     <select id="jobMediaInput" onchange="onMediaSelect(this)" style="width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:12px 14px;font-size:14px;color:var(--tx);font-family:var(--f);outline:none">
       <option value="">-- ไม่ระบุ (ดึงจาก Excel) --</option>
@@ -200,7 +213,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
     </select>
     <input type="text" id="jobMediaCustom" placeholder="พิมพ์ชื่อสื่อใหม่" autocomplete="off" style="display:none;width:100%;background:var(--s2);border:1px solid var(--warn);border-radius:8px;padding:12px 14px;font-size:14px;color:var(--tx);font-family:var(--f);outline:none;margin-top:8px">
   </div>
-  <div style="display:flex;gap:10px;margin-bottom:14px">
+<div style="display:flex;gap:10px;margin-bottom:14px">
     <div class="field" style="flex:1;margin-bottom:0">
       <label>วันที่เริ่มติดตั้ง</label>
       <input type="date" id="jobDateStart" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none;width:100%">
@@ -210,14 +223,6 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
       <input type="date" id="jobDateEnd" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none;width:100%">
     </div>
   </div>
-<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:14px">
-<div class="excel-zone" id="excelZone" style="margin-bottom:0;flex:1">
-    <input type="file" accept=".xlsx,.xls,.csv" id="excelInput" onchange="loadExcel(this.files[0])">
-    <div id="ezBefore"><div class="ez-icon">📋</div><div class="ez-title">Upload Excel / CSV</div><div class="ez-sub">Any format supported — auto-detects columns</div></div>
-    <div id="ezAfter" style="display:none"><div class="ez-icon">✅</div><div class="ez-title" id="ezTitle">โหลดแล้ว</div><div class="ez-sub" id="ezSub">—</div></div>
-  </div>
-  <button onclick="clearExcel()" style="background:transparent;border:1px solid var(--err);color:var(--err);border-radius:6px;padding:5px 8px;cursor:pointer;font-size:10px;white-space:nowrap;font-family:var(--f);align-self:flex-start;margin-top:0">✕</button>
-</div>
 
   <div class="mapper-wrap" id="mapperWrap" style="display:none">
     <div class="mapper-title">จับคู่คอลัมน์</div>
@@ -247,8 +252,9 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
   </div>
 
   <button class="btn btn-warn" onclick="createJob()">✚ Create Job</button>
+  </div><!-- /createFormWrap -->
 
-  <div style="margin-top:28px">
+  <div style="margin-top:20px">
     <div class="section-label">Active Jobs</div>
     <div class="job-cards" id="jobCards"><div class="empty">No jobs yet<br>สร้างงานแรกด้านบนได้เลย</div></div>
   </div>
@@ -698,6 +704,15 @@ function autoDetectAndBuild() {
 
   // ── Auto-fill form from file (user can still edit) ──
   autoFillJobForm();
+}
+
+function toggleCreateForm() {
+  var wrap = document.getElementById('createFormWrap');
+  var btn = document.getElementById('toggleCreateBtn');
+  var isOpen = wrap.style.display !== 'none';
+  wrap.style.display = isOpen ? 'none' : 'block';
+  btn.textContent = isOpen ? '➕ สร้างงานใหม่' : '✕ ปิดฟอร์ม';
+  btn.style.borderStyle = isOpen ? 'dashed' : 'solid';
 }
 
 function autoFillJobForm() {
