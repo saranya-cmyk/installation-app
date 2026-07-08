@@ -107,7 +107,7 @@ function render(d) {
         '</div>' +
         '<span class="tag ' + (s.done ? 'tag-done">✓ ติดตั้งแล้ว' : 'tag-wait">รอติดตั้ง') + '</span>' +
       '</div>' +
-      (s.done ? '<div class="spot-photos" id="ph_' + encodeURIComponent(s.code) + '"><span style="font-size:12px;color:#999">⏳ กำลังโหลดรูป...</span></div>' : '') +
+      (s.done ? '<div class="spot-photos">' + photosHtml(s) + '</div>' : '') +
     '</div>';
   }
 
@@ -132,31 +132,15 @@ function render(d) {
 
   renderMap(d.spots);
 
-  // Auto-load photos for installed spots - customer sees proof immediately
-  doneSpots.forEach(function(s, i) {
-    setTimeout(function(){ loadSpotPhotos(s.code); }, i * 350);
-  });
 }
 
-function loadSpotPhotos(code) {
-  var box = document.getElementById('ph_' + encodeURIComponent(code));
-  if (!box) return;
-  if (photoCache[code]) { fillPhotos(box, photoCache[code]); return; }
-  fetch(SCRIPT_URL + '?action=getPhotos&code=' + encodeURIComponent(code))
-    .then(function(r){ return r.json(); })
-    .then(function(res) {
-      photoCache[code] = res.photos || [];
-      fillPhotos(box, photoCache[code]);
-    })
-    .catch(function(){ box.innerHTML = '<span style="font-size:12px;color:#999">โหลดรูปไม่สำเร็จ — กดรีเฟรชอีกครั้งค่ะ</span>'; });
-}
-
-function fillPhotos(el, photos) {
-  if (!photos.length) { el.innerHTML = '<span style="font-size:12px;color:#999">รูปกำลังอัปโหลดเข้าระบบค่ะ</span>'; return; }
-  el.innerHTML = photos.map(function(p) {
-    var id = (p.thumbnail.match(/id=([\w-]+)/) || [])[1] || '';
-    return '<a href="' + p.url + '" target="_blank">' +
-      '<img src="' + p.thumbnail + '" data-id="' + id + '" data-retry="0" loading="lazy" onerror="photoFallback(this)"></a>';
+function photosHtml(s) {
+  var imgs = s.imgs || [];
+  if (!imgs.length) return '<span style="font-size:12px;color:#999">รูปกำลังอัปโหลดเข้าระบบค่ะ</span>';
+  return imgs.map(function(im) {
+    var id = (im.t.match(/id=([\w-]+)/) || [])[1] || '';
+    return '<a href="' + im.u + '" target="_blank">' +
+      '<img src="' + im.t + '" data-id="' + id + '" data-retry="0" loading="lazy" onerror="photoFallback(this)"></a>';
   }).join('');
 }
 
