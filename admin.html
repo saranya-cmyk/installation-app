@@ -422,7 +422,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxCupouYSghtZf8EiiiXdd3N12CcpnirPtEw_xykUHAxJUSj-f8iCAya1oazJ11jhy5LA/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxAmnIwOxMZ2ntWiZFW7uYLjp-ZfOzSwfMXbO8YS5SzFutOcLoV6AJO4YGnjdQpbH86Cw/exec';
 var jobs = [];
 var codeLog = {};
 
@@ -1024,6 +1024,7 @@ function renderOneJobCard(j) {
         '<button class="copy-btn" style="background:#1a2a1a;border:1px solid #448844;color:#88cc88" onclick="editJobDates(\'' + j.id + '\')">📅 แก้ไข</button>' +
         '<button class="copy-btn" style="background:#1a1a3a;border:1px solid #4444ff;color:#8888ff" onclick="createPDF(\'' + j.id + '\',this)">📄 PDF</button>' +
         (getJobFolderUrl(j.id) ? '<a class="copy-btn" href="' + getJobFolderUrl(j.id) + '" target="_blank" style="background:#0d1f3c;border:1px solid #1a4a8a;color:#5599ff;text-decoration:none">📁 Drive</a>' : '') +
+        '<button class="copy-btn" data-jobid="' + j.id + '" onclick="copyPortalLink(this)" style="background:#1f3c0d;border:1px solid #4a8a1a;color:#99dd55">🔗 ลูกค้า</button>' +
       '</div>' +
       '<div class="jcard-del" onclick="deleteJob(\'' + j.id + '\')">🗑 Delete Job</div>' +
     '</div>';
@@ -1533,6 +1534,27 @@ function loadMapPhotos(code) {
     .catch(function() {
       el.innerHTML = '<span style="font-size:11px;color:#999">โหลดรูปไม่สำเร็จ</span>';
     });
+}
+
+function copyPortalLink(btn) {
+  var jobId = btn.getAttribute('data-jobid');
+  var orig = btn.textContent;
+  btn.textContent = '⏳...';
+  fetch(SCRIPT_URL + '?action=portalLink&jobId=' + encodeURIComponent(jobId))
+    .then(function(r){ return r.json(); })
+    .then(function(res) {
+      if (!res.key) { btn.textContent = orig; alert('สร้างลิงก์ไม่สำเร็จ: ' + (res.error || '')); return; }
+      var url = 'https://saranya-cmyk.github.io/installation-app/portal.html?key=' + res.key;
+      navigator.clipboard.writeText(url).then(function() {
+        btn.textContent = '✓ คัดลอกแล้ว';
+        setTimeout(function(){ btn.textContent = orig; }, 2500);
+        alert('คัดลอกลิงก์ลูกค้าแล้วค่ะ 🔗\n\n' + url + '\n\nส่งลิงก์นี้ให้ลูกค้าเปิดดูสถานะติดตั้งได้เลย (ดูได้อย่างเดียว แก้ไขไม่ได้)');
+      }).catch(function() {
+        btn.textContent = orig;
+        prompt('คัดลอกลิงก์นี้ส่งให้ลูกค้าค่ะ:', url);
+      });
+    })
+    .catch(function(){ btn.textContent = orig; alert('เชื่อมต่อไม่สำเร็จค่ะ'); });
 }
 
 function copySpot(jobId, code, btn) {
