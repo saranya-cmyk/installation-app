@@ -245,7 +245,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script>
 // ── Config ────────────────────────────────────────────────────
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxCupouYSghtZf8EiiiXdd3N12CcpnirPtEw_xykUHAxJUSj-f8iCAya1oazJ11jhy5LA/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxAmnIwOxMZ2ntWiZFW7uYLjp-ZfOzSwfMXbO8YS5SzFutOcLoV6AJO4YGnjdQpbH86Cw/exec';
 
 // ── State ─────────────────────────────────────────────────────
 let installerName = localStorage.getItem('installerName') || '';
@@ -522,18 +522,7 @@ function fixCode(i) {
 
 // ── Upload ────────────────────────────────────────────────────
 // GPS Check
-async function checkFilesHaveGPS(files) {
-  if (!files || !files.length) return false;
-  // Check first 3 files for GPS
-  var checkCount = Math.min(3, files.length);
-  for (var i = 0; i < checkCount; i++) {
-    try {
-      var hasGPS = await fileHasGPS(files[i]);
-      if (hasGPS) return true;
-    } catch(e) {}
-  }
-  return false;
-}
+
 
 async function fileHasGPS(file) {
   return new Promise(function(resolve) {
@@ -602,86 +591,9 @@ async function uploadWithRetry(payload, retries) {
 }
 
 async function doUpload() {
-  // Check if files have GPS data
-  var hasGPS = await checkFilesHaveGPS(allFiles);
-  if (!hasGPS) {
-    var confirm = window.confirm(
-      '⚠️ ระบบตรวจไม่พบ GPS ในรูปค่ะ\n\n' +
-      'รูปที่ไม่มี GPS จะไปอยู่ใน _ตรวจสอบ ไม่เข้าโฟลเดอร์ที่ถูกต้องค่ะ\n\n' +
-      'แนะนำให้ใช้ "📍 แยกตาม Code" แทนค่ะ\n\n' +
-      'กด OK เพื่อส่งต่อ หรือ Cancel เพื่อกลับไปเลือก Code เองค่ะ'
-    );
-    if (!confirm) {
-      switchMode(1);
-      return;
-    }
-  }
-
-  go('s5');
-  var total = allFiles.length;
-  var fileData = [];
-
-  // Step 1: Compress all files
-  for (var i = 0; i < allFiles.length; i++) {
-    setProgress((i+1)/total*40, 'เตรียมรูป ' + (i+1) + '/' + total + ' ค่ะ');
-    try {
-      var b64 = await compressImage(allFiles[i], 800);
-      fileData.push({ name: allFiles[i].name, type: 'image/jpeg', lastModified: allFiles[i].lastModified, data: b64 });
-    } catch(e) {
-      var plain = await toB64(allFiles[i]);
-      fileData.push({ name: allFiles[i].name, type: allFiles[i].type, lastModified: allFiles[i].lastModified, data: plain });
-    }
-  }
-
-  // Step 2: Send in batches of 10
-  var batchSize = 10;
-  var batches = Math.ceil(fileData.length / batchSize);
-  var allResults = [];
-
-  for (var b = 0; b < batches; b++) {
-    var batch = fileData.slice(b*batchSize, (b+1)*batchSize);
-    var pct = 40 + Math.round((b+1)/batches*55);
-    setProgress(pct, 'กำลังส่ง batch ' + (b+1) + '/' + batches + '...');
-    try {
-      var result = await uploadWithRetry({
-        action: 'uploadBatch',
-        installer: installerName,
-        jobId: selectedJob.id,
-        jobName: selectedJob.name,
-        spots: selectedJob.spots,
-        batchIndex: b,
-        totalBatches: batches,
-        clientGroups: [],
-        files: batch,
-        timestamp: new Date().toISOString()
-      }, 3);
-      if (result && result.codes) allResults = allResults.concat(result.codes);
-    } catch(err) {
-      console.error('Batch ' + b + ' failed:', err.message);
-      // Wait and retry once more
-      await new Promise(function(r){ setTimeout(r, 5000); });
-      try {
-        var retry = await uploadWithRetry({
-          action: 'uploadBatch',
-          installer: installerName,
-          jobId: selectedJob.id,
-          jobName: selectedJob.name,
-          spots: selectedJob.spots,
-          batchIndex: b,
-          totalBatches: batches,
-          files: batch,
-          timestamp: new Date().toISOString()
-        }, 2);
-        if (retry && retry.codes) allResults = allResults.concat(retry.codes);
-      } catch(e2) {
-        console.error('Batch ' + b + ' final fail:', e2.message);
-      }
-    }
-  }
-
-  window._sending = false;
-  setProgress(100, 'สำเร็จค่ะ! ✓');
-  setTimeout(function(){ showSuccess({ codes: allResults }, total, sendJob); }, 400);
+  // Legacy flow disabled - the code-grouped batch sender (sendAllCodes) is the only safe upload path.
+  alert('หน้านี้ไม่ใช้งานแล้วค่ะ กรุณาส่งรูปผ่านหน้า "ส่งทั้งหมด" ปกติ');
+  go('s3');
 }
 
 function toB64(f) {
