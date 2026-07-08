@@ -107,8 +107,7 @@ function render(d) {
         '</div>' +
         '<span class="tag ' + (s.done ? 'tag-done">✓ ติดตั้งแล้ว' : 'tag-wait">รอติดตั้ง') + '</span>' +
       '</div>' +
-      (s.done ? '<span class="view-btn" data-code="' + encodeURIComponent(s.code) + '" onclick="togglePhotos(this)">📷 ดูรูปติดตั้ง (' + (s.photos || '') + ')</span>' +
-        '<div class="spot-photos" id="ph_' + encodeURIComponent(s.code) + '" style="display:none"></div>' : '') +
+      (s.done ? '<div class="spot-photos" id="ph_' + encodeURIComponent(s.code) + '"><span style="font-size:12px;color:#999">⏳ กำลังโหลดรูป...</span></div>' : '') +
     '</div>';
   }
 
@@ -132,6 +131,48 @@ function render(d) {
     (waitSpots.length ? '<div class="sec-t">⏳ รอติดตั้ง (' + waitSpots.length + ')</div>' + waitSpots.map(spotHtml).join('') : '');
 
   renderMap(d.spots);
+
+  // Auto-load photos for installed spots - customer sees proof immediately
+  doneSpots.forEach(function(s, i) {
+    setTimeout(function(){ loadSpotPhotos(s.code); }, i * 350);
+  });
+}
+
+function loadSpotPhotos(code) {
+  var box = document.getElementById('ph_' + encodeURIComponent(code));
+  if (!box) return;
+  if (photoCache[code]) { fillPhotos(box, photoCache[code]); return; }
+  fetch(SCRIPT_URL + '?action=getPhotos&code=' + encodeURIComponent(code))
+    .then(function(r){ return r.json(); })
+    .then(function(res) {
+      photoCache[code] = res.photos || [];
+      fillPhotos(box, photoCache[code]);
+    })
+    .catch(function(){ box.innerHTML = '<span style="font-size:12px;color:#999">โหลดรูปไม่สำเร็จ — กดรีเฟรชอีกครั้งค่ะ</span>'; });
+}
+
+function fillPhotos(el, photos) {
+  if (!photos.length) { el.innerHTML = '<span style="font-size:12px;color:#999">รูปกำลังอัปโหลดเข้าระบบค่ะ</span>'; return; }
+  el.innerHTML = photos.map(function(p) {
+    var id = (p.thumbnail.match(/id=([\w-]+)/) || [])[1] || '';
+    return '<a href="' + p.url + '" target="_blank">' +
+      '<img src="' + p.thumbnail + '" data-id="' + id + '" data-retry="0" loading="lazy" onerror="photoFallback(this)"></a>';
+  }).join('');
+}
+
+function photoFallback(img) {
+  // Drive thumbnail sometimes fails for anonymous viewers - retry with lh3 format
+  var retry = parseInt(img.getAttribute('data-retry') || '0');
+  var id = img.getAttribute('data-id');
+  if (retry === 0 && id) {
+    img.setAttribute('data-retry', '1');
+    img.src = 'https://lh3.googleusercontent.com/d/' + id + '=w400';
+  } else if (retry === 1 && id) {
+    img.setAttribute('data-retry', '2');
+    img.src = 'https://drive.google.com/thumbnail?id=' + id + '&sz=w200';
+  } else {
+    img.parentNode.style.display = 'none';
+  }
 }
 
 function renderMap(spots) {
@@ -149,30 +190,6 @@ function renderMap(spots) {
     bounds.push([s.lat, s.lng]);
   });
   map.fitBounds(bounds, { padding: [30, 30] });
-}
-
-function togglePhotos(btn) {
-  var enc = btn.getAttribute('data-code');
-  var box = document.getElementById('ph_' + enc);
-  if (box.style.display !== 'none') { box.style.display = 'none'; return; }
-  box.style.display = 'flex';
-  var code = decodeURIComponent(enc);
-  if (photoCache[code]) { fill(box, photoCache[code]); return; }
-  box.innerHTML = '<span style="font-size:12px;color:#999">⏳ กำลังโหลดรูป...</span>';
-  fetch(SCRIPT_URL + '?action=getPhotos&code=' + encodeURIComponent(code))
-    .then(function(r){ return r.json(); })
-    .then(function(res) {
-      photoCache[code] = res.photos || [];
-      fill(box, photoCache[code]);
-    })
-    .catch(function(){ box.innerHTML = '<span style="font-size:12px;color:#999">โหลดรูปไม่สำเร็จค่ะ</span>'; });
-
-  function fill(el, photos) {
-    if (!photos.length) { el.innerHTML = '<span style="font-size:12px;color:#999">ยังไม่มีรูปค่ะ</span>'; return; }
-    el.innerHTML = photos.map(function(p) {
-      return '<a href="' + p.url + '" target="_blank"><img src="' + p.thumbnail + '" loading="lazy" onerror="this.parentNode.style.display=\'none\'"></a>';
-    }).join('');
-  }
 }
 
 load();
