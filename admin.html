@@ -1994,10 +1994,85 @@ function confirmFix() {
   renderJobCards();
 }
 
-var _lastSentCount = -1;
+// ═══════════ ระบบแจ้งเตือนรูปเข้าใหม่ v2 ═══════════
+// แจ้ง 5 ทาง: badge บนหัวจอ + toast เด้ง + เสียงติ๊ง + ชื่อแท็บกะพริบ + Notification ของเครื่อง (เด้งแม้เปิดแท็บอื่น)
+var _photoSnapshot = null;   // จำจำนวนรูปราย จุด ไว้เทียบ
+var _problemSnapshot = -1;   // จำจำนวนปัญหาไว้เทียบ
+var _origTitle = document.title;
+var _audioCtx = null;
+
+// เบราว์เซอร์อนุญาตเสียง/Notification หลังผู้ใช้แตะหน้าจอครั้งแรก — ขอสิทธิ์ตอนนั้นเลย
+document.addEventListener('click', function() {
+  try {
+    _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (_audioCtx.state === 'suspended') _audioCtx.resume();
+  } catch(e) {}
+  try {
+    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+  } catch(e) {}
+}, { once: true });
+
+function playDing() {
+  try {
+    if (!_audioCtx || _audioCtx.state !== 'running') return;
+    var t = _audioCtx.currentTime;
+    [[880, 0], [1318.5, 0.13]].forEach(function(n) {
+      var o = _audioCtx.createOscillator(), g = _audioCtx.createGain();
+      o.type = 'sine'; o.frequency.value = n[0];
+      g.gain.setValueAtTime(0.0001, t + n[1]);
+      g.gain.exponentialRampToValueAtTime(0.22, t + n[1] + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + n[1] + 0.5);
+      o.connect(g); g.connect(_audioCtx.destination);
+      o.start(t + n[1]); o.stop(t + n[1] + 0.55);
+    });
+  } catch(e) {}
+}
+
+function showToast(msg, color) {
+  try {
+    var old = document.getElementById('pbToast');
+    if (old) old.remove();
+    var d = document.createElement('div');
+    d.id = 'pbToast';
+    d.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:' + (color||'#222') +
+      ';color:#fff;padding:14px 20px;border-radius:14px;font-size:14px;font-weight:600;z-index:99999;' +
+      'box-shadow:0 8px 30px rgba(0,0,0,.35);max-width:92vw;cursor:pointer;line-height:1.5;' +
+      'animation:pbToastIn .3s ease';
+    d.textContent = msg;
+    d.onclick = function() { d.remove(); try { switchTab(1); } catch(e) {} };
+    if (!document.getElementById('pbToastCSS')) {
+      var st = document.createElement('style');
+      st.id = 'pbToastCSS';
+      st.textContent = '@keyframes pbToastIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}';
+      document.head.appendChild(st);
+    }
+    document.body.appendChild(d);
+    setTimeout(function(){ if (d.parentNode) d.remove(); }, 10000);
+  } catch(e) {}
+}
+
+function notifyAdmin(title, bodyText, color) {
+  var badge = document.getElementById('newPhotoBadge');
+  if (badge) { badge.style.display = 'block'; badge.style.background = color || '#ff4444'; badge.textContent = title; }
+  showToast(title + (bodyText ? '\n' + bodyText : ''), color);
+  playDing();
+  document.title = title + ' | ' + _origTitle;
+  try {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      var n = new Notification(title, { body: bodyText || '', tag: 'planb-install-' + Date.now() });
+      n.onclick = function() { try { window.focus(); switchTab(1); } catch(e) {} n.close(); };
+    }
+  } catch(e) {}
+}
+
+function clearNewPhotoAlert() { document.title = _origTitle; }
+
+function jobNameById(jid) {
+  for (var i = 0; i < jobs.length; i++) if (jobs[i].id === jid) return jobs[i].name || '';
+  return '';
+}
 
 function checkNewPhotos() {
-  var prevTotal = _lastSentCount;
   Promise.all([
     fetch(SCRIPT_URL + '?action=getJobs').then(function(r){ return r.json(); }),
     fetch(SCRIPT_URL + '?action=getInstallLog').then(function(r){ return r.json(); }),
@@ -2014,14 +2089,12 @@ function checkNewPhotos() {
       results[1].log.forEach(function(entry) {
         if (!entry.jobId) return;
         if (!newCodeLog[entry.jobId]) newCodeLog[entry.jobId] = {};
-        if (!newCodeLog[entry.jobId][entry.code]) {
-          newCodeLog[entry.jobId][entry.code] = {
-            status: 'sent', count: entry.count || 0,
-            folderUrl: entry.folderUrl || '',
-            productFolderUrl: entry.productFolderUrl || '',
-            installedAt: entry.date || ''
-          };
-        }
+        newCodeLog[entry.jobId][entry.code] = {
+          status: 'sent', count: entry.count || 0,
+          folderUrl: entry.folderUrl || '',
+          productFolderUrl: entry.productFolderUrl || '',
+          installedAt: entry.date || ''
+        };
       });
     }
     // Merge with local (keep local entries not yet on server)
@@ -2035,65 +2108,55 @@ function checkNewPhotos() {
     codeLog = newCodeLog;
     localStorage.setItem('codeLog', JSON.stringify(codeLog));
 
-    // Problems
-    if (results[2].problems && results[2].problems.length) {
-      var problemLog = {};
-      results[2].problems.forEach(function(p) {
-        if (!p.jobId) return;
-        if (!problemLog[p.jobId]) problemLog[p.jobId] = [];
-        problemLog[p.jobId].push(p);
-      });
-      var prevProblems = JSON.parse(localStorage.getItem('problemLog') || '{}');
-      var prevCount = Object.values(prevProblems).reduce(function(s,a){ return s+a.length; }, 0);
-      var newCount = Object.values(problemLog).reduce(function(s,a){ return s+a.length; }, 0);
-      if (newCount > prevCount) {
-        var badge = document.getElementById('newPhotoBadge');
-        if (badge) { badge.style.display='block'; badge.style.background='#ff6600'; badge.textContent='⚠️ มีปัญหาหน้างาน'; }
-      }
-      localStorage.setItem('problemLog', JSON.stringify(problemLog));
-    }
-      if (logResult.log && logResult.log.length) {
-        codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
-        logResult.log.forEach(function(entry) {
-          var jid = entry.jobId;
-          if (!jid) return;
-          if (!codeLog[jid]) codeLog[jid] = {};
-          if (!codeLog[jid][entry.code]) {
-            codeLog[jid][entry.code] = {
-              status: 'sent',
-              count: entry.count || 0,
-              folderUrl: entry.folderUrl || '',
-              productFolderUrl: entry.productFolderUrl || '',
-              installedAt: entry.date || ''
-            };
-          } else if (!codeLog[jid][entry.code].installedAt) {
-            codeLog[jid][entry.code].installedAt = entry.date || '';
-          }
-        });
-        localStorage.setItem('codeLog', JSON.stringify(codeLog));
-      }
-      codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
-      var total = 0;
-      Object.keys(codeLog).forEach(function(jid){
-        Object.keys(codeLog[jid] || {}).forEach(function(code){
-          if (codeLog[jid][code] && codeLog[jid][code].status === 'sent') total++;
-        });
-      });
-      if (_lastSentCount >= 0 && total > _lastSentCount) {
-        var badge = document.getElementById('newPhotoBadge');
-        if (badge) {
-          badge.style.display = 'block';
-          badge.textContent = '🔔 มีรูปใหม่ ' + (total - _lastSentCount) + ' จุด';
-        }
-      }
-      if (_lastSentCount < 0) _lastSentCount = total;
-      else _lastSentCount = total;
-      renderJobCards();
-      if (document.getElementById('t1').classList.contains('on')) renderDash();
-    }).catch(function(){
-      codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
-      renderJobCards();
+    // ── ตรวจ "รูปใหม่" ราย จุด (นับจำนวนรูปจริง ไม่ใช่แค่จำนวนจุด) ──
+    var snap = {};
+    (results[1].log || []).forEach(function(e) {
+      if (!e.jobId) return;
+      snap[e.jobId + '|' + e.code] = { c: Number(e.count) || 0, job: e.jobId, code: e.code };
     });
+    if (_photoSnapshot !== null) {
+      var items = [], addTotal = 0;
+      Object.keys(snap).forEach(function(k) {
+        var prev = _photoSnapshot[k];
+        var diff = snap[k].c - (prev ? prev.c : 0);
+        if (diff > 0) {
+          items.push({ jobName: jobNameById(snap[k].job), code: snap[k].code, add: diff });
+          addTotal += diff;
+        }
+      });
+      if (items.length) {
+        var parts = items.slice(0, 3).map(function(x) {
+          return x.code + ' +' + x.add + ' รูป' + (x.jobName ? ' — ' + x.jobName : '');
+        });
+        if (items.length > 3) parts.push('และอีก ' + (items.length - 3) + ' จุด');
+        notifyAdmin('🔔 รูปเข้าใหม่ ' + addTotal + ' รูป (' + items.length + ' จุด)', parts.join('\n'), '#e53935');
+      }
+    }
+    _photoSnapshot = snap; // รอบแรกหลังเปิดหน้า: แค่จำค่าไว้ ไม่แจ้ง
+
+    // ── ตรวจ "ปัญหาหน้างานใหม่" ──
+    var problems = results[2].problems || [];
+    var problemLog = {};
+    problems.forEach(function(p) {
+      if (!p.jobId) return;
+      if (!problemLog[p.jobId]) problemLog[p.jobId] = [];
+      problemLog[p.jobId].push(p);
+    });
+    localStorage.setItem('problemLog', JSON.stringify(problemLog));
+    if (_problemSnapshot >= 0 && problems.length > _problemSnapshot) {
+      var latest = problems[problems.length - 1];
+      notifyAdmin('⚠️ ปัญหาหน้างานใหม่',
+        (latest.jobName || '') + (latest.reason ? '\n' + latest.reason : '') + (latest.installer ? '\nช่าง: ' + latest.installer : ''),
+        '#ff6600');
+    }
+    _problemSnapshot = problems.length;
+
+    renderJobCards();
+    if (document.getElementById('t1').classList.contains('on')) renderDash();
+  }).catch(function() {
+    codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+    renderJobCards();
+  });
 }
 checkNewPhotos();
 setInterval(checkNewPhotos, 30000);
@@ -2102,6 +2165,7 @@ function switchTab(i) {
   if (i === 1) {
     var badge = document.getElementById('newPhotoBadge');
     if (badge) badge.style.display = 'none';
+    clearNewPhotoAlert();
     // Sync from server when opening dashboard
     checkNewPhotos();
   }
