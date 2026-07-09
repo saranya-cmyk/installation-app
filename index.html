@@ -550,30 +550,52 @@ async function fileHasGPS(file) {
 
 // Image compression
 async function compressImage(file, maxKB) {
-  return new Promise(function(resolve) {
-    var img = new Image();
-    var url = URL.createObjectURL(file);
-    img.onload = function() {
-      var canvas = document.createElement('canvas');
-      var maxW = 1200, maxH = 1200;
-      var w = img.width, h = img.height;
-      if (w > maxW) { h = Math.round(h*maxW/w); w = maxW; }
-      if (h > maxH) { w = Math.round(w*maxH/h); h = maxH; }
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      URL.revokeObjectURL(url);
-      var q = 0.75;
-      var data = canvas.toDataURL('image/jpeg', q);
-      if (data.length > maxKB * 1024 * 1.37) data = canvas.toDataURL('image/jpeg', 0.55);
-      resolve(data.split(',')[1]);
-    };
-    img.onerror = function() {
-      var reader = new FileReader();
-      reader.onload = function(e){ resolve(e.target.result.split(',')[1]); };
-      reader.readAsDataURL(file);
-    };
-    img.src = url;
-  });
+  // [FIX-HEIC] วาดเป็น JPEG + ถ้ายังใหญ่เกิน ย่อซ้ำอีกรอบ — การันตีไฟล์ไม่บวม
+  function toJpeg(source, sw, sh) {
+    var maxW = 1200, maxH = 1200;
+    var w = sw, h = sh;
+    if (w > maxW) { h = Math.round(h*maxW/w); w = maxW; }
+    if (h > maxH) { w = Math.round(w*maxH/h); h = maxH; }
+    var canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(source, 0, 0, w, h);
+    var data = canvas.toDataURL('image/jpeg', 0.75);
+    if (data.length > maxKB * 1024 * 1.37) data = canvas.toDataURL('image/jpeg', 0.55);
+    if (data.length > maxKB * 1024 * 2.2) {
+      // ยังใหญ่มาก (รูปรายละเอียดสูง) — ย่อขนาดลงอีก 30%
+      var c2 = document.createElement('canvas');
+      c2.width = Math.round(w * 0.7); c2.height = Math.round(h * 0.7);
+      c2.getContext('2d').drawImage(canvas, 0, 0, c2.width, c2.height);
+      data = c2.toDataURL('image/jpeg', 0.5);
+    }
+    if (!data || data.length < 100) throw new Error('empty-canvas');
+    return data.split(',')[1];
+  }
+  // ทางที่ 1: Image element (รองรับ JPEG/PNG ทุกเครื่อง)
+  try {
+    return await new Promise(function(resolve, reject) {
+      var img = new Image();
+      var url = URL.createObjectURL(file);
+      img.onload = function() {
+        try { var d = toJpeg(img, img.naturalWidth || img.width, img.naturalHeight || img.height); URL.revokeObjectURL(url); resolve(d); }
+        catch(e) { URL.revokeObjectURL(url); reject(e); }
+      };
+      img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('img-decode')); };
+      img.src = url;
+    });
+  } catch(e) {}
+  // ทางที่ 2: createImageBitmap (อ่านไฟล์ HEIC/แปลกๆ ได้ในหลายเครื่อง)
+  if (window.createImageBitmap) {
+    try {
+      var bmp = await createImageBitmap(file);
+      var d2 = toJpeg(bmp, bmp.width, bmp.height);
+      if (bmp.close) bmp.close();
+      return d2;
+    } catch(e) {}
+  }
+  // ย่อไม่ได้จริงๆ → โยน error ให้ผู้เรียกใช้ fallback ส่งไฟล์ดิบ
+  // (ระบบแบ่ง batch ตามขนาดจะกันไม่ให้ payload ระเบิดเอง)
+  throw new Error('cannot-compress');
 }
 
 async function uploadWithRetry(payload, retries) {
@@ -1408,6 +1430,10 @@ async function sendAllCodes() {
     return;
   }
 
+  // [FIX-COUNT] จดจำนวนรูปที่ "ต้องเข้า" ของแต่ละจุด ไว้ตรวจสอบตอนจบ
+  var expectedCounts = {};
+  codes.forEach(function(c){ expectedCounts[c] = (codePhotos[c] || []).length; });
+
   var btn = document.getElementById('sendAllCodesBtn');
   var btnTop = document.getElementById('sendAllCodesBtnTop');
   if (btn) { btn.disabled = true; btn.textContent = 'กำลังส่ง...'; }
@@ -1435,25 +1461,36 @@ async function sendAllCodes() {
     }
   }
 
-  // Step 2: Send in batches - CRITICAL: photos of one code must NEVER split across batches.
-  // Server deletes old CODE_* files before writing each batch's files for that code,
-  // so a code split across batches would have earlier photos deleted by the later batch.
-  var batchSize = 5;
+  // Step 2: Send in batches — [FIX-SIZE] คุมขนาดข้อมูลจริงต่อ batch ไม่ใช่แค่จำนวนไฟล์
+  // (backend v2 มีระบบ session: code ที่ถูกแบ่งข้าม batch จะนับเลขรูปต่อเนื่อง ไม่ลบของ batch ก่อนหน้า)
+  var MAX_BATCH_BYTES = 5500000; // ~5.5MB base64 ต่อ batch — ปลอดภัยบนเน็ตมือถือ + ไม่ชนลิมิต Apps Script
+  var MAX_BATCH_FILES = 8;
   var batchList = [];
   (function buildBatches() {
-    var current = [];
+    var current = [], curBytes = 0;
+    function flush() { if (current.length) { batchList.push(current); current = []; curBytes = 0; } }
     for (var bc = 0; bc < codes.length; bc++) {
       var codeFiles = allFileData.filter(function(f){ return f._forceCode === codes[bc]; });
       if (!codeFiles.length) continue;
-      // If adding this code would overflow the batch, close current batch first
-      if (current.length > 0 && (current.length + codeFiles.length) > batchSize) {
-        batchList.push(current);
-        current = [];
+      var codeBytes = codeFiles.reduce(function(s,f){ return s + (f.data ? f.data.length : 0); }, 0);
+      if (codeBytes <= MAX_BATCH_BYTES && codeFiles.length <= MAX_BATCH_FILES) {
+        // จุดนี้ใส่ batch เดียวได้ — พยายามเก็บทั้งจุดไว้ด้วยกัน
+        if (current.length && (curBytes + codeBytes > MAX_BATCH_BYTES || current.length + codeFiles.length > MAX_BATCH_FILES)) flush();
+        current = current.concat(codeFiles);
+        curBytes += codeBytes;
+      } else {
+        // จุดใหญ่มาก (รูปเยอะ/ไฟล์ใหญ่) — แบ่งข้าม batch ได้อย่างปลอดภัย
+        flush();
+        for (var cf = 0; cf < codeFiles.length; cf++) {
+          var fb = codeFiles[cf].data ? codeFiles[cf].data.length : 0;
+          if (current.length && (curBytes + fb > MAX_BATCH_BYTES || current.length >= MAX_BATCH_FILES)) flush();
+          current.push(codeFiles[cf]);
+          curBytes += fb;
+        }
+        flush();
       }
-      // Whole code goes in together - even if it alone exceeds batchSize
-      current = current.concat(codeFiles);
     }
-    if (current.length) batchList.push(current);
+    flush();
   })();
   var batches = batchList.length;
   var failedBatches = [];
@@ -1526,14 +1563,27 @@ async function sendAllCodes() {
     failedBatches = stillFailed;
   }
 
-  // Step 4: VERIFY - every code that was sent must appear in results with folderUrl
+  // Step 4: VERIFY — [FIX-COUNT] ตรวจทั้ง "จุดครบ" และ "จำนวนรูปครบ" ของทุกจุด
   setProgress(92, 'ตรวจสอบความถูกต้อง...');
-  var confirmedCodes = allResults.filter(function(r){ return r.folderUrl; }).map(function(r){ return r.code; });
-  var missingCodes = codes.filter(function(c){ return confirmedCodes.indexOf(c) === -1; });
+  var missingCodes = [];   // จุดที่ต้องส่งซ้ำ (ไม่เข้า หรือรูปขาด)
+  var shortDetails = [];   // รายละเอียดจุดที่รูปขาด
+  codes.forEach(function(c) {
+    var r = null;
+    for (var ri = 0; ri < allResults.length; ri++) {
+      if (allResults[ri].code === c) { r = allResults[ri]; break; }
+    }
+    var got = r ? (r.total || r.count || 0) : 0; // backend v2 ส่ง total สะสมของรอบส่งนี้มาให้
+    if (!r || !r.folderUrl) {
+      missingCodes.push(c);
+    } else if (got < expectedCounts[c]) {
+      missingCodes.push(c);
+      shortDetails.push(c + ' (เข้า ' + got + '/' + expectedCounts[c] + ' รูป)');
+    }
+  });
 
   if (missingCodes.length > 0 || failedBatches.length > 0) {
     // PARTIAL FAILURE - keep photos of failed codes, show retry screen
-    var okCodes = codes.filter(function(c){ return confirmedCodes.indexOf(c) > -1; });
+    var okCodes = codes.filter(function(c){ return missingCodes.indexOf(c) === -1; });
     // Remove successful codes from codePhotos AND IndexedDB - keep only failed ones
     // Await clears so recovery banner reflects true state (only failed codes remain)
     await Promise.all(okCodes.map(function(c){
@@ -1545,7 +1595,8 @@ async function sendAllCodes() {
     setTimeout(function(){
       // Save what succeeded to codeLog
       if (allResults.length) saveCodeLogResults(allResults, sendJob);
-      alert('⚠️ ส่งสำเร็จ ' + okCodes.length + ' จุด\n\n❌ ส่งไม่สำเร็จ ' + missingCodes.length + ' จุด:\n' + missingCodes.join(', ') + '\n\nรูปของจุดที่ไม่สำเร็จยังอยู่ในแอป กด "ส่งทั้งหมด" อีกครั้งเพื่อส่งซ้ำค่ะ');
+      var shortMsg = shortDetails.length ? '\n\n📉 จุดที่รูปเข้าไม่ครบ:\n' + shortDetails.join('\n') : '';
+      alert('⚠️ ส่งสำเร็จ ' + okCodes.length + ' จุด\n\n❌ ต้องส่งซ้ำ ' + missingCodes.length + ' จุด:\n' + missingCodes.join(', ') + shortMsg + '\n\nรูปของจุดเหล่านี้ยังอยู่ในแอปครบ ไม่หาย\nกด "ส่งทั้งหมด" อีกครั้งเพื่อส่งซ้ำค่ะ');
       go('s3');
       renderCodeList();
       var btn2 = document.getElementById('sendAllCodesBtn');
