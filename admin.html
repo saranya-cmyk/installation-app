@@ -1545,13 +1545,29 @@ function copyPortalLink(btn) {
     .then(function(res) {
       if (!res.key) { btn.textContent = orig; alert('สร้างลิงก์ไม่สำเร็จ: ' + (res.error || '')); return; }
       var url = 'https://saranya-cmyk.github.io/installation-app/portal.html?key=' + res.key;
-      navigator.clipboard.writeText(url).then(function() {
+      // สร้างข้อความพร้อมส่ง — ลูกค้ารับแล้วรู้ทันทีว่าลิงก์อะไร ของงานไหน
+      var job = jobs.find(function(j){ return j.id === jobId; });
+      function dmy(s) {
+        if (!s) return '';
+        var d = new Date(s);
+        if (isNaN(d.getTime())) return String(s).substring(0, 10);
+        return d.getDate() + '/' + (d.getMonth()+1) + '/' + (d.getFullYear()+543);
+      }
+      var lines = ['📊 รายงานสถานะติดตั้งสื่อโฆษณา — Plan B Media'];
+      if (job && job.name)  lines.push('🏷 สินค้า/แคมเปญ: ' + job.name);
+      if (job && job.media) lines.push('📺 สื่อ: ' + job.media);
+      if (job && job.dateStart) lines.push('📅 ช่วงติดตั้ง: ' + dmy(job.dateStart) + (job.dateEnd ? ' — ' + dmy(job.dateEnd) : ''));
+      lines.push('');
+      lines.push('ดูสถานะ รูปติดตั้ง และแผนที่แบบเรียลไทม์ได้ที่ 👇');
+      lines.push(url);
+      var msg = lines.join('\n');
+      navigator.clipboard.writeText(msg).then(function() {
         btn.textContent = '✓ คัดลอกแล้ว';
         setTimeout(function(){ btn.textContent = orig; }, 2500);
-        alert('คัดลอกลิงก์ลูกค้าแล้วค่ะ 🔗\n\n' + url + '\n\nส่งลิงก์นี้ให้ลูกค้าเปิดดูสถานะติดตั้งได้เลย (ดูได้อย่างเดียว แก้ไขไม่ได้)');
+        alert('คัดลอกข้อความพร้อมส่งลูกค้าแล้วค่ะ 🔗\n\n' + msg + '\n\nวางในไลน์/อีเมลได้เลย (ลูกค้าดูได้อย่างเดียว แก้ไขไม่ได้)');
       }).catch(function() {
         btn.textContent = orig;
-        prompt('คัดลอกลิงก์นี้ส่งให้ลูกค้าค่ะ:', url);
+        prompt('คัดลอกข้อความนี้ส่งให้ลูกค้าค่ะ:', msg);
       });
     })
     .catch(function(){ btn.textContent = orig; alert('เชื่อมต่อไม่สำเร็จค่ะ'); });
@@ -1998,6 +2014,7 @@ function confirmFix() {
 // แจ้ง 5 ทาง: badge บนหัวจอ + toast เด้ง + เสียงติ๊ง + ชื่อแท็บกะพริบ + Notification ของเครื่อง (เด้งแม้เปิดแท็บอื่น)
 var _photoSnapshot = null;   // จำจำนวนรูปราย จุด ไว้เทียบ
 var _problemSnapshot = -1;   // จำจำนวนปัญหาไว้เทียบ
+var _repairSnapshot = -1;    // จำจำนวนแจ้งซ่อมไว้เทียบ
 var _origTitle = document.title;
 var _audioCtx = null;
 
@@ -2076,7 +2093,8 @@ function checkNewPhotos() {
   Promise.all([
     fetch(SCRIPT_URL + '?action=getJobs').then(function(r){ return r.json(); }),
     fetch(SCRIPT_URL + '?action=getInstallLog').then(function(r){ return r.json(); }),
-    fetch(SCRIPT_URL + '?action=getProblemLog').then(function(r){ return r.json(); })
+    fetch(SCRIPT_URL + '?action=getProblemLog').then(function(r){ return r.json(); }),
+    fetch(SCRIPT_URL + '?action=getRepairLog').then(function(r){ return r.json(); }).catch(function(){ return { repairs: [] }; })
   ]).then(function(results) {
     // Jobs
     if (results[0].jobs) {
@@ -2150,6 +2168,19 @@ function checkNewPhotos() {
         '#ff6600');
     }
     _problemSnapshot = problems.length;
+
+    // ── ตรวจ "แจ้งซ่อมใหม่" 🔧 ──
+    var repairs = (results[3] && results[3].repairs) || [];
+    localStorage.setItem('repairLog', JSON.stringify(repairs));
+    if (_repairSnapshot >= 0 && repairs.length > _repairSnapshot) {
+      var newRepairs = repairs.slice(_repairSnapshot);
+      var rParts = newRepairs.slice(0, 3).map(function(r) {
+        return r.code + ' — ' + (r.repairType || '') + (r.installer ? ' (แจ้งโดย ' + r.installer + ')' : '');
+      });
+      if (newRepairs.length > 3) rParts.push('และอีก ' + (newRepairs.length - 3) + ' รายการ');
+      notifyAdmin('🔧 แจ้งซ่อมใหม่ ' + newRepairs.length + ' รายการ', rParts.join('\n'), '#c62828');
+    }
+    _repairSnapshot = repairs.length;
 
     renderJobCards();
     if (document.getElementById('t1').classList.contains('on')) renderDash();
