@@ -76,14 +76,26 @@ var photoCache = {};
 function load() {
   var el = document.getElementById('content');
   if (!KEY) { el.innerHTML = '<div class="err">ลิงก์ไม่ถูกต้อง — กรุณาติดต่อ Plan B Media เพื่อรับลิงก์ใหม่ค่ะ</div>'; return; }
-  el.innerHTML = '<div class="loading">⏳ กำลังโหลดข้อมูล...</div>';
+
+  // [SPEED] เปิดซ้ำ → วาดจากข้อมูลรอบก่อนทันที แล้วอัปเดตเบื้องหลัง
+  var hadCache = false;
+  try {
+    var cached = sessionStorage.getItem('pd_' + KEY);
+    if (cached) { render(JSON.parse(cached)); hadCache = true; }
+  } catch(e) {}
+  if (!hadCache) el.innerHTML = '<div class="loading">⏳ กำลังโหลดข้อมูล...</div>';
+
   fetch(SCRIPT_URL + '?action=portalData&key=' + encodeURIComponent(KEY))
     .then(function(r){ return r.json(); })
     .then(function(d) {
-      if (d.error) { el.innerHTML = '<div class="err">ไม่พบข้อมูลแคมเปญ — กรุณาติดต่อ Plan B Media ค่ะ</div>'; return; }
+      if (d.error) {
+        if (!hadCache) el.innerHTML = '<div class="err">ไม่พบข้อมูลแคมเปญ — กรุณาติดต่อ Plan B Media ค่ะ</div>';
+        return;
+      }
+      try { sessionStorage.setItem('pd_' + KEY, JSON.stringify(d)); } catch(e) {}
       render(d);
     })
-    .catch(function(){ el.innerHTML = '<div class="err">โหลดข้อมูลไม่สำเร็จ — ลองใหม่อีกครั้งค่ะ</div>'; });
+    .catch(function(){ if (!hadCache) el.innerHTML = '<div class="err">โหลดข้อมูลไม่สำเร็จ — ลองใหม่อีกครั้งค่ะ</div>'; });
 }
 
 function fmtDate(s) {
