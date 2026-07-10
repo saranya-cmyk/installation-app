@@ -2028,7 +2028,6 @@ function confirmFix() {
 // แจ้ง 5 ทาง: badge บนหัวจอ + toast เด้ง + เสียงติ๊ง + ชื่อแท็บกะพริบ + Notification ของเครื่อง (เด้งแม้เปิดแท็บอื่น)
 var _photoSnapshot = null;   // จำจำนวนรูปราย จุด ไว้เทียบ
 var _problemSnapshot = -1;   // จำจำนวนปัญหาไว้เทียบ
-var _repairSnapshot = -1;    // จำจำนวนแจ้งซ่อมไว้เทียบ
 var _origTitle = document.title;
 var _audioCtx = null;
 
@@ -2107,8 +2106,7 @@ function checkNewPhotos() {
   Promise.all([
     fetch(SCRIPT_URL + '?action=getJobs').then(function(r){ return r.json(); }),
     fetch(SCRIPT_URL + '?action=getInstallLog').then(function(r){ return r.json(); }),
-    fetch(SCRIPT_URL + '?action=getProblemLog').then(function(r){ return r.json(); }),
-    fetch(SCRIPT_URL + '?action=getRepairLog').then(function(r){ return r.json(); }).catch(function(){ return { repairs: [] }; })
+    fetch(SCRIPT_URL + '?action=getProblemLog').then(function(r){ return r.json(); })
   ]).then(function(results) {
     // Jobs
     if (results[0].jobs) {
@@ -2182,19 +2180,6 @@ function checkNewPhotos() {
         '#ff6600');
     }
     _problemSnapshot = problems.length;
-
-    // ── ตรวจ "แจ้งซ่อมใหม่" 🔧 ──
-    var repairs = (results[3] && results[3].repairs) || [];
-    localStorage.setItem('repairLog', JSON.stringify(repairs));
-    if (_repairSnapshot >= 0 && repairs.length > _repairSnapshot) {
-      var newRepairs = repairs.slice(_repairSnapshot);
-      var rParts = newRepairs.slice(0, 3).map(function(r) {
-        return r.code + ' — ' + (r.repairType || '') + (r.installer ? ' (แจ้งโดย ' + r.installer + ')' : '');
-      });
-      if (newRepairs.length > 3) rParts.push('และอีก ' + (newRepairs.length - 3) + ' รายการ');
-      notifyAdmin('🔧 แจ้งซ่อมใหม่ ' + newRepairs.length + ' รายการ', rParts.join('\n'), '#c62828');
-    }
-    _repairSnapshot = repairs.length;
 
     renderJobCards();
     if (document.getElementById('t1').classList.contains('on')) renderDash();
