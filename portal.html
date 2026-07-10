@@ -98,6 +98,58 @@ function load() {
     .catch(function(){ if (!hadCache) el.innerHTML = '<div class="err">โหลดข้อมูลไม่สำเร็จ — ลองใหม่อีกครั้งค่ะ</div>'; });
 }
 
+// ═══ อัปเดตอัตโนมัติ — ลูกค้าเปิดค้างไว้ รูปใหม่เด้งเอง ไม่ต้องรีเฟรช ═══
+function sigOf(d) {
+  try { return d.done + '|' + d.spots.map(function(s){ return s.code + ':' + (s.photos||0) + ':' + (s.imgs?s.imgs.length:0); }).join(','); }
+  catch(e) { return ''; }
+}
+
+function showMiniToast(msg) {
+  var t = document.createElement('div');
+  t.style.cssText = 'position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#2e7d32;color:#fff;'+
+    'padding:11px 20px;border-radius:24px;font-size:13.5px;font-weight:600;z-index:9999;box-shadow:0 6px 22px rgba(0,0,0,.28);'+
+    'max-width:90vw;text-align:center';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(function(){ t.style.transition='opacity .5s'; t.style.opacity='0'; setTimeout(function(){ t.remove(); }, 500); }, 5000);
+}
+
+function showUpdateBanner(d, addedDone) {
+  if (document.getElementById('pbUpdBanner')) return;
+  var b = document.createElement('div');
+  b.id = 'pbUpdBanner';
+  b.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#2e7d32;color:#fff;'+
+    'padding:12px 22px;border-radius:24px;font-size:14px;font-weight:700;z-index:9999;cursor:pointer;'+
+    'box-shadow:0 6px 22px rgba(0,0,0,.3);max-width:92vw;text-align:center';
+  b.textContent = addedDone > 0 ? ('🎉 ติดตั้งเพิ่ม ' + addedDone + ' จุด — แตะเพื่อดูรูปใหม่') : '📸 มีรูปใหม่ — แตะเพื่ออัปเดต';
+  b.onclick = function() { b.remove(); render(d); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  document.body.appendChild(b);
+}
+
+function pollUpdate() {
+  if (document.hidden || !KEY || !window._pdata) return;
+  fetch(SCRIPT_URL + '?action=portalData&key=' + encodeURIComponent(KEY))
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      if (d.error) return;
+      if (sigOf(d) === sigOf(window._pdata)) return; // ไม่มีอะไรใหม่
+      try { sessionStorage.setItem('pd_' + KEY, JSON.stringify(d)); } catch(e) {}
+      var added = (d.done || 0) - (window._pdata.done || 0);
+      if (window.scrollY < 120) {
+        // อยู่ด้านบนอยู่แล้ว — อัปเดตหน้าให้เลย พร้อมป้ายบอก
+        render(d);
+        showMiniToast(added > 0 ? ('🎉 อัปเดตแล้ว — ติดตั้งเพิ่ม ' + added + ' จุด') : '📸 รูปติดตั้งอัปเดตแล้ว');
+      } else {
+        // กำลังเลื่อนดูอยู่ — ไม่กระชากหน้า แสดงแถบให้แตะเอง
+        showUpdateBanner(d, added);
+      }
+    })
+    .catch(function(){});
+}
+setInterval(pollUpdate, 60000);
+// สลับกลับมาที่แท็บนี้ → เช็คทันที (ไม่ต้องรอรอบ)
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) pollUpdate(); });
+
 function fmtDate(s) {
   if (!s) return '';
   var d = new Date(s);
@@ -107,6 +159,7 @@ function fmtDate(s) {
 }
 
 function render(d) {
+  window._pdata = d; // จำไว้เทียบหารูปใหม่
   try { document.title = d.name + (d.media ? ' · ' + d.media : '') + ' — สถานะติดตั้ง Plan B'; } catch(e) {}
   var pct = d.total ? Math.round(d.done / d.total * 100) : 0;
   var dateLine = d.dateStart ? ('ช่วงติดตั้ง ' + fmtDate(d.dateStart) + (d.dateEnd ? ' — ' + fmtDate(d.dateEnd) : '')) : '';
