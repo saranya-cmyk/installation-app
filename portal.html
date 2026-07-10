@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>สถานะการติดตั้ง — Plan B Media</title>
+<meta property="og:title" content="รายงานสถานะติดตั้งสื่อโฆษณา — Plan B Media">
+<meta property="og:description" content="ดูความคืบหน้าการติดตั้ง รูปหน้างานจริง และแผนที่จุดติดตั้ง อัปเดตแบบเรียลไทม์">
+<meta property="og:type" content="website">
+<meta name="description" content="รายงานสถานะติดตั้งสื่อโฆษณา Plan B Media — อัปเดตเรียลไทม์จากหน้างานจริง">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
@@ -91,6 +95,7 @@ function fmtDate(s) {
 }
 
 function render(d) {
+  try { document.title = d.name + (d.media ? ' · ' + d.media : '') + ' — สถานะติดตั้ง Plan B'; } catch(e) {}
   var pct = d.total ? Math.round(d.done / d.total * 100) : 0;
   var dateLine = d.dateStart ? ('ช่วงติดตั้ง ' + fmtDate(d.dateStart) + (d.dateEnd ? ' — ' + fmtDate(d.dateEnd) : '')) : '';
 
@@ -102,6 +107,7 @@ function render(d) {
       '<div class="spot-head">' +
         '<div style="flex:1">' +
           '<div class="spot-code">' + s.code + '</div>' +
+          (s.product ? '<div style="font-size:12px;color:var(--lime-dark);font-weight:600;margin-top:2px">🏷 ' + s.product + (s.media ? ' · ' + s.media : '') + '</div>' : '') +
           '<div class="spot-addr">' + s.address + '</div>' +
           (s.done && s.date ? '<div class="spot-date">📅 ติดตั้งเมื่อ ' + fmtDate(s.date) + '</div>' : '') +
         '</div>' +
@@ -170,6 +176,7 @@ function renderMap(spots) {
     L.circleMarker([s.lat, s.lng], { radius:8, fillColor:color, color:'#fff', weight:2, fillOpacity:.95 })
       .addTo(map)
       .bindPopup('<b>' + s.code + '</b> ' + (s.done ? '<span style="color:#2a7d2a">✓ ติดตั้งแล้ว</span>' : '<span style="color:#999">รอติดตั้ง</span>') +
+        (s.product ? '<br><span style="font-size:12px;color:#7a9420;font-weight:600">🏷 ' + s.product + '</span>' : '') +
         '<br><span style="font-size:12px;color:#555">' + s.address + '</span>');
     bounds.push([s.lat, s.lng]);
   });
