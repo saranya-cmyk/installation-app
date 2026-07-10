@@ -20,5 +20,5 @@
     }
   ],
   "id": "planb-admin",
-  "scope": "./"
+  "scope": "./admin.html"
 }
