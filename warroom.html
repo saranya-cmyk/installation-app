@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan B — War Room</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root { --bg:#0d0f12; --card:#16191e; --tx:#eef0e9; --mu:#8a8f97; --lime:#c8f542; --green:#5DCAA5; --amber:#FAC775; --red:#F09595; --f:'Sarabun','Segoe UI',sans-serif; }
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; }
+body { background:var(--bg); color:var(--tx); font-family:var(--f); overflow:hidden; }
+.wrap { display:flex; flex-direction:column; height:100vh; padding:1.4vh 1.2vw; gap:1.2vh; }
+
+.head { display:flex; justify-content:space-between; align-items:center; }
+.head .brand { font-size:2.4vh; font-weight:700; letter-spacing:.5px; }
+.head .brand b { color:var(--lime); }
+.head .right { display:flex; align-items:center; gap:1.4vw; font-size:2vh; color:var(--mu); }
+.live { display:flex; align-items:center; gap:.5vw; color:var(--green); font-weight:600; }
+.live .dot { width:1.1vh; height:1.1vh; border-radius:50%; background:var(--green); animation:blink 1.6s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+#clock { font-variant-numeric:tabular-nums; font-weight:600; color:var(--tx); }
+
+.stats { display:grid; grid-template-columns:repeat(4,1fr); gap:1vw; }
+.stat { background:var(--card); border-radius:1.4vh; padding:1.6vh 1.4vw; }
+.stat .lb { font-size:1.7vh; color:var(--mu); margin-bottom:.4vh; }
+.stat .v { font-size:4.6vh; font-weight:700; line-height:1.1; }
+.stat .v small { font-size:2.2vh; color:var(--mu); font-weight:600; }
+.v.g { color:var(--green); } .v.l { color:var(--lime); } .v.a { color:var(--amber); }
+
+.main { display:grid; grid-template-columns:1.7fr 1fr; gap:1vw; flex:1; min-height:0; }
+.panel { background:var(--card); border-radius:1.4vh; padding:1.4vh 1.2vw; display:flex; flex-direction:column; min-height:0; }
+.panel .tt { font-size:1.8vh; color:var(--mu); margin-bottom:.8vh; flex:none; }
+#map { flex:1; border-radius:1vh; background:#101318; min-height:0; }
+.leaflet-container { background:#101318; font-family:var(--f); }
+
+.side { display:flex; flex-direction:column; gap:1vh; min-height:0; }
+.side .panel { flex:1; overflow:hidden; }
+.dl-row { display:flex; justify-content:space-between; align-items:center; padding:.9vh 0; border-bottom:1px solid #23262c; font-size:2vh; gap:.8vw; }
+.dl-row:last-child { border-bottom:none; }
+.dl-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dl-meta { white-space:nowrap; font-weight:700; font-variant-numeric:tabular-nums; }
+.bar { height:.8vh; background:#23262c; border-radius:99px; margin-top:.5vh; overflow:hidden; }
+.bar i { display:block; height:100%; background:var(--green); border-radius:99px; transition:width 1s; }
+
+.feed { display:grid; grid-template-columns:repeat(3,1fr); gap:.8vh; flex:1; min-height:0; align-content:start; }
+.ph { position:relative; border-radius:1vh; overflow:hidden; background:#101318; aspect-ratio:4/3; }
+.ph img { width:100%; height:100%; object-fit:cover; display:block; }
+.ph .cap { position:absolute; left:0; right:0; bottom:0; background:rgba(10,12,15,.82); font-size:1.5vh; padding:.4vh .6vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ph.new { outline:3px solid var(--lime); animation:pop .6s; }
+@keyframes pop { 0%{transform:scale(.85)} 60%{transform:scale(1.05)} 100%{transform:scale(1)} }
+.empty { color:var(--mu); font-size:1.9vh; padding:2vh 0; text-align:center; }
+
+.pulse-marker { border-radius:50%; }
+@keyframes ripple { 0%{box-shadow:0 0 0 0 rgba(200,245,66,.7)} 100%{box-shadow:0 0 0 3.2vh rgba(200,245,66,0)} }
+.pulse-marker.pulsing { animation:ripple 1.3s ease-out 5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="brand"><b>PLAN B</b> · Installation War Room</div>
+    <div class="right">
+      <span id="dateStr"></span>
+      <span id="clock">--:--:--</span>
+      <span class="live"><span class="dot"></span>LIVE</span>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="lb">ติดตั้งวันนี้</div><div class="v g" id="sToday">–</div></div>
+    <div class="stat"><div class="lb">ความคืบหน้ารวม (งานที่กำลังเดิน)</div><div class="v l" id="sAll">–</div></div>
+    <div class="stat"><div class="lb">รูปเข้าวันนี้</div><div class="v" id="sPhotos">–</div></div>
+    <div class="stat"><div class="lb">งานกำลังเดิน</div><div class="v" id="sJobs">–</div></div>
+  </div>
+
+  <div class="main">
+    <div class="panel">
+      <div class="tt">🗺 แผนที่จุดติดตั้ง — เขียว = ติดแล้ว · เทา = รอติดตั้ง · กะพริบ = เพิ่งเข้า</div>
+      <div id="map"></div>
+    </div>
+    <div class="side">
+      <div class="panel">
+        <div class="tt">⏱ ใกล้ครบกำหนด</div>
+        <div id="deadlines" style="overflow:hidden"><div class="empty">กำลังโหลด...</div></div>
+      </div>
+      <div class="panel">
+        <div class="tt">📸 รูปติดตั้งล่าสุด</div>
+        <div class="feed" id="feed"><div class="empty">กำลังโหลด...</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxAmnIwOxMZ2ntWiZFW7uYLjp-ZfOzSwfMXbO8YS5SzFutOcLoV6AJO4YGnjdQpbH86Cw/exec';
+var POLL_MS = 45000;
+
+// ── นาฬิกา ──
+function tick() {
+  var n = new Date();
+  document.getElementById('clock').textContent =
+    String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0') + ':' + String(n.getSeconds()).padStart(2,'0');
+  var th = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+  var mo = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  document.getElementById('dateStr').textContent = 'วัน' + th[n.getDay()] + ' ' + n.getDate() + ' ' + mo[n.getMonth()] + ' ' + (n.getFullYear() + 543);
+}
+setInterval(tick, 1000); tick();
+
+// ── กันจอทีวีดับ ──
+try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(function(){}); } catch(e) {}
+
+// ── แผนที่ (โทนมืด) ──
+var map = L.map('map', { zoomControl:false, attributionControl:false }).setView([13.7563, 100.5018], 11);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+var markerLayer = L.layerGroup().addTo(map);
+
+var prevCounts = null; // 'jobId|CODE' -> count ไว้จับรูปใหม่
+var firstLoad = true;
+
+function todayStr() {
+  var n = new Date();
+  return n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0') + '-' + String(n.getDate()).padStart(2,'0');
+}
+function dOnly(s) { return s ? String(s).substring(0, 10) : ''; }
+
+function refresh() {
+  Promise.all([
+    fetch(SCRIPT_URL + '?action=getJobs').then(function(r){ return r.json(); }),
+    fetch(SCRIPT_URL + '?action=getInstallLog').then(function(r){ return r.json(); })
+  ]).then(function(res) {
+    var jobs = res[0].jobs || [];
+    var log = res[1].log || [];
+    var today = todayStr();
+
+    // index log: jobId|CODE -> entry, และหาว่า "รูปใหม่" จุดไหน
+    var byKey = {}, newKeys = {};
+    log.forEach(function(e) {
+      if (!e.jobId) return;
+      var k = e.jobId + '|' + String(e.code).trim().toUpperCase();
+      byKey[k] = e;
+      if (prevCounts && (Number(e.count)||0) > (prevCounts[k]||0)) newKeys[k] = true;
+    });
+    var counts = {};
+    Object.keys(byKey).forEach(function(k){ counts[k] = Number(byKey[k].count)||0; });
+
+    // ── สถิติ ──
+    var doneToday = 0, photosToday = 0;
+    log.forEach(function(e) {
+      if (dOnly(e.date) === today || (e.date && String(e.date).indexOf(today) === 0)) {
+        doneToday++; photosToday += Number(e.count)||0;
+      }
+    });
+    var allDone = 0, allTotal = 0;
+    jobs.forEach(function(j) {
+      (j.spots||[]).forEach(function(s) {
+        allTotal++;
+        if (byKey[j.id + '|' + String(s.code).trim().toUpperCase()]) allDone++;
+      });
+    });
+    document.getElementById('sToday').innerHTML = doneToday + '<small> จุด</small>';
+    document.getElementById('sAll').innerHTML = allDone + '<small>/' + allTotal + ' จุด</small>';
+    document.getElementById('sPhotos').textContent = photosToday;
+    document.getElementById('sJobs').textContent = jobs.length;
+
+    // ── แผนที่ ──
+    markerLayer.clearLayers();
+    var bounds = [];
+    jobs.forEach(function(j) {
+      (j.spots||[]).forEach(function(s) {
+        if (!s.lat || !s.lng) return;
+        var k = j.id + '|' + String(s.code).trim().toUpperCase();
+        var isDone = !!byKey[k];
+        var isNew = !!newKeys[k];
+        var color = isDone ? '#5DCAA5' : '#4a4f57';
+        var icon = L.divIcon({ className:'', iconSize:[16,16], iconAnchor:[8,8],
+          html: '<div class="pulse-marker' + (isNew ? ' pulsing' : '') + '" style="width:16px;height:16px;background:' + color + ';border:2px solid #0d0f12;border-radius:50%"></div>' });
+        var m = L.marker([s.lat, s.lng], { icon: icon });
+        m.bindTooltip(s.code + (isDone ? ' ✓' : ''), { direction:'top', offset:[0,-8] });
+        markerLayer.addLayer(m);
+        bounds.push([s.lat, s.lng]);
+      });
+    });
+    if (firstLoad && bounds.length) { map.fitBounds(bounds, { padding:[30,30] }); }
+
+    // ── ใกล้ครบกำหนด ──
+    var now = new Date(); now.setHours(0,0,0,0);
+    var dls = jobs.map(function(j) {
+      var total = (j.spots||[]).length;
+      var done = (j.spots||[]).filter(function(s){ return byKey[j.id + '|' + String(s.code).trim().toUpperCase()]; }).length;
+      var end = j.dateEnd ? new Date(dOnly(j.dateEnd)) : null;
+      var days = end && !isNaN(end.getTime()) ? Math.round((end - now) / 86400000) : null;
+      return { name: j.name, media: j.media||'', total: total, done: done, days: days };
+    }).filter(function(x){ return x.total > 0; });
+    dls.sort(function(a,b){
+      var da = a.days === null ? 9999 : a.days, db = b.days === null ? 9999 : b.days;
+      return da - db;
+    });
+    var el = document.getElementById('deadlines');
+    if (!dls.length) { el.innerHTML = '<div class="empty">ยังไม่มีงาน</div>'; }
+    else {
+      el.innerHTML = dls.slice(0, 5).map(function(x) {
+        var pct = x.total ? Math.round(x.done / x.total * 100) : 0;
+        var full = x.done >= x.total;
+        var lbl, color;
+        if (full) { lbl = 'ครบแล้ว ✓'; color = 'var(--green)'; }
+        else if (x.days === null) { lbl = x.done + '/' + x.total; color = 'var(--mu)'; }
+        else if (x.days < 0) { lbl = 'เลยกำหนด ' + Math.abs(x.days) + ' วัน · ' + x.done + '/' + x.total; color = 'var(--red)'; }
+        else if (x.days <= 1) { lbl = (x.days === 0 ? 'วันนี้' : 'เหลือ 1 วัน') + ' · ' + x.done + '/' + x.total; color = 'var(--amber)'; }
+        else { lbl = 'เหลือ ' + x.days + ' วัน · ' + x.done + '/' + x.total; color = 'var(--green)'; }
+        return '<div><div class="dl-row"><span class="dl-name">' + x.name + (x.media ? ' · ' + x.media : '') + '</span>' +
+          '<span class="dl-meta" style="color:' + color + '">' + lbl + '</span></div>' +
+          '<div class="bar"><i style="width:' + pct + '%"></i></div></div>';
+      }).join('');
+    }
+
+    // ── ฟีดรูปล่าสุด (แถวท้าย log = ใหม่สุด) ──
+    var withImgs = log.filter(function(e){ return e.imgs && e.imgs.length; });
+    var latest = withImgs.slice(-6).reverse();
+    var jobName = {};
+    jobs.forEach(function(j){ jobName[j.id] = j.name; });
+    var fEl = document.getElementById('feed');
+    if (!latest.length) { fEl.innerHTML = '<div class="empty" style="grid-column:1/-1">รอรูปแรกของวัน...</div>'; }
+    else {
+      fEl.innerHTML = latest.map(function(e) {
+        var k = e.jobId + '|' + String(e.code).trim().toUpperCase();
+        return '<div class="ph' + (newKeys[k] ? ' new' : '') + '">' +
+          '<img src="https://drive.google.com/thumbnail?id=' + e.imgs[0] + '&sz=w400" loading="lazy" alt="">' +
+          '<div class="cap">' + e.code + (jobName[e.jobId] ? ' · ' + jobName[e.jobId] : '') + '</div></div>';
+      }).join('');
+    }
+
+    prevCounts = counts;
+    firstLoad = false;
+  }).catch(function(){ /* เน็ตสะดุด — คงข้อมูลเดิมไว้ รอรอบถัดไป */ });
+}
+refresh();
+setInterval(refresh, POLL_MS);
+</script>
+</body>
+</html>
