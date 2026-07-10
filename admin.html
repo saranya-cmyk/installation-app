@@ -486,6 +486,20 @@ function initFromServer() {
   });
 }
 
+// [SPEED] วาดจอจากข้อมูลในเครื่องทันที ระหว่างรอเซิร์ฟเวอร์
+(function instantRender() {
+  try {
+    var cj = JSON.parse(localStorage.getItem('jobs') || '[]');
+    if (!cj.length) return;
+    jobs = cj;
+    codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+    renderJobCards();
+    renderDashSelect();
+    var ov = document.getElementById('loadingOverlay');
+    if (ov) { ov.style.opacity='0'; ov.style.transition='opacity 0.3s'; setTimeout(function(){ ov.style.display='none'; }, 300); }
+  } catch(e) {}
+})();
+
 // Sync jobs from server on load
 fetch(SCRIPT_URL + '?action=getJobs')
   .then(function(r){ return r.json(); })
