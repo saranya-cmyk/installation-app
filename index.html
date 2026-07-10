@@ -1588,9 +1588,7 @@ async function sendAllCodes() {
     return;
   }
 
-  // [FIX-COUNT] จดจำนวนรูปที่ "ต้องเข้า" ของแต่ละจุด ไว้ตรวจสอบตอนจบ
-  var expectedCounts = {};
-  codes.forEach(function(c){ expectedCounts[c] = (codePhotos[c] || []).length; });
+  var unreadableFiles = 0; // รูปที่เครื่องอ่านไม่ได้เลย (ไฟล์เสีย)
 
   var btn = document.getElementById('sendAllCodesBtn');
   var btnTop = document.getElementById('sendAllCodesBtnTop');
@@ -1613,14 +1611,28 @@ async function sendAllCodes() {
         var b64 = await compressImage(files[fi], 800);
         allFileData.push({ name: files[fi].name, type: 'image/jpeg', lastModified: files[fi].lastModified, data: b64, _forceCode: code });
       } catch(e) {
-        var plain = await toB64(files[fi]);
-        allFileData.push({ name: files[fi].name, type: files[fi].type, lastModified: files[fi].lastModified, data: plain, _forceCode: code });
+        try {
+          var plain = await toB64(files[fi]);
+          allFileData.push({ name: files[fi].name, type: files[fi].type, lastModified: files[fi].lastModified, data: plain, _forceCode: code });
+        } catch(e2) {
+          unreadableFiles++; // ไฟล์เสียจริงๆ — ข้าม ไม่ทำให้การส่งทั้งหมดล่ม
+        }
       }
     }
   }
 
   // Step 2: Send in batches — [FIX-SIZE] คุมขนาดข้อมูลจริงต่อ batch ไม่ใช่แค่จำนวนไฟล์
   // (backend v2 มีระบบ session: code ที่ถูกแบ่งข้าม batch จะนับเลขรูปต่อเนื่อง ไม่ลบของ batch ก่อนหน้า)
+  // [FIX-COUNT] จดจำนวนรูปที่ "ส่งจริง" ของแต่ละจุด (นับจากรูปที่เตรียมสำเร็จ) ไว้ตรวจสอบตอนจบ
+  var expectedCounts = {};
+  allFileData.forEach(function(f){
+    if (!f._forceCode) return;
+    expectedCounts[f._forceCode] = (expectedCounts[f._forceCode] || 0) + 1;
+  });
+  if (unreadableFiles > 0) {
+    alert('⚠️ มีรูป ' + unreadableFiles + ' รูปที่ไฟล์เสีย อ่านไม่ได้ จะข้ามรูปเหล่านั้น\nแนะนำถ่ายใหม่แล้วส่งเพิ่มภายหลังค่ะ');
+  }
+
   var MAX_BATCH_BYTES = 5500000; // ~5.5MB base64 ต่อ batch — ปลอดภัยบนเน็ตมือถือ + ไม่ชนลิมิต Apps Script
   var MAX_BATCH_FILES = 8;
   var batchList = [];
