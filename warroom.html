@@ -287,7 +287,7 @@ function renderAll(jobs, log, newKeys) {
 // ── ดึงข้อมูล ──
 function refresh() {
   Promise.all([
-    fetch(SCRIPT_URL + '?action=getJobs').then(function(r){ return r.json(); }),
+    fetch(SCRIPT_URL + '?action=getJobs&view=field').then(function(r){ return r.json(); }),
     fetch(SCRIPT_URL + '?action=getInstallLog').then(function(r){ return r.json(); })
   ]).then(function(res) {
     var jobs = res[0].jobs || [];
