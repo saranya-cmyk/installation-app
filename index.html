@@ -264,7 +264,7 @@ function loadJobsFromServer() {
     renderJobs();
     if (typeof checkPendingQueueBanner === 'function') checkPendingQueueBanner();
   }
-  fetch(SCRIPT_URL + '?action=getJobs&view=field')
+  fetch(SCRIPT_URL + '?action=getJobs')
     .then(function(r){ return r.json(); })
     .then(function(result){
       if (result.jobs && result.jobs.length > 0) {
