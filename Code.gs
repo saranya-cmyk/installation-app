@@ -47,7 +47,7 @@ function doPost(e) {
 function doGet(e) {
   var p = e ? e.parameter : {};
   if (p.action === 'getPhotos')      return getPhotos(p);
-  if (p.action === 'getJobs')        return getJobsList();
+  if (p.action === 'getJobs')        return getJobsList(p);
   if (p.action === 'getInstallLog')  return getInstallLog(p);
   if (p.action === 'getProblemLog')  return getProblemLog(p);
   if (p.action === 'getRepairLog')   return getRepairLog(p);
@@ -153,20 +153,68 @@ function getJobSheet() {
   return sh;
 }
 
-function getJobsList() {
-  return respCache('resp_jobs', 60, buildJobsList);
+function getJobsList(p) {
+  var view = (p && p.view === 'field') ? 'field' : 'full';
+  return respCache('resp_jobs_' + view, 60, function() {
+    var out = buildJobsList();
+    if (view === 'field' && out.jobs) {
+      out.jobs = out.jobs.filter(function(j){ return !j.archived; });
+    }
+    return out;
+  });
 }
 function buildJobsList() {
   try {
     var sh = getJobSheet();
     var rows = sh.getDataRange().getValues();
+
+    // นับจุดที่ติดแล้ว + วันที่ติดล่าสุด ต่อแต่ละงาน (จาก _InstallLog)
+    var doneMap = {}; // jobId -> Set ของ CODE
+    var lastInstall = {}; // jobId -> yyyy-mm-dd ล่าสุด
+    try {
+      var lss = openNamedSS('_InstallLog', null);
+      if (lss) {
+        var lrows = lss.getActiveSheet().getDataRange().getValues();
+        for (var di = 1; di < lrows.length; di++) {
+          var jid = lrows[di][0];
+          if (!jid) continue;
+          if (!doneMap[jid]) doneMap[jid] = {};
+          doneMap[jid][String(lrows[di][1]).trim().toUpperCase()] = true;
+          var dd = lrows[di][3] ? String(lrows[di][3]).substring(0, 10) : '';
+          if (dd && (!lastInstall[jid] || dd > lastInstall[jid])) lastInstall[jid] = dd;
+        }
+      }
+    } catch(e) {}
+    var todayD = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+    var grace7 = Utilities.formatDate(new Date(new Date().getTime() - 7*86400000), 'Asia/Bangkok', 'yyyy-MM-dd');
+    function dstr(v) {
+      if (!v) return '';
+      if (v instanceof Date) { try { return Utilities.formatDate(v, 'Asia/Bangkok', 'yyyy-MM-dd'); } catch(e) { return ''; } }
+      return String(v).substring(0, 10);
+    }
+
     var jobs = [];
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][6]) === 'false') continue;
       try {
-        jobs.push({ id:rows[i][0], name:rows[i][1], spots:JSON.parse(rows[i][2]||'[]'),
+        var spots = JSON.parse(rows[i][2]||'[]');
+        var jid2 = rows[i][0];
+        var doneSet = doneMap[jid2] || {};
+        var done = 0;
+        for (var si = 0; si < spots.length; si++) {
+          if (doneSet[String(spots[si].code).trim().toUpperCase()]) done++;
+        }
+        var endD = dstr(rows[i][5]);
+        var complete = spots.length > 0 && done >= spots.length;
+        // จบแล้ว = ครบทุกจุด และ (เลยวันสิ้นสุด หรือ ไม่มีวันสิ้นสุดแต่ติดจุดสุดท้ายมาเกิน 7 วัน)
+        var archived = complete && (
+          (endD && endD < todayD) ||
+          (!endD && lastInstall[jid2] && lastInstall[jid2] < grace7)
+        );
+        jobs.push({ id:jid2, name:rows[i][1], spots:spots,
           created:rows[i][3], dateStart:rows[i][4]||'', dateEnd:rows[i][5]||'', media:rows[i][7]||'',
-          salesEmail:rows[i][9]||'', sentStatus:rows[i][11]||'' });
+          salesEmail:rows[i][9]||'', sentStatus:rows[i][11]||'',
+          done:done, total:spots.length, archived:archived });
       } catch(e) {}
     }
     return { jobs: jobs };
@@ -183,11 +231,13 @@ function saveJobFn(job) {
         sh.getRange(i+1,1,1,8).setValues([[job.id,job.name,JSON.stringify(job.spots),
           job.created,job.dateStart||'',job.dateEnd||'',true,job.media||'']]);
         if (job.salesEmail !== undefined) sh.getRange(i+1,10).setValue(String(job.salesEmail||'').trim());
+        bustCache(['resp_jobs_full', 'resp_jobs_field', 'portal_' + job.id]);
         return json({ success: true });
       }
     }
     sh.appendRow([job.id,job.name,JSON.stringify(job.spots),job.created,
       job.dateStart||'',job.dateEnd||'',true,job.media||'','',String(job.salesEmail||'').trim(),'','']);
+    bustCache(['resp_jobs_full', 'resp_jobs_field']);
     return json({ success: true });
   } catch(err) { return json({ success: false, error: err.message }); }
 }
@@ -199,6 +249,7 @@ function deleteJobFn(jobId) {
     for (var i = 1; i < rows.length; i++) {
       if (rows[i][0] === jobId) { sh.getRange(i+1,7).setValue(false); break; }
     }
+    bustCache(['resp_jobs_full', 'resp_jobs_field', 'portal_' + jobId]);
     return json({ success: true });
   } catch(err) { return json({ success: false, error: err.message }); }
 }
@@ -385,7 +436,7 @@ function uploadBatch(body) {
   // [P9] InstallLog แบบ upsert — ไม่มีแถวซ้ำ
   try { upsertInstallLog(jobId, installer, dateStr, uploadedCodes); }
   catch(e) { Logger.log('InstallLog: '+e.message); }
-  bustCache(['resp_ilog', 'portal_' + jobId]); // ข้อมูลใหม่ → แจ้งเตือนแอดมิน/Portal เห็นทันทีรอบถัดไป
+  bustCache(['resp_ilog', 'portal_' + jobId, 'resp_jobs_full', 'resp_jobs_field']); // ข้อมูลใหม่ → ทุกจอเห็นรอบถัดไป (รวมสถานะจบงาน)
 
   try { logSheet(installer, jobName, new Date().toISOString(), uploadedCodes, unmatched.length); } catch(e) {}
 
