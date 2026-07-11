@@ -1048,9 +1048,13 @@ function renderJobCards() {
   var el = document.getElementById('jobCards');
   if (!jobs.length) { el.innerHTML = '<div class="empty">No jobs yet<br>สร้างงานแรกด้านบนได้เลย</div>'; return; }
 
+  // แยกงานจบแล้ว (ครบ+เลยกำหนด) ไปหมวดพับเก็บด้านล่าง
+  var archivedJobs = jobs.filter(function(j){ return j.archived; });
+  var liveJobs = jobs.filter(function(j){ return !j.archived; });
+
   // Group jobs by media category
   var groups = {};
-  jobs.forEach(function(j) {
+  liveJobs.forEach(function(j) {
     var m = (j.media || '').trim() || '__nomedia__';
     if (!groups[m]) groups[m] = [];
     groups[m].push(j);
@@ -1094,7 +1098,28 @@ function renderJobCards() {
         jobsInGroup.map(renderOneJobCard).join('') + '</div>';
     }
   });
+
+  // หมวดงานจบแล้ว — พับเก็บท้ายรายการ กดเปิดดู/แก้ได้ตลอด ไม่มีอะไรถูกลบ
+  if (archivedJobs.length) {
+    var aOpen = !!window._archOpen;
+    html += '<div onclick="toggleArchive()" style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;margin-top:16px;' +
+      'background:var(--s2);border:1px dashed var(--b);border-radius:12px;cursor:pointer;opacity:.75">' +
+        '<div><div style="font-size:14px;font-weight:600;color:var(--mu)">🗂 จบแล้ว</div>' +
+        '<div style="font-size:11px;color:var(--mu);margin-top:3px">' + archivedJobs.length + ' งาน — ครบทุกจุดและเลยกำหนดแล้ว (ช่างไม่เห็นงานกลุ่มนี้)</div></div>' +
+        '<span style="color:var(--mu);font-size:14px">' + (aOpen ? '▾' : '▸') + '</span>' +
+      '</div>';
+    if (aOpen) {
+      html += '<div style="margin:8px 0 14px 8px;padding-left:10px;border-left:2px solid var(--b);opacity:.7">' +
+        archivedJobs.map(renderOneJobCard).join('') + '</div>';
+    }
+  }
+
   el.innerHTML = html;
+}
+
+function toggleArchive() {
+  window._archOpen = !window._archOpen;
+  renderJobCards();
 }
 
 function toggleMediaSection(encMedia) {
