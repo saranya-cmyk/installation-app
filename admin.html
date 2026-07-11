@@ -525,9 +525,26 @@ var selectedSendCodes = new Set();
 function loadExcel(file) {
   if (!file) return;
   window._excelFileName = file.name || '';
+  var isCsv = /\.csv$/i.test(file.name || '');
   var reader = new FileReader();
   reader.onload = function(e) {
-    var wb = XLSX.read(e.target.result, { type: 'binary' });
+    var wb;
+    if (isCsv) {
+      // CSV ภาษาไทย: ลอง UTF-8 ก่อน ถ้าตัวอักษรเพี้ยน (�) ลอง TIS-620/Windows-874
+      var buf = e.target.result;
+      var text = '';
+      try { text = new TextDecoder('utf-8', { fatal: false }).decode(buf); } catch(err) {}
+      var badChars = (text.match(/\uFFFD/g) || []).length;
+      if (!text || badChars > 2) {
+        try {
+          var thaiText = new TextDecoder('windows-874').decode(buf);
+          if (thaiText) text = thaiText;
+        } catch(err) {}
+      }
+      wb = XLSX.read(text, { type: 'string' });
+    } else {
+      wb = XLSX.read(e.target.result, { type: 'binary' });
+    }
     rawExcelData = [];
     excelCols = [];
     // Collect top rows text from all sheets (title rows often contain media/campaign name)
@@ -641,7 +658,8 @@ function loadExcel(file) {
     // Show product chips
     showProductChips();
   };
-  reader.readAsBinaryString(file);
+  if (isCsv) reader.readAsArrayBuffer(file);
+  else reader.readAsBinaryString(file);
 }
 
 function autoDetectAndBuild() {
