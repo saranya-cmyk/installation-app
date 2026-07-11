@@ -1437,6 +1437,41 @@ function diagnoseArchive() {
   Logger.log('— จบรายงาน —');
 }
 
+/**
+ * ═══ Backup อัตโนมัติ ═══
+ * รัน setupDailyBackup ครั้งเดียว → ระบบสำรองชีททุกวัน 03:00 เก็บ 14 ชุดล่าสุด
+ * ที่เก็บ: โฟลเดอร์ "PlanB_App_Backup" ใน My Drive (นอกโฟลเดอร์แอป — แอปโดนลบ backup ยังอยู่)
+ */
+var BACKUP_KEEP = 14;
+
+function backupSystemSheets() {
+  var bf = mkFolder(DriveApp.getRootFolder(), 'PlanB_App_Backup');
+  var stamp = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd_HHmm');
+  var dayFolder = bf.createFolder(stamp);
+  var copied = 0;
+  ['_Jobs','_InstallLog','_UploadLog','_ProblemLog','_RepairLog','_Installers'].forEach(function(name) {
+    try {
+      var ss = openNamedSS(name, null);
+      if (ss) { DriveApp.getFileById(ss.getId()).makeCopy(name + '_' + stamp, dayFolder); copied++; }
+    } catch(e) { Logger.log('backup ' + name + ': ' + e.message); }
+  });
+  // ลบชุดเก่าเกิน BACKUP_KEEP
+  var subs = bf.getFolders(), list = [];
+  while (subs.hasNext()) list.push(subs.next());
+  list.sort(function(a,b){ return a.getName() < b.getName() ? -1 : 1; });
+  while (list.length > BACKUP_KEEP) { try { list.shift().setTrashed(true); } catch(e) {} }
+  Logger.log('✅ Backup เสร็จ: ' + stamp + ' (' + copied + ' ชีท) — เก็บย้อนหลัง ' + Math.min(list.length, BACKUP_KEEP) + ' ชุด');
+}
+
+function setupDailyBackup() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'backupSystemSheets') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('backupSystemSheets').timeBased().everyDays(1).atHour(3).create();
+  backupSystemSheets(); // สำรองทันที 1 รอบให้เห็นผลเลย
+  Logger.log('✅ ตั้งสำรองอัตโนมัติทุกวัน 03:00 น. เรียบร้อย');
+}
+
 function testPDF() {
   try {
     Logger.log('Starting testPDF...');
