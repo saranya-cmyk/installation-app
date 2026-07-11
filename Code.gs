@@ -1395,6 +1395,48 @@ function backfillPhotoIndex() {
   }
 }
 
+/**
+ * ═══ ตัววินิจฉัย Auto-archive: รันแล้วดู Execution log ═══
+ * บอกทุกงานว่าทำไมจบ/ไม่จบ พร้อมรายชื่อจุดที่ขาด log
+ */
+function diagnoseArchive() {
+  var out = buildJobsList();
+  var jobs = out.jobs || [];
+  if (!jobs.length) { Logger.log('ไม่มีงาน'); return; }
+
+  // ดึงชุด code ที่มี log ต่อ job มาโชว์จุดที่ขาด
+  var doneMap = {};
+  try {
+    var lss = openNamedSS('_InstallLog', null);
+    if (lss) {
+      var lrows = lss.getActiveSheet().getDataRange().getValues();
+      for (var i = 1; i < lrows.length; i++) {
+        if (!lrows[i][0]) continue;
+        if (!doneMap[lrows[i][0]]) doneMap[lrows[i][0]] = {};
+        doneMap[lrows[i][0]][String(lrows[i][1]).trim().toUpperCase()] = true;
+      }
+    }
+  } catch(e) {}
+
+  var todayD = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+  jobs.forEach(function(j) {
+    var missing = [];
+    (j.spots||[]).forEach(function(s) {
+      var c = String(s.code).trim().toUpperCase();
+      if (!(doneMap[j.id] && doneMap[j.id][c])) missing.push(s.code);
+    });
+    var endRaw = j.dateEnd ? String(j.dateEnd) : '(ไม่มี)';
+    var complete = j.done >= j.total && j.total > 0;
+    var reason;
+    if (j.archived) reason = '✅ จบแล้ว (เข้าหมวด archive)';
+    else if (!complete) reason = '⛔ ยังไม่ครบ — ขาด log ' + missing.length + ' จุด: ' + missing.slice(0,8).join(', ') + (missing.length>8?' ...':'');
+    else if (!j.dateEnd) reason = '⏳ ครบแล้ว แต่ไม่มีวันสิ้นสุด — รอครบ 7 วันหลังติดจุดสุดท้าย';
+    else reason = '⏳ ครบแล้ว แต่ยังไม่เลยวันสิ้นสุด (สิ้นสุด: ' + endRaw + ' / วันนี้: ' + todayD + ')';
+    Logger.log('[' + j.name + '] ' + j.done + '/' + j.total + ' | สิ้นสุด: ' + endRaw + ' → ' + reason);
+  });
+  Logger.log('— จบรายงาน —');
+}
+
 function testPDF() {
   try {
     Logger.log('Starting testPDF...');
