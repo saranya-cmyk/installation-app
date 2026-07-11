@@ -264,7 +264,7 @@ function loadJobsFromServer() {
     renderJobs();
     if (typeof checkPendingQueueBanner === 'function') checkPendingQueueBanner();
   }
-  fetch(SCRIPT_URL + '?action=getJobs')
+  fetch(SCRIPT_URL + '?action=getJobs&view=field')
     .then(function(r){ return r.json(); })
     .then(function(result){
       if (result.jobs && result.jobs.length > 0) {
@@ -366,14 +366,16 @@ var _installerSelectedMedia = null;
 
 function renderJobs() {
   const el = document.getElementById('jobListEl');
-  if (!jobs.length) {
+  // งานที่ครบและเลยกำหนดแล้ว ไม่ต้องโชว์ให้ช่าง — แอปสะอาด เห็นแต่งานที่ต้องทำ
+  var activeJobs = jobs.filter(function(j){ return !j.archived; });
+  if (!activeJobs.length) {
     el.innerHTML = `<div class="no-jobs">⏳ ยังไม่มีงาน<br><br>รอแอดมินอัปโหลด<br>ข้อมูลงานก่อนนะค่ะ</div>`;
     return;
   }
 
   // Group jobs by media category
   _installerMediaGroups = {};
-  jobs.forEach(function(j) {
+  activeJobs.forEach(function(j) {
     var m = (j.media || '').trim() || '__nomedia__';
     if (!_installerMediaGroups[m]) _installerMediaGroups[m] = [];
     _installerMediaGroups[m].push(j);
