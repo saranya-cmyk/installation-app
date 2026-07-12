@@ -1,8 +1,8 @@
 {
   "id": "planb-installer",
-  "name": "Plan B ช่างติดตั้ง",
-  "short_name": "ช่างติดตั้ง",
-  "description": "ส่งรูปติดตั้งป้ายโฆษณา Plan B Media",
+  "name": "Snapsite",
+  "short_name": "Snapsite",
+  "description": "ถ่าย-ส่งรูปติดตั้งงานหน้างาน Plan B Media",
   "start_url": "./index.html",
   "scope": "./index.html",
   "display": "standalone",
@@ -10,7 +10,15 @@
   "theme_color": "#0f0f0f",
   "orientation": "portrait",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }
