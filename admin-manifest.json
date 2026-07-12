@@ -1,7 +1,7 @@
 {
-  "name": "Plan B Admin - Installation Manager",
-  "short_name": "PB Admin",
-  "description": "ระบบจัดการงานติดตั้งป้ายโฆษณา Plan B Media",
+  "name": "Snaphub",
+  "short_name": "Snaphub",
+  "description": "ศูนย์จัดการงานติดตั้ง Plan B Media — แอดมิน",
   "start_url": "./admin.html",
   "display": "standalone",
   "background_color": "#0f0f0f",
