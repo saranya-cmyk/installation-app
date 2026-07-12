@@ -1,5 +1,7 @@
 # Plan B Installation App — คู่มือผู้ดูแลระบบ
 
+![tests](https://github.com/saranya-cmyk/installation-app/actions/workflows/test.yml/badge.svg)
+
 ระบบจัดการงานติดตั้งสื่อโฆษณา: ช่างส่งรูปหน้างาน → แอดมินติดตามเรียลไทม์ → ลูกค้าดูสถานะผ่านลิงก์ → จอ War Room สำหรับทีม
 
 ## สถาปัตยกรรม (1 นาทีเข้าใจ)
@@ -50,6 +52,12 @@ GitHub Pages (หน้าเว็บทั้งหมด)          Google (�
 3. **หน้าเว็บพัง หลัง commit** → GitHub > repo > History ของไฟล์ > เปิดเวอร์ชันก่อนหน้า > copy กลับ
 4. **Apps Script พัง** → วาง Code.gs จาก repo นี้ (สำเนาล่าสุดเสมอ) + ใส่ค่า CONFIG + New version
 5. **URL Apps Script เปลี่ยนโดยไม่ตั้งใจ** → แก้ค่า SCRIPT_URL ในไฟล์ html ทั้ง 4 ให้ตรง URL ใหม่
+
+## หมายเหตุสำคัญสำหรับผู้ดูแลคนถัดไป
+
+- **โค้ดแจ้งซ่อม** (`reportRepair`, `getRepairLog`, `_RepairLog`) — พักการใช้งานโดยตั้งใจ ปุ่มถูกถอดจากหน้าช่างแล้ว แต่หลังบ้านเก็บไว้ เปิดคืนได้ทุกเมื่อ **อย่าลบ**
+- **`approveSend`** — ไม่มีหน้าเว็บไหนเรียก เพราะถูกเรียกจาก**ลิงก์ในอีเมล** (ปุ่มยืนยันส่งงานให้เซล) **อย่าลบ**
+- manifest มี 2 ไฟล์เท่านั้น: `installer-manifest.json` (ช่าง) และ `admin-manifest.json` (แอดมิน) — ห้ามสร้าง `manifest.json` กลางเพิ่ม จะทำให้ติดตั้งแอปปนกันอีก
 
 ## การทดสอบ
 
