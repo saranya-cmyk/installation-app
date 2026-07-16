@@ -363,6 +363,29 @@ function setName(n) {
 
 var _installerMediaGroups = {};
 var _installerSelectedMedia = null;
+var serverSent = {};   // CODE -> { count, date, installer, imgs } — รูปที่ส่งไปแล้วจริงบนเซิร์ฟเวอร์
+var codeMode = {};     // CODE -> 'append' | 'replace' — โหมดที่ช่างเลือก
+
+// ดึงสถานะรูปที่ส่งไปแล้วของงานนี้ (จากเซิร์ฟเวอร์ ไม่ใช่ localStorage — รู้ครบทุกเครื่อง/ทุกช่าง)
+function loadSentState(jobId) {
+  serverSent = {};
+  if (!jobId) return Promise.resolve();
+  return fetch(SCRIPT_URL + '?action=getInstallLog')
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      (d.log || []).forEach(function(e) {
+        if (e.jobId !== jobId) return;
+        serverSent[String(e.code).trim().toUpperCase()] = {
+          count: Number(e.count) || 0,
+          date: e.date ? String(e.date).substring(0, 10) : '',
+          installer: e.installer || '',
+          imgs: e.imgs || []
+        };
+      });
+      try { renderCodeList(); } catch(err) {}
+    })
+    .catch(function(){ /* ดึงไม่ได้ = ไม่เป็นไร ใช้ localStorage ตามเดิม */ });
+}
 
 function renderJobs() {
   const el = document.getElementById('jobListEl');
@@ -464,8 +487,10 @@ function pickJob(el, id) {
   // Clear photos if switching to a different job
   if (selectedJob && selectedJob.id !== id) {
     codePhotos = {};
+    codeMode = {};
   }
   selectedJob = newJob;
+  loadSentState(id);
   sessionStorage.setItem('selectedJobId', id);
   document.getElementById('pickJobBtn').disabled = false;
 }
@@ -837,8 +862,10 @@ function renderCodeList() {
     // Check if this code was already sent (from localStorage codeLog)
     var savedLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
     var jobLog = savedLog[selectedJob ? selectedJob.id : ''] || {};
-    var alreadySent = jobLog[s.code] && jobLog[s.code].status === 'sent';
-    var sentCount = alreadySent ? (jobLog[s.code].count || 0) : 0;
+    var srv = serverSent[String(s.code).trim().toUpperCase()];
+    var alreadySent = !!(srv && srv.count > 0) || (jobLog[s.code] && jobLog[s.code].status === 'sent');
+    var sentCount = srv ? srv.count : (jobLog[s.code] ? (jobLog[s.code].count || 0) : 0);
+    var mode = codeMode[s.code];
 
     div.innerHTML =
       '<div class="ci-left" style="flex:1;min-width:0">' +
@@ -849,7 +876,11 @@ function renderCodeList() {
       '</div>' +
       '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">' +
         '<div class="ci-count' + (photos.length ? ' done' : alreadySent ? ' done' : '') + '">' +
-          (photos.length ? '✓ ' + photos.length + ' รูป' : alreadySent ? '✓ ส่งแล้ว ' + sentCount + ' รูป' : 'กดเลือก') +
+          (photos.length
+             ? (mode === 'append' ? '➕ เพิ่ม ' + photos.length + ' รูป'
+                : mode === 'replace' ? '↻ แทนที่ ' + photos.length + ' รูป'
+                : '✓ ' + photos.length + ' รูป')
+             : alreadySent ? '✓ ส่งแล้ว ' + sentCount + ' รูป' : 'กดเลือก') +
         '</div>' +
       '</div>';
     div.onclick = function() { openCodePicker(s.code); };
@@ -1076,6 +1107,50 @@ function showNetToast(msg, bg, border) {
 // Hidden file input for per-code picking
 var pickingCode = null;
 function openCodePicker(code) {
+  // จุดนี้เคยส่งรูปแล้ว และช่างยังไม่ได้เลือกโหมด → ถามก่อน กันรูปเก่าหายโดยไม่ตั้งใจ
+  var sent = serverSent[String(code).trim().toUpperCase()];
+  if (sent && sent.count > 0 && !codeMode[code] && !(codePhotos[code] || []).length) {
+    openModeChooser(code, sent);
+    return;
+  }
+  openSourcePicker(code);
+}
+
+// ถาม: เพิ่มรูป (เก็บของเดิม) หรือ ถ่ายใหม่ทั้งหมด (ลบของเดิม)
+function openModeChooser(code, sent) {
+  var ex = document.getElementById('modeModal');
+  if (ex) ex.remove();
+  var thumbs = (sent.imgs || []).slice(0, 2).map(function(id) {
+    return '<img src="https://drive.google.com/thumbnail?id=' + id + '&sz=w200" ' +
+      'style="width:66px;height:50px;object-fit:cover;border-radius:6px;border:1px solid #333" alt="">';
+  }).join('');
+  var whenTxt = sent.date ? sent.date.split('-').reverse().join('/') : '';
+  var m = document.createElement('div');
+  m.id = 'modeModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99;display:flex;align-items:flex-end;padding:16px';
+  m.innerHTML =
+    '<div style="background:#1a1a1a;border-radius:16px;padding:20px;width:100%;max-width:560px;margin:0 auto">' +
+      '<div style="font-size:15px;font-weight:700;color:#c8f542;margin-bottom:3px">' + code + ' — ส่งรูปไปแล้ว</div>' +
+      '<div style="font-size:12px;color:#888;margin-bottom:12px">' + sent.count + ' รูป' +
+        (whenTxt ? ' · ' + whenTxt : '') + (sent.installer ? ' · โดย ' + sent.installer : '') + '</div>' +
+      (thumbs ? '<div style="display:flex;gap:6px;margin-bottom:16px">' + thumbs + '</div>' : '') +
+      '<button onclick="chooseMode(\'' + code + '\',\'append\')" style="width:100%;padding:15px;background:#1a2a00;border:1px solid #c8f542;border-radius:12px;color:#c8f542;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--f);margin-bottom:10px">' +
+        '➕ เพิ่มรูป<div style="font-size:10px;color:#8a9a5a;font-weight:400;margin-top:2px">รูปเดิมยังอยู่ครบ</div></button>' +
+      '<button onclick="chooseMode(\'' + code + '\',\'replace\')" style="width:100%;padding:15px;background:#2a1a1a;border:1px solid #663333;border-radius:12px;color:#ff9977;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--f);margin-bottom:10px">' +
+        '↻ ถ่ายใหม่ทั้งหมด<div style="font-size:10px;color:#996655;font-weight:400;margin-top:2px">ลบรูปเดิม ' + sent.count + ' รูปทิ้ง</div></button>' +
+      '<button onclick="document.getElementById(\'modeModal\').remove()" style="width:100%;padding:12px;background:transparent;border:1px solid #333;border-radius:12px;color:#666;font-size:13px;cursor:pointer;font-family:var(--f)">ยกเลิก</button>' +
+    '</div>';
+  document.body.appendChild(m);
+}
+
+function chooseMode(code, mode) {
+  codeMode[code] = mode;
+  var m = document.getElementById('modeModal');
+  if (m) m.remove();
+  openSourcePicker(code);
+}
+
+function openSourcePicker(code) {
   pickingCode = code;
   // Show choice: camera or gallery
   var existing = document.getElementById('photoSourceModal');
@@ -1484,6 +1559,7 @@ async function sendAllCodes() {
         spots: sendJob.spots,
         batchIndex: b,
         totalBatches: batches,
+        modes: codeMode,
         files: batch,
         timestamp: new Date().toISOString()
       }, 3);
