@@ -353,7 +353,9 @@ function uploadBatch(body) {
     try { seen = seenRaw ? JSON.parse(seenRaw) : null; } catch(e) {}
     var isContinuation = seen && seen.t === sessionToken;
     var startIdx = isContinuation ? seen.idx : 1;
-    var replaceOld = !isContinuation; // ครั้งแรกใน session = replace รูปเก่าของวันนี้
+    // โหมดที่ช่างเลือกจากหน้าแอป: 'append' = เก็บรูปเก่าไว้ / ไม่ส่งมา = replace (เข้ากันได้กับแอปเวอร์ชันเก่า)
+    var modeForCode = (body.modes && body.modes[code]) ? String(body.modes[code]) : 'replace';
+    var replaceOld = !isContinuation && modeForCode !== 'append';
 
     // [P2][P3] สร้างรูปใหม่ก่อน (ชื่อชั่วคราวถ้าเป็นโหมด replace) — พลาดรูปไหนข้ามรูปนั้น
     var created = [];      // ไฟล์ที่สร้างสำเร็จ
