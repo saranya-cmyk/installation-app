@@ -25,6 +25,8 @@ body { background:var(--bg); color:var(--tx); font-family:var(--f); overflow:hid
 .chip { padding:.8vh 1.6vw; border-radius:99px; background:var(--card); color:var(--mu); font-size:2vh; font-weight:600; cursor:pointer; border:1px solid #23262c; user-select:none; transition:all .15s; }
 .chip:hover { border-color:var(--lime); color:var(--tx); }
 .chip.on { background:var(--lime); color:#0d0f12; border-color:var(--lime); }
+#productChips .chip { font-size:1.8vh; padding:.6vh 1.3vw; }
+#productChips .chip.on { background:var(--green); border-color:var(--green); color:#0d0f12; }
 .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:1vw; }
 .stat { background:var(--card); border-radius:1.4vh; padding:1.6vh 1.4vw; }
 .stat .lb { font-size:1.7vh; color:var(--mu); margin-bottom:.4vh; }
@@ -79,6 +81,7 @@ body { background:var(--bg); color:var(--tx); font-family:var(--f); overflow:hid
   </div>
 
   <div class="chips" id="mediaChips"></div>
+  <div class="chips" id="productChips" style="display:none"></div>
 
   <div class="stats">
     <div class="stat"><div class="lb">ติดตั้งวันนี้</div><div class="v g" id="sToday">–</div></div>
@@ -133,6 +136,7 @@ var popLayer = L.layerGroup().addTo(map); // รูปใหม่เด้ง�
 var prevCounts = null; // 'jobId|CODE' -> count ไว้จับรูปใหม่
 var firstLoad = true;
 var mediaFilter = '__all__';
+var productFilter = '__all__';
 var lastData = null;
 
 function todayStr() {
@@ -141,6 +145,8 @@ function todayStr() {
 }
 function dOnly(s) { return s ? String(s).substring(0, 10) : ''; }
 function mediaOf(j) { return (j.media && String(j.media).trim()) ? String(j.media).trim() : 'ไม่ระบุสื่อ'; }
+function productOf(s) { return (s.product && String(s.product).trim()) ? String(s.product).trim() : 'ไม่ระบุสินค้า'; }
+function keyOf(jobId, code) { return jobId + '|' + String(code).trim().toUpperCase(); }
 
 // ── แถบเลือกสื่อ ──
 function renderChips(jobs) {
@@ -157,6 +163,32 @@ function renderChips(jobs) {
       d.textContent = c.t;
       d.onclick = function() {
         mediaFilter = c.v;
+        productFilter = '__all__'; // เปลี่ยนสื่อ = ดูสินค้าทั้งหมดของสื่อนั้นก่อน
+        if (lastData) { renderChips(lastData.jobs); renderAll(lastData.jobs, lastData.log, {}); }
+      };
+      el.appendChild(d);
+    });
+  renderProductChips(jobs);
+}
+
+// ชิปสินค้า — เฉพาะสินค้าที่มีอยู่ในสื่อที่เลือก (มีสินค้าเดียวก็ไม่ต้องโชว์ให้รก)
+function renderProductChips(jobs) {
+  var el = document.getElementById('productChips');
+  var scope = mediaFilter === '__all__' ? jobs : jobs.filter(function(j){ return mediaOf(j) === mediaFilter; });
+  var seen = {};
+  scope.forEach(function(j){ (j.spots||[]).forEach(function(s){ seen[productOf(s)] = true; }); });
+  var names = Object.keys(seen).sort();
+  if (productFilter !== '__all__' && !seen[productFilter]) productFilter = '__all__';
+  if (names.length < 2) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'flex';
+  el.innerHTML = '';
+  [{ v:'__all__', t:'ทุกสินค้า' }].concat(names.map(function(n){ return { v:n, t:n }; }))
+    .forEach(function(c) {
+      var d = document.createElement('div');
+      d.className = 'chip' + (productFilter === c.v ? ' on' : '');
+      d.textContent = c.t;
+      d.onclick = function() {
+        productFilter = c.v;
         if (lastData) { renderChips(lastData.jobs); renderAll(lastData.jobs, lastData.log, {}); }
       };
       el.appendChild(d);
@@ -166,29 +198,42 @@ function renderChips(jobs) {
 // ── วาดทั้งจอตามสื่อที่เลือก ──
 function renderAll(jobs, log, newKeys) {
   var today = todayStr();
-  var fJobs = mediaFilter === '__all__' ? jobs : jobs.filter(function(j){ return mediaOf(j) === mediaFilter; });
+  var mJobs = mediaFilter === '__all__' ? jobs : jobs.filter(function(j){ return mediaOf(j) === mediaFilter; });
+
+  // สินค้าผูกอยู่กับ "จุด" ไม่ใช่ "งาน" → ต้องกรองระดับจุด
+  var okSpot = function(s) { return productFilter === '__all__' || productOf(s) === productFilter; };
+  var spotsOf = {};   // jobId -> จุดที่ผ่านตัวกรอง
+  var fJobs = [];
+  mJobs.forEach(function(j) {
+    var ss = (j.spots || []).filter(okSpot);
+    if (ss.length) { spotsOf[j.id] = ss; fJobs.push(j); }
+  });
   var fIds = {};
   fJobs.forEach(function(j){ fIds[j.id] = true; });
+
+  // จุดไหนผ่านตัวกรองบ้าง (ใช้เช็ค log ที่มีแต่ code)
+  var okKey = {};
+  fJobs.forEach(function(j){ spotsOf[j.id].forEach(function(s){ okKey[keyOf(j.id, s.code)] = true; }); });
 
   var byKey = {};
   log.forEach(function(e) {
     if (!e.jobId) return;
-    byKey[e.jobId + '|' + String(e.code).trim().toUpperCase()] = e;
+    byKey[keyOf(e.jobId, e.code)] = e;
   });
 
   // สถิติ (เฉพาะสื่อที่เลือก)
   var doneToday = 0, photosToday = 0;
   log.forEach(function(e) {
-    if (!fIds[e.jobId]) return;
+    if (!fIds[e.jobId] || !okKey[keyOf(e.jobId, e.code)]) return;
     if (dOnly(e.date) === today || (e.date && String(e.date).indexOf(today) === 0)) {
       doneToday++; photosToday += Number(e.count)||0;
     }
   });
   var allDone = 0, allTotal = 0;
   fJobs.forEach(function(j) {
-    (j.spots||[]).forEach(function(s) {
+    spotsOf[j.id].forEach(function(s) {
       allTotal++;
-      if (byKey[j.id + '|' + String(s.code).trim().toUpperCase()]) allDone++;
+      if (byKey[keyOf(j.id, s.code)]) allDone++;
     });
   });
   document.getElementById('sToday').innerHTML = doneToday + '<small> จุด</small>';
@@ -200,9 +245,9 @@ function renderAll(jobs, log, newKeys) {
   markerLayer.clearLayers();
   var bounds = [];
   fJobs.forEach(function(j) {
-    (j.spots||[]).forEach(function(s) {
+    spotsOf[j.id].forEach(function(s) {
       if (!s.lat || !s.lng) return;
-      var k = j.id + '|' + String(s.code).trim().toUpperCase();
+      var k = keyOf(j.id, s.code);
       var entry = byKey[k];
       var isDone = !!entry;
       var isNew = !!newKeys[k];
@@ -239,8 +284,8 @@ function renderAll(jobs, log, newKeys) {
   // ใกล้ครบกำหนด
   var now = new Date(); now.setHours(0,0,0,0);
   var dls = fJobs.map(function(j) {
-    var total = (j.spots||[]).length;
-    var done = (j.spots||[]).filter(function(s){ return byKey[j.id + '|' + String(s.code).trim().toUpperCase()]; }).length;
+    var total = spotsOf[j.id].length;
+    var done = spotsOf[j.id].filter(function(s){ return byKey[keyOf(j.id, s.code)]; }).length;
     var end = j.dateEnd ? new Date(dOnly(j.dateEnd)) : null;
     var days = end && !isNaN(end.getTime()) ? Math.round((end - now) / 86400000) : null;
     return { name: j.name, media: j.media||'', total: total, done: done, days: days };
@@ -250,7 +295,7 @@ function renderAll(jobs, log, newKeys) {
     return da - db;
   });
   var el = document.getElementById('deadlines');
-  if (!dls.length) { el.innerHTML = '<div class="empty">ไม่มีงานในสื่อนี้</div>'; }
+  if (!dls.length) { el.innerHTML = '<div class="empty">ไม่มีงานที่ตรงกับตัวกรอง</div>'; }
   else {
     el.innerHTML = dls.slice(0, 5).map(function(x) {
       var pct = x.total ? Math.round(x.done / x.total * 100) : 0;
@@ -268,7 +313,7 @@ function renderAll(jobs, log, newKeys) {
   }
 
   // ฟีดรูปล่าสุด
-  var withImgs = log.filter(function(e){ return fIds[e.jobId] && e.imgs && e.imgs.length; });
+  var withImgs = log.filter(function(e){ return fIds[e.jobId] && okKey[keyOf(e.jobId, e.code)] && e.imgs && e.imgs.length; });
   var latest = withImgs.slice(-6).reverse();
   var jobName = {};
   jobs.forEach(function(j){ jobName[j.id] = j.name; });
