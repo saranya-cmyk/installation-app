@@ -858,7 +858,7 @@ function renderCodeList() {
     var isSent = jobLog2[s.code] && jobLog2[s.code].status === 'sent';
     div.className = 'code-item' + (photos.length ? ' has-photos' : isSent ? ' uploading' : '');
     div.id = 'ci_' + s.code;
-    var addr = s.address && s.address.length > 3 ? s.address : (s.product || '—');
+    var addr = s.address && (s.address || '').length > 3 ? s.address : (s.product || '—');
     // Check if this code was already sent (from localStorage codeLog)
     var savedLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
     var jobLog = savedLog[selectedJob ? selectedJob.id : ''] || {};
