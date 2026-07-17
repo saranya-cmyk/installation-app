@@ -65,7 +65,7 @@ h1 { font-size:24px; font-weight:700; }
   <div id="content"><div class="loading">⏳ กำลังโหลดข้อมูล...</div></div>
   <div class="footer">Plan B Media · ข้อมูลอัปเดตอัตโนมัติจากหน้างานจริง</div>
 </div>
-<button class="refresh" onclick="load()" title="รีเฟรช">↻</button>
+<button class="refresh" id="refreshBtn" onclick="load(true)" title="รีเฟรช">↻</button>
 
 <script>
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxAmnIwOxMZ2ntWiZFW7uYLjp-ZfOzSwfMXbO8YS5SzFutOcLoV6AJO4YGnjdQpbH86Cw/exec';
@@ -73,9 +73,10 @@ var KEY = new URLSearchParams(location.search).get('key') || '';
 var map = null, markers = [];
 var photoCache = {};
 
-function load() {
+function load(manual) {
   var el = document.getElementById('content');
-  if (!KEY) { el.innerHTML = '<div class="err">ลิงก์ไม่ถูกต้อง — กรุณาติดต่อ Plan B Media เพื่อรับลิงก์ใหม่ค่ะ</div>'; return; }
+  setRefreshing(true);
+  if (!KEY) { setRefreshing(false); el.innerHTML = '<div class="err">ลิงก์ไม่ถูกต้อง — กรุณาติดต่อ Plan B Media เพื่อรับลิงก์ใหม่ค่ะ</div>'; return; }
 
   // [SPEED] เปิดซ้ำ → วาดจากข้อมูลรอบก่อนทันที แล้วอัปเดตเบื้องหลัง
   var hadCache = false;
@@ -92,13 +93,31 @@ function load() {
         if (!hadCache) el.innerHTML = '<div class="err">ไม่พบข้อมูลแคมเปญ — กรุณาติดต่อ Plan B Media ค่ะ</div>';
         return;
       }
+      var changed = hadCache && window._pdata && sigOf(d) !== sigOf(window._pdata);
       try { sessionStorage.setItem('pd_' + KEY, JSON.stringify(d)); } catch(e) {}
       render(d);
+      setRefreshing(false);
+      // กดรีเฟรชเองต้องมีคำตอบเสมอ ไม่งั้นลูกค้านึกว่าปุ่มเสีย
+      if (manual) showMiniToast(changed ? '🎉 อัปเดตแล้ว — มีรูปใหม่' : '✓ ข้อมูลล่าสุดแล้ว');
     })
-    .catch(function(){ if (!hadCache) el.innerHTML = '<div class="err">โหลดข้อมูลไม่สำเร็จ — ลองใหม่อีกครั้งค่ะ</div>'; });
+    .catch(function(){
+      setRefreshing(false);
+      if (manual) showMiniToast('⚠️ อัปเดตไม่สำเร็จ — ลองใหม่อีกครั้งค่ะ');
+      if (!hadCache) el.innerHTML = '<div class="err">โหลดข้อมูลไม่สำเร็จ — ลองใหม่อีกครั้งค่ะ</div>';
+    });
 }
 
 // ═══ อัปเดตอัตโนมัติ — ลูกค้าเปิดค้างไว้ รูปใหม่เด้งเอง ไม่ต้องรีเฟรช ═══
+// ปุ่มรีเฟรช: หมุนตอนกำลังโหลด ให้รู้ว่าทำงานอยู่
+var _spinCss = document.createElement('style');
+_spinCss.textContent = '@keyframes pspin{to{transform:rotate(360deg)}}' +
+  '.refresh.loading{animation:pspin .8s linear infinite;opacity:.75;pointer-events:none}';
+document.head.appendChild(_spinCss);
+function setRefreshing(on) {
+  var b = document.getElementById('refreshBtn');
+  if (b) b.classList.toggle('loading', !!on);
+}
+
 function sigOf(d) {
   try { return d.done + '|' + d.spots.map(function(s){ return s.code + ':' + (s.photos||0) + ':' + (s.imgs?s.imgs.length:0); }).join(','); }
   catch(e) { return ''; }
@@ -146,7 +165,7 @@ function pollUpdate() {
     })
     .catch(function(){});
 }
-setInterval(pollUpdate, 60000);
+setInterval(pollUpdate, 25000);
 // สลับกลับมาที่แท็บนี้ → เช็คทันที (ไม่ต้องรอรอบ)
 document.addEventListener('visibilitychange', function(){ if (!document.hidden) pollUpdate(); });
 
