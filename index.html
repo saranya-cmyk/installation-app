@@ -365,11 +365,16 @@ var _installerMediaGroups = {};
 var _installerSelectedMedia = null;
 var serverSent = {};   // CODE -> { count, date, installer, imgs } — รูปที่ส่งไปแล้วจริงบนเซิร์ฟเวอร์
 var codeMode = {};     // CODE -> 'append' | 'replace' — โหมดที่ช่างเลือก
+var _sentLoaded = false;  // โหลดสถานะเสร็จหรือยัง — ห้ามให้ช่างเลือกรูปก่อนรู้ว่าจุดนี้มีรูปเดิมไหม
+var _sentJobId = null;
 
 // ดึงสถานะรูปที่ส่งไปแล้วของงานนี้ (จากเซิร์ฟเวอร์ ไม่ใช่ localStorage — รู้ครบทุกเครื่อง/ทุกช่าง)
 function loadSentState(jobId) {
+  if (!jobId) { _sentLoaded = true; return Promise.resolve(); }
+  if (_sentLoaded && _sentJobId === jobId) return Promise.resolve(); // โหลดแล้ว ไม่ต้องยิงซ้ำ
   serverSent = {};
-  if (!jobId) return Promise.resolve();
+  _sentLoaded = false;
+  _sentJobId = jobId;
   return fetch(SCRIPT_URL + '?action=getInstallLog')
     .then(function(r){ return r.json(); })
     .then(function(d) {
@@ -382,9 +387,10 @@ function loadSentState(jobId) {
           imgs: e.imgs || []
         };
       });
+      _sentLoaded = true;
       try { renderCodeList(); } catch(err) {}
     })
-    .catch(function(){ /* ดึงไม่ได้ = ไม่เป็นไร ใช้ localStorage ตามเดิม */ });
+    .catch(function(){ _sentLoaded = true; /* ดึงไม่ได้ = ปล่อยผ่าน แต่ backend กันรูปหายให้อยู่แล้ว */ });
 }
 
 function renderJobs() {
@@ -828,6 +834,7 @@ function switchMode(m) {
   currentMode = m;
   // Clear previous selections when switching mode
   codePhotos = {};
+  codeMode = {};
   document.getElementById('modeTab0').classList.toggle('on', m===0);
   document.getElementById('modeTab1').classList.toggle('on', m===1);
   document.getElementById('mode0').style.display = m===0 ? 'block' : 'none';
@@ -1076,6 +1083,7 @@ function checkPendingQueueBanner() {
       var j = jobs.find(function(x){ return x.id === jid; });
       if (!j) { alert('ไม่พบงานนี้แล้ว — อาจถูกลบไป'); return; }
       selectedJob = j;
+      loadSentState(jid); // ⭐ ห้ามลืม ไม่งั้นเข้าหน้าอัปโหลดโดยไม่รู้ว่าจุดไหนมีรูปเดิม
       restoreQueueToApp(jid).then(function() {
         goUpload();
       });
@@ -1107,6 +1115,21 @@ function showNetToast(msg, bg, border) {
 // Hidden file input for per-code picking
 var pickingCode = null;
 function openCodePicker(code) {
+  // ยังโหลดสถานะรูปเดิมไม่เสร็จ → รอก่อน ห้ามให้เลือกรูป (ไม่งั้นไม่รู้ว่าต้องถามโหมดไหม)
+  var _jid = _sentJobId || (selectedJob && selectedJob.id);
+  if (!_sentLoaded && _jid) {
+    var w = document.createElement('div');
+    w.id = 'sentWait';
+    w.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99;display:flex;align-items:center;justify-content:center';
+    w.innerHTML = '<div style="background:#1a1a1a;border-radius:14px;padding:22px 28px;font-size:14px;color:#c8f542;font-family:var(--f)">⏳ กำลังเช็ครูปเดิม...</div>';
+    document.body.appendChild(w);
+    loadSentState(_jid).then(function() {
+      var el = document.getElementById('sentWait');
+      if (el) el.remove();
+      openCodePicker(code);
+    });
+    return;
+  }
   // จุดนี้เคยส่งรูปแล้ว และช่างยังไม่ได้เลือกโหมด → ถามก่อน กันรูปเก่าหายโดยไม่ตั้งใจ
   var sent = serverSent[String(code).trim().toUpperCase()];
   if (sent && sent.count > 0 && !codeMode[code] && !(codePhotos[code] || []).length) {
