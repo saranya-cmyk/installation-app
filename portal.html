@@ -178,6 +178,7 @@ function fmtDate(s) {
 }
 
 function render(d) {
+  if (!d.spots) d.spots = []; // กันพัง: ข้อมูลจาก cache เก่า/เพี้ยน ต้องไม่ทำให้จอลูกค้าค้าง
   window._pdata = d; // จำไว้เทียบหารูปใหม่
   try { document.title = d.name + (d.media ? ' · ' + d.media : '') + ' — สถานะติดตั้ง Plan B'; } catch(e) {}
   var pct = d.total ? Math.round(d.done / d.total * 100) : 0;
