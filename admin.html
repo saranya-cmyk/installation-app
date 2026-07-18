@@ -189,7 +189,6 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 <div class="tabs">
   <div class="tab on" onclick="switchTab(0)">📊 Upload Job</div>
   <div class="tab" onclick="switchTab(1)">📈 Dashboard</div>
-  <div class="tab" onclick="switchTab(2)">📊 สถิติ</div>
 </div>
 
 <!-- TAB 0 -->
@@ -313,39 +312,6 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
       <div class="prog-bar"><div class="prog-fill" id="dsFill" style="width:0%"></div></div>
     </div>
     <div class="spot-list" id="dashSpots"></div>
-  </div>
-</div>
-
-<!-- TAB 2 — สถิติระบบ -->
-<div class="screen" id="t2">
-  <div style="max-width:960px;margin:0 auto;padding:8px 0 40px">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:4px">
-      <div style="font-size:22px;font-weight:700;color:var(--tx)">📊 สถิติระบบ</div>
-      <div id="statAsOf" style="font-size:12px;color:var(--mu)"></div>
-    </div>
-    <div style="font-size:13px;color:var(--mu);margin-bottom:18px">ภาพรวมทั้งหมดตั้งแต่เริ่มใช้ระบบ — นับสดจากข้อมูลจริง</div>
-
-    <!-- การ์ดตัวเลขใหญ่ -->
-    <div id="statBig" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px"></div>
-
-    <!-- แถวรอง -->
-    <div id="statRow2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:22px"></div>
-
-    <!-- Top ช่าง -->
-    <div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:16px 18px;margin-bottom:14px">
-      <div style="font-size:15px;font-weight:600;color:var(--tx);margin-bottom:12px">🏆 ช่างที่ส่งงานมากสุด</div>
-      <div id="statInstallers"></div>
-    </div>
-
-    <!-- แยกตามสื่อ -->
-    <div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:16px 18px">
-      <div style="font-size:15px;font-weight:600;color:var(--tx);margin-bottom:12px">📺 งานแยกตามสื่อ</div>
-      <div id="statMedia"></div>
-    </div>
-
-    <div style="text-align:center;margin-top:20px">
-      <button onclick="loadStats()" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;color:var(--mu);padding:8px 20px;font-size:13px;cursor:pointer;font-family:var(--f)">🔄 รีเฟรช</button>
-    </div>
   </div>
 </div>
 
@@ -2341,93 +2307,6 @@ function switchTab(i) {
   document.querySelectorAll('.screen').forEach(function(s,j){ s.classList.toggle('on', j===i); });
   if (i===0) renderJobCards();
   if (i===1) { renderDashSelect(); renderDash(); }
-  if (i===2) loadStats();
-}
-
-// ═══════ สถิติระบบ — นับสดจาก jobs + installLog ═══════
-function loadStats() {
-  var big = document.getElementById('statBig');
-  big.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--mu);padding:20px">⏳ กำลังคำนวณ...</div>';
-  Promise.all([
-    fetch(SCRIPT_URL + '?action=getJobs').then(function(r){ return r.json(); }),
-    fetch(SCRIPT_URL + '?action=getInstallLog').then(function(r){ return r.json(); })
-  ]).then(function(res) {
-    var jobs = res[0].jobs || [];
-    var log = res[1].log || [];
-
-    // นับ
-    var byKey = {};
-    log.forEach(function(e){ if (e.jobId) byKey[e.jobId + '|' + String(e.code).trim().toUpperCase()] = e; });
-    var totalPhotos = 0, doneSpots = 0, allSpots = 0, doneJobs = 0;
-    var installers = {}, media = {}, dates = {};
-    log.forEach(function(e){
-      var c = Number(e.count) || 0;
-      totalPhotos += c;
-      var nm = (e.installer || '').trim() || '(ไม่ระบุ)';
-      if (!installers[nm]) installers[nm] = { spots:0, photos:0 };
-      installers[nm].spots++; installers[nm].photos += c;
-      var d = e.date ? String(e.date).substring(0,10) : '';
-      if (d) dates[d] = true;
-    });
-    jobs.forEach(function(j){
-      var total = (j.spots||[]).length, done = 0;
-      (j.spots||[]).forEach(function(s){ if (byKey[j.id + '|' + String(s.code).trim().toUpperCase()]) done++; });
-      allSpots += total; doneSpots += done;
-      if (total > 0 && done >= total) doneJobs++;
-      var mk = (j.media || '').trim() || 'ไม่ระบุสื่อ';
-      if (!media[mk]) media[mk] = { jobs:0, spots:0, done:0 };
-      media[mk].jobs++; media[mk].spots += total; media[mk].done += done;
-    });
-    var activeDays = Object.keys(dates).length;
-    var pct = allSpots ? Math.round(doneSpots/allSpots*100) : 0;
-
-    function bigCard(v, lbl, sub, color) {
-      return '<div style="background:var(--s);border:1px solid var(--b);border-radius:12px;padding:18px 16px;text-align:center">' +
-        '<div style="font-size:38px;font-weight:800;color:' + (color||'var(--ac)') + ';line-height:1.1">' + v + '</div>' +
-        '<div style="font-size:14px;font-weight:600;color:var(--tx);margin-top:4px">' + lbl + '</div>' +
-        (sub ? '<div style="font-size:11px;color:var(--mu);margin-top:2px">' + sub + '</div>' : '') + '</div>';
-    }
-    document.getElementById('statBig').innerHTML =
-      bigCard(totalPhotos.toLocaleString(), 'รูปติดตั้งทั้งหมด', 'ผ่านระบบ') +
-      bigCard(doneSpots.toLocaleString(), 'จุดที่ติดตั้งแล้ว', 'จาก ' + allSpots.toLocaleString() + ' จุด') +
-      bigCard(jobs.length, 'งานทั้งหมด', doneJobs + ' งานเสร็จสมบูรณ์') +
-      bigCard(activeDays, 'วันที่มีงาน', 'ตั้งแต่เริ่มใช้');
-    document.getElementById('statRow2').innerHTML =
-      bigCard(pct + '%', 'ความคืบหน้ารวม', 'ทุกงานรวมกัน', 'var(--ok)') +
-      bigCard(Object.keys(installers).length, 'ช่างที่ใช้งาน', 'คน', 'var(--ok)') +
-      bigCard(Object.keys(media).length, 'ประเภทสื่อ', 'ที่ให้บริการ', 'var(--ok)') +
-      bigCard(allSpots ? Math.round(totalPhotos/Math.max(doneSpots,1)*10)/10 : 0, 'รูปเฉลี่ย/จุด', 'ความละเอียดงาน', 'var(--ok)');
-
-    // Top ช่าง
-    var insArr = Object.keys(installers).map(function(k){ return { name:k, spots:installers[k].spots, photos:installers[k].photos }; });
-    insArr.sort(function(a,b){ return b.spots - a.spots; });
-    var maxSpots = insArr.length ? insArr[0].spots : 1;
-    document.getElementById('statInstallers').innerHTML = insArr.slice(0,8).map(function(x,i){
-      var w = Math.round(x.spots/maxSpots*100);
-      var medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'&nbsp;&nbsp;';
-      return '<div style="display:flex;align-items:center;gap:10px;padding:5px 0">' +
-        '<div style="width:24px;font-size:14px">' + medal + '</div>' +
-        '<div style="width:110px;font-size:13px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + x.name + '</div>' +
-        '<div style="flex:1;background:var(--s2);border-radius:6px;height:16px;overflow:hidden"><div style="width:' + w + '%;height:100%;background:var(--ac);border-radius:6px"></div></div>' +
-        '<div style="width:120px;text-align:right;font-size:12px;color:var(--mu)">' + x.spots + ' จุด · ' + x.photos + ' รูป</div></div>';
-    }).join('') || '<div style="color:var(--mu);font-size:13px">ยังไม่มีข้อมูล</div>';
-
-    // แยกตามสื่อ
-    var medArr = Object.keys(media).map(function(k){ return { name:k, d:media[k] }; });
-    medArr.sort(function(a,b){ return b.d.spots - a.d.spots; });
-    document.getElementById('statMedia').innerHTML = medArr.map(function(x){
-      var mp = x.d.spots ? Math.round(x.d.done/x.d.spots*100) : 0;
-      return '<div style="display:flex;align-items:center;gap:10px;padding:5px 0">' +
-        '<div style="width:150px;font-size:13px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + x.name + '</div>' +
-        '<div style="flex:1;background:var(--s2);border-radius:6px;height:16px;overflow:hidden"><div style="width:' + mp + '%;height:100%;background:var(--ok);border-radius:6px"></div></div>' +
-        '<div style="width:150px;text-align:right;font-size:12px;color:var(--mu)">' + x.d.jobs + ' งาน · ' + x.d.done + '/' + x.d.spots + ' จุด</div></div>';
-    }).join('') || '<div style="color:var(--mu);font-size:13px">ยังไม่มีข้อมูล</div>';
-
-    var now = new Date();
-    document.getElementById('statAsOf').textContent = 'ณ ' + now.toLocaleDateString('th-TH') + ' ' + now.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
-  }).catch(function(){
-    document.getElementById('statBig').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--err);padding:20px">โหลดข้อมูลไม่สำเร็จ ลองรีเฟรช</div>';
-  });
 }
 
 initFromServer();
