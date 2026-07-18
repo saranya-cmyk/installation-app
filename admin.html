@@ -468,7 +468,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxAmnIwOxMZ2ntWiZFW7uYLjp-ZfOzSwfMXbO8YS5SzFutOcLoV6AJO4YGnjdQpbH86Cw/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzJVR8sqRdX8_pTc0C7A6nRpuUwZta2Ey3TEGc1ZQsKL03egzJIKkElat6a5TuQF69v/exec';
 var jobs = [];
 var codeLog = {};
 
@@ -708,6 +708,54 @@ function loadExcel(file) {
   else reader.readAsBinaryString(file);
 }
 
+// ═══ ตัวอ่านอัจฉริยะ: ดึงเฉพาะเนื้อที่ต้องการ ตัดของแถมทิ้ง ═══
+// หลักการ: ถ้าไม่มั่นใจ = คืนค่าเดิม ห้ามทำข้อมูลหาย
+function smartProduct(raw) {
+  var orig = String(raw == null ? '' : raw).trim();
+  if (!orig) return '';
+  var s = orig;
+  // 1) ตัดหัวป้ายกำกับ — "สินค้า: Coke" → "Coke"
+  s = s.replace(/^\s*(สินค้า|ชื่อสินค้า|โฆษณา|ลูกค้า|แคมเปญ|ยี่ห้อ|product|brand|campaign|client|customer)\s*[:：\-–—]\s*/i, '');
+  // 2) ตัดเลขลำดับหน้า — "1. Coke" / "01) Coke"
+  s = s.replace(/^\s*\d{1,3}\s*[.)\]]\s+/, '');
+  // 3) ตัดวงเล็บทุกชนิด — มักเป็นหมายเหตุ "Coke (Serie Poster)" → "Coke"
+  s = s.replace(/[\(（\[\{][^\)）\]\}]*[\)）\]\}]/g, ' ');
+  // 4) ตัดส่วนต่อท้ายหลังขีดล่าง — "Coke_JUL26" → "Coke"
+  s = s.split('_')[0];
+  // 5) ตัดจำนวนต่อท้าย — "Coke 50 จุด" / "Coke x50"
+  s = s.replace(/\s*[xX×]?\s*\d+\s*(จุด|ป้าย|คัน|แผ่น|ชิ้น|ตัว|spots?|pcs?|units?)\s*$/i, '');
+  s = s.replace(/\s*(จำนวน|qty|amount)\s*[:：]?\s*\d+\s*$/i, '');
+  // 6) ตัดเดือน/ปีต่อท้าย — "Coke - ก.ค. 69" / "Coke JUL26" / "Coke 07/2026"
+  s = s.replace(/\s*[-–—|\/]?\s*(ม\.?ค|ก\.?พ|มี\.?ค|เม\.?ย|พ\.?ค|มิ\.?ย|ก\.?ค|ส\.?ค|ก\.?ย|ต\.?ค|พ\.?ย|ธ\.?ค)\.?\s*\d{2,4}\s*$/i, '');
+  s = s.replace(/\s*[-–—|\/]?\s*(jan|feb|mar|apr|apl|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*'?\s*\d{2,4}\s*$/i, '');
+  s = s.replace(/\s*[-–—|\/]\s*\d{1,2}\s*[\/.\-]\s*\d{2,4}\s*$/, '');
+  // 7) ตัดชื่อสื่อต่อท้าย — "Coke - Serie Poster" → "Coke"
+  s = s.replace(/\s*[-–—|\/]\s*(serie\s*poster|metro\s*poster|pole\s*wrap|city\s*vision|billboard|static|bus|บิลบอร์ด|รถเมล์|ป้ายนิ่ง)\s*$/i, '');
+  // 8) เก็บกวาด — ช่องว่างซ้ำ + เครื่องหมายค้างหัวท้าย
+  s = s.replace(/\s{2,}/g, ' ').trim();
+  s = s.replace(/^[\-–—|\/,:;.]+\s*/, '').replace(/\s*[\-–—|\/,:;]+$/, '').trim();
+  // กันพลาด: ถ้าตัดจนหมด = คืนค่าเดิม ดีกว่าได้ค่าว่าง
+  return s || orig;
+}
+
+// ดึงเฉพาะรหัสจุดติดตั้ง / ทะเบียนรถ ออกจากเซลล์ที่อาจมีข้อความอื่นปน
+function smartCode(raw, codeRe, plateRe) {
+  var orig = String(raw == null ? '' : raw).trim();
+  if (!orig) return '';
+  var up = orig.toUpperCase();
+  // ทางลัด: เซลล์สะอาดอยู่แล้ว = ใช้เลย ไม่ต้องเสี่ยงแตะ
+  if (codeRe.test(up) || plateRe.test(orig)) return up;
+  // มีของแถมปนมา → ดึงเฉพาะรหัสป้าย (เช่น "DP703 (สาทร)" → "DP703")
+  var m = up.match(/\b[A-Z]{1,4}[-]?[0-9]{2,5}(?:[A-Z]{0,4}[-]?[0-9]{0,5})?\b/);
+  if (m) return m[0];
+  // ทะเบียนรถไทย (เช่น "1กข-2345 สาย 8" → "1กข-2345")
+  var p = orig.match(/\b[0-9]{1,2}[ก-ฮ]{1,2}[-]?[0-9]{3,4}\b|\b[ก-ฮ]{1,3}[-]?[0-9]{3,4}\b|\b[0-9]{1,2}[-][0-9]{3,4}\b/);
+  if (p) return p[0].toUpperCase();
+  // หารูปแบบไม่เจอ → อย่างน้อยตัดวงเล็บ/ช่องว่างซ้ำออก
+  var c = up.replace(/[\(（\[\{][^\)）\]\}]*[\)）\]\}]/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  return c || up;
+}
+
 function autoDetectAndBuild() {
   var codeCol=null, productCol=null, addrCol=null, latCol=null, lngCol=null, mediaCol=null;
   var codePattern = /^[A-Za-z]{1,4}[-]?[0-9]{2,5}([A-Za-z]{0,4}[-]?[0-9]{0,5})?$/;
@@ -810,8 +858,8 @@ function autoDetectAndBuild() {
       addr = parts.join(' · ');
     }
     return {
-      code:    String(r[codeCol]||'').trim().toUpperCase(),
-      product: productCol ? String(r[productCol]||'').trim().split('_')[0].trim() : '',
+      code:    smartCode(r[codeCol], codePattern, platePattern),
+      product: productCol ? smartProduct(r[productCol]) : '',
       address: addr,
       lat:     latCol     ? parseFloat(r[latCol])  || null   : null,
       lng:     lngCol     ? parseFloat(r[lngCol])  || null   : null,
