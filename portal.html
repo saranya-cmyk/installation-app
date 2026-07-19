@@ -51,7 +51,9 @@ h1 { font-size:24px; font-weight:700; }
 .loading { text-align:center; padding:60px 20px; color:var(--mu); }
 .err { text-align:center; padding:60px 20px; color:#c33; }
 .footer { text-align:center; font-size:11px; color:#aaa; margin-top:40px; }
-.refresh { position:fixed; bottom:20px; right:20px; background:#111; color:#fff; border:none; border-radius:50%; width:52px; height:52px; font-size:20px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.25); }
+.refresh { position:fixed; bottom:20px; right:20px; background:#111; color:#fff; border:none; border-radius:50%; width:52px; height:52px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.25); display:flex; align-items:center; justify-content:center; }
+.refresh .ric { display:flex; align-items:center; justify-content:center; }
+.refresh:active { transform:scale(.92); }
 </style>
 </head>
 <body>
@@ -65,7 +67,7 @@ h1 { font-size:24px; font-weight:700; }
   <div id="content"><div class="loading">⏳ กำลังโหลดข้อมูล...</div></div>
   <div class="footer">Plan B Media · ข้อมูลอัปเดตอัตโนมัติจากหน้างานจริง</div>
 </div>
-<button class="refresh" id="refreshBtn" onclick="load(true)" title="รีเฟรช">↻</button>
+<button class="refresh" id="refreshBtn" onclick="load(true)" title="รีเฟรช"><span class="ric"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg></span></button>
 
 <script>
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxAmnIwOxMZ2ntWiZFW7uYLjp-ZfOzSwfMXbO8YS5SzFutOcLoV6AJO4YGnjdQpbH86Cw/exec';
@@ -111,7 +113,8 @@ function load(manual) {
 // ปุ่มรีเฟรช: หมุนตอนกำลังโหลด ให้รู้ว่าทำงานอยู่
 var _spinCss = document.createElement('style');
 _spinCss.textContent = '@keyframes pspin{to{transform:rotate(360deg)}}' +
-  '.refresh.loading{animation:pspin .8s linear infinite;opacity:.75;pointer-events:none}';
+  '.refresh.loading{opacity:.75;pointer-events:none}' +
+  '.refresh.loading .ric{animation:pspin .8s linear infinite}';
 document.head.appendChild(_spinCss);
 function setRefreshing(on) {
   var b = document.getElementById('refreshBtn');
