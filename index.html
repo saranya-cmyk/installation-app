@@ -249,7 +249,7 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 
 <script>
 // ── Config ────────────────────────────────────────────────────
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzJVR8sqRdX8_pTc0C7A6nRpuUwZta2Ey3TEGc1ZQsKL03egzJIKkElat6a5TuQF69v/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxAmnIwOxMZ2ntWiZFW7uYLjp-ZfOzSwfMXbO8YS5SzFutOcLoV6AJO4YGnjdQpbH86Cw/exec';
 
 // ── State ─────────────────────────────────────────────────────
 let installerName = localStorage.getItem('installerName') || '';
@@ -665,7 +665,12 @@ async function uploadWithRetry(payload, retries) {
   retries = retries || 3;
   for (var attempt = 1; attempt <= retries; attempt++) {
     try {
-      var res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
+      var ctrl = new AbortController();
+      var timer = setTimeout(function(){ ctrl.abort(); }, 90000); // 90 วิ — ค้างนานกว่านี้ = ตัดแล้วลองใหม่
+      var res;
+      try {
+        res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload), signal: ctrl.signal });
+      } finally { clearTimeout(timer); }
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return await res.json();
     } catch(err) {
@@ -1503,26 +1508,31 @@ async function sendAllCodes() {
   var allResults = [];
   var allFileData = [];
 
-  // Step 1: Compress all files from all codes
+  // Step 1: Compress all files — ขนานทีละ 3 ใบ (ใช้หลายคอร์ของมือถือ เร็วขึ้น 2-3 เท่า)
+  var _tasks = [];
   for (var ci = 0; ci < codes.length; ci++) {
-    var code = codes[ci];
-    var files = codePhotos[code];
-    for (var fi = 0; fi < files.length; fi++) {
-      done++;
-      setProgress(done/total*40, 'เตรียมรูป ' + done + '/' + total + ' ค่ะ');
-      try {
-        var b64 = await compressImage(files[fi], 800);
-        allFileData.push({ name: files[fi].name, type: 'image/jpeg', lastModified: files[fi].lastModified, data: b64, _forceCode: code });
-      } catch(e) {
-        try {
-          var plain = await toB64(files[fi]);
-          allFileData.push({ name: files[fi].name, type: files[fi].type, lastModified: files[fi].lastModified, data: plain, _forceCode: code });
-        } catch(e2) {
-          unreadableFiles++; // ไฟล์เสียจริงๆ — ข้าม ไม่ทำให้การส่งทั้งหมดล่ม
-        }
-      }
-    }
+    var _c = codes[ci];
+    codePhotos[_c].forEach(function(f){ _tasks.push({ code: _c, file: f }); });
   }
+  var CONCURRENCY = 3;
+  async function _prepOne(t) {
+    try {
+      var b64 = await compressImage(t.file, 800);
+      allFileData.push({ name: t.file.name, type: 'image/jpeg', lastModified: t.file.lastModified, data: b64, _file: t.file, code: t.code });
+    } catch(e) {
+      try {
+        var plain = await toB64(t.file);
+        allFileData.push({ name: t.file.name, type: t.file.type, lastModified: t.file.lastModified, data: plain, _file: t.file, code: t.code });
+      } catch(e2) { skipped.push(t.file.name); }
+    }
+    done++;
+    setProgress(done/total*40, 'เตรียมรูป ' + done + '/' + total + ' ค่ะ');
+  }
+  var _cursor = 0;
+  async function _worker() { while (_cursor < _tasks.length) { var t = _tasks[_cursor++]; await _prepOne(t); } }
+  var _pool = [];
+  for (var w = 0; w < Math.min(CONCURRENCY, _tasks.length); w++) _pool.push(_worker());
+  await Promise.all(_pool);
 
   // Step 2: Send in batches — [FIX-SIZE] คุมขนาดข้อมูลจริงต่อ batch ไม่ใช่แค่จำนวนไฟล์
   // (backend v2 มีระบบ session: code ที่ถูกแบ่งข้าม batch จะนับเลขรูปต่อเนื่อง ไม่ลบของ batch ก่อนหน้า)
@@ -1568,24 +1578,24 @@ async function sendAllCodes() {
   var batches = batchList.length;
   var failedBatches = [];
 
-  for (var b = 0; b < batches; b++) {
-    var batch = batchList[b];
-    var pct = 40 + Math.round((b+1)/batches*40);
-    setProgress(pct, 'กำลังส่ง ' + (b+1) + '/' + batches + '...');
-    try {
-      var result = await uploadWithRetry({
-        action: 'uploadBatch',
-        installer: installerName,
-        jobId: sendJob.id,
-        jobName: sendJob.name,
-        media: sendJob.media || '',
-        spots: sendJob.spots,
-        batchIndex: b,
-        totalBatches: batches,
-        modes: codeMode,
-        files: batch,
-        timestamp: new Date().toISOString()
-      }, 3);
+  // [SPEED] batch แรกไปเดี่ยว (สร้าง session token) — ที่เหลือยิงขนานพร้อมกัน เร็วขึ้นหลายเท่าเมื่อรูปเยอะ
+  var doneCount = 0;
+  function sendOne(b) {
+    return uploadWithRetry({
+      action: 'uploadBatch',
+      installer: installerName,
+      jobId: sendJob.id,
+      jobName: sendJob.name,
+      media: sendJob.media || '',
+      spots: sendJob.spots,
+      batchIndex: b,
+      totalBatches: batches,
+      modes: codeMode,
+      files: batchList[b],
+      timestamp: new Date().toISOString()
+    }, 3).then(function(result) {
+      doneCount++;
+      setProgress(40 + Math.round(doneCount/batches*40), 'กำลังส่ง ' + doneCount + '/' + batches + '...');
       if (result && result.codes && result.codes.length) {
         result.codes.forEach(function(c) {
           var existing = allResults.findIndex(function(r){ return r.code === c.code; });
@@ -1595,9 +1605,46 @@ async function sendAllCodes() {
       } else {
         failedBatches.push(b);
       }
-    } catch(err) {
+    }).catch(function(err) {
+      doneCount++;
       console.error('Batch failed:', err.message);
       failedBatches.push(b);
+    });
+  }
+  if (batches > 0) {
+    setProgress(42, 'กำลังส่ง 1/' + batches + '...');
+    await sendOne(0); // นำเดี่ยว — ตั้ง session ให้เรียบร้อยก่อน
+    if (batches > 1) {
+      // [SAFETY] batch ที่มี Code ซ้ำกัน (จุดใหญ่ถูกแบ่งข้าม batch) ห้ามวิ่งขนาน —
+      // ไม่งั้นเลขรูปชนกัน รูปทับกันหาย → จับเป็นสายเดียวกัน วิ่งเรียงในสาย / ต่างสายวิ่งขนาน
+      var codesOf = batchList.map(function(bt) {
+        var s = {};
+        bt.forEach(function(f){ s[f.code] = true; });
+        return Object.keys(s);
+      });
+      var chains = [];   // แต่ละสาย = ลิสต์ batch ที่ต้องเรียงกัน
+      var chainOfCode = {};
+      for (var b = 1; b < batches; b++) {
+        var hit = null;
+        codesOf[b].forEach(function(c){ if (chainOfCode[c] !== undefined) hit = chainOfCode[c]; });
+        if (hit === null) { hit = chains.length; chains.push([]); }
+        chains[hit].push(b);
+        codesOf[b].forEach(function(c){ chainOfCode[c] = hit; });
+      }
+      // วิ่งสายละลำดับ สายอื่นขนาน (จำกัด 3 สายพร้อมกัน — ไม่ท่วมเน็ตมือถือ)
+      var cQueue = chains.slice();
+      var CONCURRENCY = Math.min(3, cQueue.length);
+      var workers = [];
+      for (var wI = 0; wI < CONCURRENCY; wI++) {
+        workers.push((async function() {
+          while (cQueue.length) {
+            var chain = cQueue.shift();
+            if (!chain) break;
+            for (var ci = 0; ci < chain.length; ci++) await sendOne(chain[ci]);
+          }
+        })());
+      }
+      await Promise.all(workers);
     }
   }
 
