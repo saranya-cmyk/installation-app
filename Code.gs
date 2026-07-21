@@ -38,6 +38,7 @@ function doPost(e) {
     if (body.action === 'exportReport')    return exportReport(body);
     if (body.action === 'createPDF')       return createSalesPDF(body);
     if (body.action === 'deleteCodeFiles') return withLock(function(){ return deleteCodeFiles(body); });
+    if (body.action === 'deletePhotos')    return deletePhotosFn(body);
     if (body.action === 'reportProblem')   return reportProblem(body);
     if (body.action === 'reportRepair')    return reportRepair(body);
     return json({ error: 'unknown action' });
@@ -590,7 +591,7 @@ function getPhotos(params) {
       var f = entries[fi].file;
       try { f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {}
       var id = f.getId();
-      photos.push({ name:f.getName(), phase:'photo', date:entries[fi].date,
+      photos.push({ id:id, name:f.getName(), phase:'photo', date:entries[fi].date,
         url:'https://drive.google.com/uc?export=view&id='+id,
         thumbnail:'https://drive.google.com/thumbnail?id='+id+'&sz=w400' });
     }
@@ -678,6 +679,61 @@ function fixCode(body) {
 }
 
 /** [P7] ลบรูปของ code + ลบแถวใน _InstallLog ให้สถานะ Portal ตรงความจริง */
+/**
+ * ลบรูป "ทีละใบ" ตามรายการ fileIds ที่ช่างเลือก
+ * กฎความปลอดภัย:
+ *  - ลบเฉพาะไฟล์ที่ชื่อขึ้นต้น CODE_ เท่านั้น (ต่อให้ id ถูกปลอมมา ก็ลบไฟล์อื่นไม่ได้)
+ *  - setTrashed = ย้ายลงถังขยะ Drive กู้คืนได้ 30 วัน ไม่ลบถาวร
+ *  - อัปเดต _InstallLog: หักจำนวน + เอา id ออกจากดัชนีรูป
+ */
+function deletePhotosFn(body) {
+  try {
+    var code   = String(body.code || '').trim().toUpperCase();
+    var jobId  = String(body.jobId || '');
+    var ids    = (body.fileIds || []).filter(function(x){ return x; });
+    if (!code || !ids.length) return json({ success:false, error:'ข้อมูลไม่ครบ' });
+
+    var prefix = code + '_';
+    var deleted = 0, refused = 0;
+    ids.forEach(function(fid) {
+      try {
+        var f = DriveApp.getFileById(fid);
+        if (String(f.getName()).toUpperCase().indexOf(prefix) === 0) {
+          f.setTrashed(true); deleted++;
+        } else { refused++; } // ชื่อไม่ใช่ของ code นี้ — ไม่แตะ
+      } catch(e) { refused++; }
+    });
+
+    // อัปเดต _InstallLog (ถ้ามีแถวของ jobId+code)
+    var remaining = null;
+    if (jobId && deleted > 0) {
+      try {
+        withLock2(function() {
+          var logSS = openNamedSS('_InstallLog',
+            ['jobId','code','installer','date','count','folderUrl','productFolderUrl','imgIds']);
+          var sh = logSS.getActiveSheet();
+          var rows = sh.getDataRange().getValues();
+          for (var i = 1; i < rows.length; i++) {
+            if (String(rows[i][0]) === jobId && String(rows[i][1]).trim().toUpperCase() === code) {
+              var cnt = Math.max(0, (Number(rows[i][4]) || 0) - deleted);
+              sh.getRange(i + 1, 5).setValue(cnt);
+              try {
+                var oldIds = JSON.parse(rows[i][7] || '[]');
+                sh.getRange(i + 1, 8).setValue(JSON.stringify(oldIds.filter(function(x){ return ids.indexOf(x) === -1; })));
+              } catch(e2) {}
+              remaining = cnt;
+              break;
+            }
+          }
+          return true;
+        });
+      } catch(e) { Logger.log('deletePhotos log: ' + e.message); }
+    }
+    bustCache(['resp_ilog', 'portal_' + jobId, 'resp_jobs_full', 'resp_jobs_field']);
+    return json({ success:true, deleted:deleted, refused:refused, remaining:remaining });
+  } catch(err) { return json({ success:false, error:err.message }); }
+}
+
 function deleteCodeFiles(body) {
   try {
     var code = String(body.code||'').trim().toUpperCase();
