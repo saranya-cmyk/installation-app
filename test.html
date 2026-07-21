@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ตัวตรวจระบบ Plan B</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#0f0f0f;color:#eee;padding:20px;max-width:640px;margin:0 auto}
+h2{color:#c8f542}
+button{width:100%;padding:16px;background:#c8f542;color:#000;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;margin:8px 0}
+button:disabled{opacity:.5}
+.box{background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:12px;margin:10px 0;font-size:13px;word-break:break-all;white-space:pre-wrap;font-family:monospace}
+.ok{border-color:#4a7a2a}.bad{border-color:#7a2a2a}
+</style>
+</head>
+<body>
+<h2>🔍 ตัวตรวจระบบ</h2>
+<p style="color:#999;font-size:13px">กดปุ่มเดียว ระบบจะทดสอบทั้ง "อ่าน" และ "เขียน" กับเซิร์ฟเวอร์ แล้วโชว์คำตอบดิบทั้งหมด — ก็อปทุกอย่างที่ขึ้นส่งให้ Claude ได้เลย</p>
+<button id="go" onclick="runAll()">▶ เริ่มตรวจ</button>
+<div id="out"></div>
+<script>
+var URL_ = 'https://script.google.com/macros/s/AKfycbyi6IhJSyEpzLEfpw3vIoiaUoZBgu1lDpekgIcLUXnU3rYWnBCKU2nD344P_Ngys9s/exec';
+// รูป 1x1 pixel สำหรับทดสอบเขียน
+var TINY = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+function log(title, obj, good) {
+  var d = document.createElement('div');
+  d.className = 'box ' + (good ? 'ok' : 'bad');
+  d.textContent = title + '\n' + (typeof obj === 'string' ? obj : JSON.stringify(obj, null, 1));
+  document.getElementById('out').appendChild(d);
+}
+
+async function runAll() {
+  document.getElementById('go').disabled = true;
+  document.getElementById('out').innerHTML = '';
+  // ── เทส 1: อ่าน (GET getJobs) ──
+  try {
+    var t0 = Date.now();
+    var r1 = await fetch(URL_ + '?action=getJobs');
+    var j1 = await r1.json();
+    var names = (j1.jobs || []).map(function(j){ return j.name; });
+    log('① อ่านข้อมูล (GET): HTTP ' + r1.status + ' — ' + (Date.now()-t0) + 'ms',
+        j1.error ? { error: j1.error } : { jobs: names.length, names: names }, !j1.error && names.length > 0);
+  } catch(e) { log('① อ่านข้อมูล (GET) ล้มเหลว', String(e), false); }
+
+  // ── เทส 2: เขียน (POST uploadBatch — รูปทดสอบ 1 พิกเซล jobId ปลอม ไม่แตะงานจริง) ──
+  try {
+    var t1 = Date.now();
+    var r2 = await fetch(URL_, { method: 'POST', body: JSON.stringify({
+      action: 'uploadBatch',
+      installer: '_ทดสอบระบบ', jobName: '_TEST', media: '_TEST', jobId: 'TEST_DIAG',
+      batchIndex: 0, totalBatches: 1,
+      spots: [{ code: 'TESTDIAG', product: '_TEST', address: '' }],
+      modes: { 'TESTDIAG': 'append' },
+      files: [{ name: 'test.png', type: 'image/png', lastModified: Date.now(), data: TINY, _forceCode: 'TESTDIAG' }]
+    })});
+    var raw = await r2.text();
+    var j2; try { j2 = JSON.parse(raw); } catch(e) { j2 = null; }
+    if (j2 && j2.codes && j2.codes.length && j2.codes[0].count > 0) {
+      log('② เขียนรูป (POST): HTTP ' + r2.status + ' — ' + (Date.now()-t1) + 'ms ✅ เขียนสำเร็จ!', j2, true);
+    } else {
+      log('② เขียนรูป (POST): HTTP ' + r2.status + ' — ' + (Date.now()-t1) + 'ms ⚠️ มีปัญหา — นี่คือคำตอบดิบ:',
+          j2 || raw.substring(0, 800), false);
+    }
+  } catch(e) { log('② เขียนรูป (POST) ล้มเหลว', String(e), false); }
+
+  log('③ สรุป', 'ก็อปข้อความทุกกล่องด้านบน ส่งให้ Claude ได้เลยค่ะ', true);
+  document.getElementById('go').disabled = false;
+}
+</script>
+</body>
+</html>
