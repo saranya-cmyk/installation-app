@@ -1161,9 +1161,99 @@ function openModeChooser(code, sent) {
         '➕ เพิ่มรูป<div style="font-size:10px;color:#8a9a5a;font-weight:400;margin-top:2px">รูปเดิมยังอยู่ครบ</div></button>' +
       '<button onclick="chooseMode(\'' + code + '\',\'replace\')" style="width:100%;padding:15px;background:#2a1a1a;border:1px solid #663333;border-radius:12px;color:#ff9977;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--f);margin-bottom:10px">' +
         '↻ ถ่ายใหม่ทั้งหมด<div style="font-size:10px;color:#996655;font-weight:400;margin-top:2px">ลบรูปเดิม ' + sent.count + ' รูปทิ้ง</div></button>' +
+      '<button onclick="openPhotoManager(\'' + code + '\')" style="width:100%;padding:12px;background:transparent;border:1px solid #333;border-radius:12px;color:#8a8a8a;font-size:13px;cursor:pointer;font-family:var(--f);margin-bottom:10px">🗑 ลบบางรูป (เลือกใบที่ไม่เอา)</button>' +
       '<button onclick="document.getElementById(\'modeModal\').remove()" style="width:100%;padding:12px;background:transparent;border:1px solid #333;border-radius:12px;color:#666;font-size:13px;cursor:pointer;font-family:var(--f)">ยกเลิก</button>' +
     '</div>';
   document.body.appendChild(m);
+}
+
+// ═══ ลบรูปทีละใบ — เลือกใบที่ไม่เอา เก็บใบที่ดี ═══
+var _pmSelected = {};
+function openPhotoManager(code) {
+  var mm = document.getElementById('modeModal');
+  if (mm) mm.remove();
+  _pmSelected = {};
+  var m = document.createElement('div');
+  m.id = 'pmModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99;display:flex;flex-direction:column;padding:14px';
+  m.innerHTML =
+    '<div style="background:#1a1a1a;border-radius:16px;padding:16px;flex:1;display:flex;flex-direction:column;max-width:560px;width:100%;margin:0 auto;overflow:hidden">' +
+      '<div style="font-size:15px;font-weight:700;color:#c8f542;margin-bottom:2px">' + code + ' — เลือกรูปที่จะลบ</div>' +
+      '<div style="font-size:11px;color:#888;margin-bottom:10px">แตะรูปเพื่อเลือก · รูปที่ลบจะย้ายไปถังขยะ Google Drive (กู้คืนได้ 30 วัน)</div>' +
+      '<div id="pmGrid" style="flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-content:start">' +
+        '<div style="grid-column:1/-1;text-align:center;color:#888;padding:30px 0">⏳ กำลังโหลดรูป...</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;margin-top:12px">' +
+        '<button id="pmDelBtn" onclick="pmDelete(\'' + code + '\')" disabled style="flex:1;padding:14px;background:#2a1a1a;border:1px solid #663333;border-radius:12px;color:#ff9977;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--f);opacity:.4">🗑 ลบที่เลือก</button>' +
+        '<button onclick="document.getElementById(\'pmModal\').remove()" style="flex:1;padding:14px;background:transparent;border:1px solid #333;border-radius:12px;color:#888;font-size:14px;cursor:pointer;font-family:var(--f)">ปิด</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(m);
+  fetch(SCRIPT_URL + '?action=getPhotos&code=' + encodeURIComponent(code))
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      var grid = document.getElementById('pmGrid');
+      if (!grid) return;
+      var ph = (d.photos || []).filter(function(p){ return p.id; });
+      if (!ph.length) { grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#888;padding:30px 0">ไม่พบรูปของจุดนี้</div>'; return; }
+      grid.innerHTML = ph.map(function(p) {
+        return '<div onclick="pmToggle(this,\'' + p.id + '\')" data-pid="' + p.id + '" ' +
+          'style="position:relative;border-radius:10px;overflow:hidden;border:2px solid #333;cursor:pointer;aspect-ratio:4/3">' +
+          '<img src="' + p.thumbnail + '" style="width:100%;height:100%;object-fit:cover" loading="lazy" alt="">' +
+          '<div class="pm-check" style="position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.55);border:1.5px solid #888;display:flex;align-items:center;justify-content:center;font-size:13px;color:transparent">✓</div>' +
+          '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);font-size:9px;color:#ccc;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + p.name + '</div>' +
+        '</div>';
+      }).join('');
+    })
+    .catch(function() {
+      var grid = document.getElementById('pmGrid');
+      if (grid) grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#c66;padding:30px 0">โหลดรูปไม่สำเร็จ — ลองใหม่อีกครั้งค่ะ</div>';
+    });
+}
+
+function pmToggle(el, id) {
+  if (_pmSelected[id]) { delete _pmSelected[id]; }
+  else { _pmSelected[id] = true; }
+  var on = !!_pmSelected[id];
+  el.style.borderColor = on ? '#ff9977' : '#333';
+  var chk = el.querySelector('.pm-check');
+  if (chk) { chk.style.color = on ? '#fff' : 'transparent'; chk.style.background = on ? '#c0392b' : 'rgba(0,0,0,.55)'; chk.style.borderColor = on ? '#c0392b' : '#888'; }
+  var n = Object.keys(_pmSelected).length;
+  var btn = document.getElementById('pmDelBtn');
+  if (btn) {
+    btn.disabled = n === 0;
+    btn.style.opacity = n === 0 ? '.4' : '1';
+    btn.textContent = n === 0 ? '🗑 ลบที่เลือก' : '🗑 ลบ ' + n + ' รูป';
+  }
+}
+
+function pmDelete(code) {
+  var ids = Object.keys(_pmSelected);
+  if (!ids.length) return;
+  if (!confirm('ลบ ' + ids.length + ' รูปของ ' + code + '?\n\nรูปจะย้ายไปถังขยะ Google Drive (กู้คืนได้ภายใน 30 วัน)')) return;
+  var btn = document.getElementById('pmDelBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ กำลังลบ...'; }
+  fetch(SCRIPT_URL, { method:'POST', body: JSON.stringify({
+    action:'deletePhotos', code:code, jobId: selectedJob ? selectedJob.id : '', fileIds: ids
+  })})
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      var pm = document.getElementById('pmModal');
+      if (pm) pm.remove();
+      if (d.success && d.deleted > 0) {
+        alert('✅ ลบแล้ว ' + d.deleted + ' รูป' + (d.remaining !== null && d.remaining !== undefined ? '\nเหลือ ' + d.remaining + ' รูปในจุดนี้' : ''));
+        // โหลดสถานะใหม่ให้ตัวเลขบนจอตรงกับความจริง
+        _sentLoaded = false; _sentJobId = null;
+        if (selectedJob) loadSentState(selectedJob.id);
+      } else {
+        alert('⚠️ ลบไม่สำเร็จ' + (d.error ? ': ' + d.error : ' — ลองใหม่อีกครั้งค่ะ'));
+      }
+    })
+    .catch(function() {
+      var pm = document.getElementById('pmModal');
+      if (pm) pm.remove();
+      alert('⚠️ ลบไม่สำเร็จ — เช็คสัญญาณเน็ตแล้วลองใหม่ค่ะ');
+    });
 }
 
 function chooseMode(code, mode) {
