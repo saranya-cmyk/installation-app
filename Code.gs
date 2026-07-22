@@ -1172,7 +1172,7 @@ function exportReport(body) {
 function createSalesPDF(body) {
   try {
     var startTime  = new Date().getTime();
-    var TIME_LIMIT = 4.5 * 60 * 1000; // กันชน 6 นาทีของ Apps Script
+    var TIME_LIMIT = 4 * 60 * 1000; // กันชน 6 นาที — เหลือเวลาบันทึก+return ก่อนโดน kill
 
     var jobName   = body.jobName   || 'Report';
     var codes     = body.codes     || [];
@@ -1230,13 +1230,22 @@ function createSalesPDF(body) {
         break;
       }
       var codeInfo = codes[ci];
-      // [P6] ใช้เฉพาะรูปของวันที่ล่าสุด เรียงตามชื่อไฟล์ (①เก่า ②Code ③ใหม่)
-      var latest;
-      try { latest = latestPhotoEntries(codeInfo.code); }
-      catch(e) { skipped.push(codeInfo.code); continue; }
-      if (!latest.length) { skipped.push(codeInfo.code); continue; }
+      // เร็ว: ลองดึงรูปจาก imgIds ใน _InstallLog ก่อน (ตรงจุด) → ถ้าไม่มีค่อยไล่หาใน Drive
+      var files = [];
+      try {
+        if (codeInfo.imgIds && codeInfo.imgIds.length) {
+          for (var ii = 0; ii < Math.min(codeInfo.imgIds.length, 2); ii++) {
+            try { files.push(DriveApp.getFileById(codeInfo.imgIds[ii])); } catch(e) {}
+          }
+        }
+        if (!files.length) {
+          var latest = latestPhotoEntries(codeInfo.code);
+          files = latest.slice(0, 2).map(function(e){ return e.file; });
+        }
+      } catch(e) { skipped.push(codeInfo.code); continue; }
+      if (!files.length) { skipped.push(codeInfo.code); continue; }
 
-      for (var pi = 0; pi < Math.min(latest.length, 2); pi++) {
+      for (var pi = 0; pi < files.length; pi++) {
         try {
           b.appendPageBreak();
 
@@ -1246,7 +1255,7 @@ function createSalesPDF(body) {
 
           var imgPara = b.appendParagraph('');
           imgPara.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-          var imgInline = imgPara.appendInlineImage(latest[pi].file.getBlob());
+          var imgInline = imgPara.appendInlineImage(files[pi].getBlob());
           var iw = imgInline.getWidth();
           var ih = imgInline.getHeight();
           var scale = Math.min(700/iw, 400/ih);
