@@ -465,7 +465,8 @@ function initFromServer() {
             count: entry.count || 0,
             folderUrl: entry.folderUrl || '',
             productFolderUrl: entry.productFolderUrl || '',
-            installedAt: entry.date || ''
+            installedAt: entry.date || '',
+            imgs: entry.imgs || []
           };
         }
       });
@@ -1821,7 +1822,8 @@ function createPDF(jobId, btn) {
       code: s.code,
       product: s.product || job.name,
       address: s.address || '',
-      folderUrl: logEntry.folderUrl || ''
+      folderUrl: logEntry.folderUrl || '',
+      imgIds: logEntry.imgs || []
     };
   }).filter(function(c){ return log[c.code] && log[c.code].status === 'sent'; });
 
@@ -1831,10 +1833,15 @@ function createPDF(jobId, btn) {
   }
 
   btn.disabled = true;
-  btn.textContent = '⏳ กำลังสร้าง PDF...';
+  btn.textContent = '⏳ กำลังสร้าง PDF... (งานใหญ่อาจนานถึง 2-3 นาที)';
+
+  // งานใหญ่ใช้เวลานาน — ตั้ง timeout 5 นาที ไม่ให้ค้างตลอดกาล
+  var ctrl = new AbortController();
+  var timer = setTimeout(function(){ ctrl.abort(); }, 5 * 60 * 1000);
 
   fetch(SCRIPT_URL, {
     method: 'POST',
+    signal: ctrl.signal,
     body: JSON.stringify({
       action: 'createPDF',
       jobId: jobId,
@@ -1847,24 +1854,43 @@ function createPDF(jobId, btn) {
     })
   }).then(function(r){ return r.json(); })
     .then(function(result) {
+      clearTimeout(timer);
       btn.disabled = false;
-      btn.textContent = '📄 PDF รูป';
+      btn.textContent = '📄 PDF';
       if (result.success) {
-        // Open PDF directly
-        window.open(result.pdfUrl, '_blank');
-        // Also show doc link
-        if (confirm('PDF พร้อมแล้ว! \n' + result.photoCount + ' รูป\n\nกด OK เพื่อเปิด PDF')) {
-          window.open(result.pdfUrl, '_blank');
-        }
+        var msg = '✅ PDF พร้อมแล้ว! ' + result.photoCount + ' รูป';
+        if (result.skipped && result.skipped.length) msg += '\n\n⚠️ จุดที่ไม่ทัน (งานใหญ่เกินเวลา): ' + result.skipped.join(', ') + '\nกดสร้างซ้ำอีกครั้งเพื่อได้ครบ';
+        // แสดงลิงก์ให้กดเอง — การกดเองไม่โดนเบราว์เซอร์บล็อก (ต่างจากเปิดแท็บอัตโนมัติ)
+        showPdfLink(result.pdfUrl, msg);
       } else {
-        alert('สร้าง PDF ไม่สำเร็จ: ' + (result.error || ''));
+        alert('สร้าง PDF ไม่สำเร็จ: ' + (result.error || 'ไม่ทราบสาเหตุ'));
       }
     })
     .catch(function(err) {
+      clearTimeout(timer);
       btn.disabled = false;
-      btn.textContent = '📄 PDF รูป';
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      btn.textContent = '📄 PDF';
+      if (err.name === 'AbortError') {
+        alert('⏱ PDF ใช้เวลานานเกินไป (งานใหญ่มาก)\n\nลองอีกครั้ง หรือแบ่งสร้างทีละส่วนค่ะ');
+      } else {
+        alert('เกิดข้อผิดพลาด: ' + err.message);
+      }
     });
+}
+
+function showPdfLink(url, msg) {
+  var ex = document.getElementById('pdfLinkModal');
+  if (ex) ex.remove();
+  var m = document.createElement('div');
+  m.id = 'pdfLinkModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML =
+    '<div style="background:var(--s2,#1a1a1a);border-radius:16px;padding:24px;max-width:420px;width:100%;text-align:center;border:1px solid var(--b,#333)">' +
+      '<div style="font-size:15px;color:var(--tx,#eee);white-space:pre-line;margin-bottom:18px;font-family:var(--f)">' + msg + '</div>' +
+      '<a href="' + url + '" target="_blank" style="display:block;padding:14px;background:var(--ac,#c8f542);color:#0f0f0f;border-radius:12px;font-weight:700;text-decoration:none;font-size:15px;margin-bottom:10px;font-family:var(--f)">📄 เปิด PDF</a>' +
+      '<button onclick="document.getElementById(\'pdfLinkModal\').remove()" style="width:100%;padding:12px;background:transparent;border:1px solid var(--b,#333);border-radius:12px;color:var(--mu,#888);font-size:13px;cursor:pointer;font-family:var(--f)">ปิด</button>' +
+    '</div>';
+  document.body.appendChild(m);
 }
 
 function openDeleteFilesModal(jobId) {
