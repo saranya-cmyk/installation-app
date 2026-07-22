@@ -18,7 +18,7 @@
 ## 2. สถาปัตยกรรม
 ```
 GitHub Pages (4 แอป) ⇄ Google Apps Script (Code.gs = สมอง) ⇄ Google Drive (รูป)
-                                     �︎
+                                     ⇅
                             Google Sheets (6 ชีท)
 ```
 - **หน้าเว็บ:** GitHub Pages, repo `saranya-cmyk/installation-app`
