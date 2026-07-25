@@ -28,6 +28,8 @@ body { font-family:var(--f); background:var(--bg); color:var(--ink); }
 h1 { font-size:24px; font-weight:700; }
 .dates { font-size:13px; color:var(--mu); margin-top:6px; }
 .prog-card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:20px; margin:18px 0; }
+.notice { background:#eef4fb; border:1px solid #cfe0f0; border-radius:12px; padding:12px 15px; margin:14px 0; font-size:12.5px; color:#3a5876; line-height:1.5; display:flex; gap:9px; align-items:flex-start; }
+.notice .ic { flex:0 0 auto; font-size:15px; line-height:1.2; }
 .prog-nums { display:flex; align-items:baseline; gap:8px; }
 .prog-big { font-size:36px; font-weight:800; color:var(--lime-dark); }
 .prog-sub { font-size:14px; color:var(--mu); }
@@ -220,6 +222,7 @@ function render(d) {
         '<span>รวม <b>' + d.total + '</b> จุด</span>' +
       '</div>' +
     '</div>' +
+    '<div class="notice"><span class="ic">ℹ️</span><span>ภาพที่แสดงเป็น<b>สถานะสดทันทีหลังช่างติดตั้ง</b> เพื่อให้ท่านตรวจดูได้ตลอดเวลา ทีมงานจะตรวจสอบความเรียบร้อยอีกครั้งในเวลาทำการ หากพบข้อผิดพลาดจากการติดตั้ง เราจะดำเนินการแก้ไขให้ค่ะ</span></div>' +
     '<div class="sec-t">🗺 แผนที่จุดติดตั้ง</div><div id="map"></div>' +
     (doneSpots.length ? '<div class="sec-t">✅ ติดตั้งแล้ว (' + doneSpots.length + ')</div>' + doneSpots.map(spotHtml).join('') : '') +
     (waitSpots.length ? '<div class="sec-t">⏳ รอติดตั้ง (' + waitSpots.length + ')</div>' + waitSpots.map(spotHtml).join('') : '');
