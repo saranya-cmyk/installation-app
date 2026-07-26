@@ -241,11 +241,11 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
 <div style="display:flex;gap:10px;margin-bottom:14px">
     <div class="field" style="flex:1;margin-bottom:0">
       <label>วันที่เริ่มติดตั้ง</label>
-      <input type="date" id="jobDateStart" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none;width:100%">
+      <input type="date" id="jobDateStart" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none;cursor:pointer;width:100%" onclick="try{this.showPicker()}catch(e){}">
     </div>
     <div class="field" style="flex:1;margin-bottom:0">
       <label>วันที่สิ้นสุด</label>
-      <input type="date" id="jobDateEnd" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none;width:100%">
+      <input type="date" id="jobDateEnd" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none;cursor:pointer;width:100%" onclick="try{this.showPicker()}catch(e){}">
     </div>
   </div>
 
@@ -395,11 +395,11 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
     </div>
     <div class="field" style="margin-bottom:10px">
       <label>วันที่เริ่มติดตั้ง</label>
-      <input type="date" id="editDateStart" style="width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none">
+      <input type="date" id="editDateStart" style="width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none;cursor:pointer" onclick="try{this.showPicker()}catch(e){}">
     </div>
     <div class="field" style="margin-bottom:16px">
       <label>วันที่สิ้นสุด</label>
-      <input type="date" id="editDateEnd" style="width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none">
+      <input type="date" id="editDateEnd" style="width:100%;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--tx);font-family:var(--f);outline:none;cursor:pointer" onclick="try{this.showPicker()}catch(e){}">
     </div>
     <div class="modal-actions">
       <button class="modal-ok" onclick="confirmEditDates()">✓ บันทึก</button>
