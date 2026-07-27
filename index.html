@@ -182,8 +182,8 @@ html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:1
     <div class="job-selected-bar">
       <div>
         <div style="font-size:11px;color:var(--mu);margin-bottom:2px">งานที่เลือก</div>
-        <div class="jsb-name" id="jsbName">—</div>
-        <div id="jsbMedia" style="font-size:11px;color:#88aaff;margin-top:2px"></div>
+        <div class="jsb-name" id="jsbMedia">—</div>
+        <div id="jsbName" style="font-size:12px;color:#88aaff;margin-top:2px"></div>
       </div>
       <div class="jsb-change" onclick="go('s2')">เปลี่ยน</div>
     </div>
@@ -503,9 +503,9 @@ function pickJob(el, id) {
 
 function goUpload() {
   if (!selectedJob) { alert('กรุณาเลือกงานก่อนค่ะ'); return; }
-  document.getElementById('jsbName').textContent = selectedJob.name;
-  var mediaEl = document.getElementById('jsbMedia');
-  if (mediaEl) mediaEl.textContent = selectedJob.media ? '📺 ' + selectedJob.media : '';
+  document.getElementById('jsbMedia').textContent = selectedJob.media ? '📺 ' + selectedJob.media : selectedJob.name;
+  var nameEl = document.getElementById('jsbName');
+  if (nameEl) nameEl.textContent = selectedJob.name || '';
   var searchEl = document.getElementById('codeSearch');
   if (searchEl) searchEl.value = '';
   // Restore any queued photos from IndexedDB for this job
@@ -751,7 +751,8 @@ function go(id) {
   if (id === 's3') {
     codePhotos = {};
     document.getElementById('nameChip3').textContent = installerName || '—';
-    document.getElementById('jsbName').textContent = selectedJob ? selectedJob.name : '—';
+    document.getElementById('jsbMedia').textContent = selectedJob ? (selectedJob.media ? '📺 ' + selectedJob.media : selectedJob.name) : '—';
+    var _nel = document.getElementById('jsbName'); if (_nel) _nel.textContent = selectedJob ? (selectedJob.name || '') : '';
     renderCodeList();
   }
 }
