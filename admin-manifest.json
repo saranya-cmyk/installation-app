@@ -5,7 +5,7 @@
   "start_url": "./admin.html",
   "display": "standalone",
   "background_color": "#0f0f0f",
-  "theme_color": "#ffa94d",
+  "theme_color": "#0f0f0f",
   "orientation": "portrait",
   "icons": [
     {
