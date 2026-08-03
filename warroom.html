@@ -26,7 +26,7 @@ body { background:var(--bg); color:var(--tx); font-family:var(--f); overflow:hid
 .chip:hover { border-color:var(--lime); color:var(--tx); }
 .chip.on { background:var(--lime); color:#0d0f12; border-color:var(--lime); }
 #productChips .chip { font-size:1.8vh; padding:.6vh 1.3vw; }
-#productChips .chip.on { background:var(--lime); border-color:var(--lime); color:#0d0f12; }
+#productChips .chip.on { background:transparent; border:1.5px solid var(--lime); color:var(--lime); }
 .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:1vw; }
 .stat { background:var(--card); border-radius:1.4vh; padding:1.6vh 1.4vw; }
 .stat .lb { font-size:1.7vh; color:var(--mu); margin-bottom:.4vh; }
@@ -145,7 +145,7 @@ function todayStr() {
 }
 function dOnly(s) { return s ? String(s).substring(0, 10) : ''; }
 function mediaOf(j) { return (j.media && String(j.media).trim()) ? String(j.media).trim() : 'ไม่ระบุสื่อ'; }
-function productOf(s) { return (s.product && String(s.product).trim()) ? String(s.product).trim() : 'ไม่ระบุสินค้า'; }
+function productOf(s) { return (s.product && String(s.product).trim()) ? String(s.product).trim() : 'Unspecified'; }
 function keyOf(jobId, code) { return jobId + '|' + String(code).trim().toUpperCase(); }
 
 // ── แถบเลือกสื่อ ──
@@ -156,7 +156,7 @@ function renderChips(jobs) {
   if (mediaFilter !== '__all__' && !seen[mediaFilter]) mediaFilter = '__all__';
   var el = document.getElementById('mediaChips');
   el.innerHTML = '';
-  [{ v:'__all__', t:'ทั้งหมด' }].concat(names.map(function(n){ return { v:n, t:n }; }))
+  [{ v:'__all__', t:'All Media' }].concat(names.map(function(n){ return { v:n, t:n }; }))
     .forEach(function(c) {
       var d = document.createElement('div');
       d.className = 'chip' + (mediaFilter === c.v ? ' on' : '');
@@ -182,7 +182,7 @@ function renderProductChips(jobs) {
   if (names.length < 2) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = 'flex';
   el.innerHTML = '';
-  [{ v:'__all__', t:'ทุกสินค้า' }].concat(names.map(function(n){ return { v:n, t:n }; }))
+  [{ v:'__all__', t:'All Campaigns' }].concat(names.map(function(n){ return { v:n, t:n }; }))
     .forEach(function(c) {
       var d = document.createElement('div');
       d.className = 'chip' + (productFilter === c.v ? ' on' : '');
