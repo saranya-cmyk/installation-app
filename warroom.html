@@ -27,6 +27,7 @@ body { background:var(--bg); color:var(--tx); font-family:var(--f); overflow:hid
 .chip.on { background:var(--lime); color:#0d0f12; border-color:var(--lime); }
 #productChips .chip { font-size:1.8vh; padding:.6vh 1.3vw; }
 #productChips .chip.on { background:transparent; border:1.5px solid var(--lime); color:var(--lime); }
+.chip-note { padding:.6vh 1.3vw; font-size:1.7vh; color:#5a5f67; font-style:italic; }
 .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:1vw; }
 .stat { background:var(--card); border-radius:1.4vh; padding:1.6vh 1.4vw; }
 .stat .lb { font-size:1.7vh; color:var(--mu); margin-bottom:.4vh; }
@@ -179,9 +180,17 @@ function renderProductChips(jobs) {
   scope.forEach(function(j){ (j.spots||[]).forEach(function(s){ seen[productOf(s)] = true; }); });
   var names = Object.keys(seen).sort();
   if (productFilter !== '__all__' && !seen[productFilter]) productFilter = '__all__';
-  if (names.length < 2) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = 'flex';
   el.innerHTML = '';
+  // ไม่มีข้อมูลแคมเปญเลย → บอกให้รู้ ไม่ใช่ซ่อนเงียบๆ (ผู้ใช้จะได้ไม่คิดว่าระบบพัง)
+  var realNames = names.filter(function(n){ return n !== 'Unspecified'; });
+  if (realNames.length === 0) {
+    var note = document.createElement('div');
+    note.className = 'chip-note';
+    note.textContent = 'งานนี้ยังไม่ได้ระบุแคมเปญ';
+    el.appendChild(note);
+    return;
+  }
   [{ v:'__all__', t:'All Campaigns' }].concat(names.map(function(n){ return { v:n, t:n }; }))
     .forEach(function(c) {
       var d = document.createElement('div');
