@@ -146,7 +146,11 @@ function todayStr() {
 }
 function dOnly(s) { return s ? String(s).substring(0, 10) : ''; }
 function mediaOf(j) { return (j.media && String(j.media).trim()) ? String(j.media).trim() : 'ไม่ระบุสื่อ'; }
-function productOf(s) { return (s.product && String(s.product).trim()) ? String(s.product).trim() : 'Unspecified'; }
+function productOf(s, j) {
+  if (s && s.product && String(s.product).trim()) return String(s.product).trim();
+  if (j && j.name && String(j.name).trim()) return String(j.name).trim();  // ไม่มีสินค้ารายจุด → ใช้ชื่องาน (Job Name / Campaign)
+  return 'Unspecified';
+}
 function keyOf(jobId, code) { return jobId + '|' + String(code).trim().toUpperCase(); }
 
 // ── แถบเลือกสื่อ ──
@@ -177,7 +181,7 @@ function renderProductChips(jobs) {
   var el = document.getElementById('productChips');
   var scope = mediaFilter === '__all__' ? jobs : jobs.filter(function(j){ return mediaOf(j) === mediaFilter; });
   var seen = {};
-  scope.forEach(function(j){ (j.spots||[]).forEach(function(s){ seen[productOf(s)] = true; }); });
+  scope.forEach(function(j){ (j.spots||[]).forEach(function(s){ seen[productOf(s, j)] = true; }); });
   var names = Object.keys(seen).sort();
   if (productFilter !== '__all__' && !seen[productFilter]) productFilter = '__all__';
   el.style.display = 'flex';
@@ -210,11 +214,11 @@ function renderAll(jobs, log, newKeys) {
   var mJobs = mediaFilter === '__all__' ? jobs : jobs.filter(function(j){ return mediaOf(j) === mediaFilter; });
 
   // สินค้าผูกอยู่กับ "จุด" ไม่ใช่ "งาน" → ต้องกรองระดับจุด
-  var okSpot = function(s) { return productFilter === '__all__' || productOf(s) === productFilter; };
+  var okSpot = function(s, j) { return productFilter === '__all__' || productOf(s, j) === productFilter; };
   var spotsOf = {};   // jobId -> จุดที่ผ่านตัวกรอง
   var fJobs = [];
   mJobs.forEach(function(j) {
-    var ss = (j.spots || []).filter(okSpot);
+    var ss = (j.spots || []).filter(function(s){ return okSpot(s, j); });
     if (ss.length) { spotsOf[j.id] = ss; fJobs.push(j); }
   });
   var fIds = {};
