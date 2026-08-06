@@ -1111,6 +1111,7 @@ function renderOneJobCard(j) {
         '<button class="copy-btn btn-ghost h-pdf" onclick="createPDF(\'' + j.id + '\',this)">📄 PDF</button>' +
         (getJobFolderUrl(j.id) ? '<a class="copy-btn btn-ghost h-drive" href="' + getJobFolderUrl(j.id) + '" target="_blank">📁 Drive</a>' : '') +
         '<button class="copy-btn btn-hero" data-jobid="' + j.id + '" onclick="copyPortalLink(this)">🔗 ลูกค้า</button>' +
+        '<button class="copy-btn btn-ghost h-line" data-jobid="' + j.id + '" onclick="sharePortalToLine(this)">💬 ส่งลิงก์</button>' +
       '</div>' +
       '<div class="jcard-del" onclick="deleteJob(\'' + j.id + '\')">🗑 Delete Job</div>' +
     '</div>';
@@ -1624,16 +1625,13 @@ function loadMapPhotos(code) {
     });
 }
 
-function copyPortalLink(btn) {
-  var jobId = btn.getAttribute('data-jobid');
-  var orig = btn.textContent;
-  btn.textContent = '⏳...';
-  fetch(SCRIPT_URL + '?action=portalLink&jobId=' + encodeURIComponent(jobId))
+// ดึงลิงก์ลูกค้า + สร้างข้อความพร้อมส่ง (ใช้ร่วมทั้งปุ่มคัดลอกและปุ่มส่ง LINE)
+function fetchPortalMsg(jobId) {
+  return fetch(SCRIPT_URL + '?action=portalLink&jobId=' + encodeURIComponent(jobId))
     .then(function(r){ return r.json(); })
     .then(function(res) {
-      if (!res.key) { btn.textContent = orig; alert('สร้างลิงก์ไม่สำเร็จ: ' + (res.error || '')); return; }
+      if (!res.key) throw new Error(res.error || 'สร้างลิงก์ไม่สำเร็จ');
       var url = 'https://saranya-cmyk.github.io/installation-app/portal.html?key=' + res.key;
-      // สร้างข้อความพร้อมส่ง — ลูกค้ารับแล้วรู้ทันทีว่าลิงก์อะไร ของงานไหน
       var job = jobs.find(function(j){ return j.id === jobId; });
       function dmy(s) {
         if (!s) return '';
@@ -1648,17 +1646,34 @@ function copyPortalLink(btn) {
       lines.push('');
       lines.push('ดูสถานะ รูปติดตั้ง และแผนที่แบบเรียลไทม์ได้ที่ 👇');
       lines.push(url);
-      var msg = lines.join('\n');
-      navigator.clipboard.writeText(msg).then(function() {
-        btn.textContent = '✓ คัดลอกแล้ว';
-        setTimeout(function(){ btn.textContent = orig; }, 2500);
-        alert('คัดลอกข้อความพร้อมส่งลูกค้าแล้วค่ะ 🔗\n\n' + msg + '\n\nวางในไลน์/อีเมลได้เลย (ลูกค้าดูได้อย่างเดียว แก้ไขไม่ได้)');
-      }).catch(function() {
-        btn.textContent = orig;
-        prompt('คัดลอกข้อความนี้ส่งให้ลูกค้าค่ะ:', msg);
-      });
-    })
-    .catch(function(){ btn.textContent = orig; alert('เชื่อมต่อไม่สำเร็จค่ะ'); });
+      return lines.join('\n');
+    });
+}
+
+function copyPortalLink(btn) {
+  var jobId = btn.getAttribute('data-jobid');
+  var orig = btn.textContent;
+  btn.textContent = '⏳...';
+  fetchPortalMsg(jobId).then(function(msg) {
+    navigator.clipboard.writeText(msg).then(function() {
+      btn.textContent = '✓ คัดลอกแล้ว';
+      setTimeout(function(){ btn.textContent = orig; }, 2500);
+    }).catch(function() {
+      btn.textContent = orig;
+      prompt('คัดลอกข้อความนี้ส่งให้ลูกค้าค่ะ:', msg);
+    });
+  }).catch(function(e){ btn.textContent = orig; alert('ไม่สำเร็จค่ะ: ' + e.message); });
+}
+
+// ส่งลิงก์ลูกค้าเข้า LINE — เลือกคน/กลุ่มในหน้าจอ LINE ได้เลย
+function sharePortalToLine(btn) {
+  var jobId = btn.getAttribute('data-jobid');
+  var orig = btn.textContent;
+  btn.textContent = '⏳...';
+  fetchPortalMsg(jobId).then(function(msg) {
+    btn.textContent = orig;
+    window.open('https://line.me/R/share?text=' + encodeURIComponent(msg), '_blank');
+  }).catch(function(e){ btn.textContent = orig; alert('ไม่สำเร็จค่ะ: ' + e.message); });
 }
 
 function copySpot(jobId, code, btn) {
