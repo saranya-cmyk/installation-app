@@ -798,7 +798,17 @@ function syncJobs() {
 
 // Register service worker for PWA
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(function(){});
+  navigator.serviceWorker.register('sw.js').then(function(reg) {
+    reg.update(); // เช็คเวอร์ชันใหม่ทันทีทุกครั้งที่เปิดแอป ไม่รอให้เบราว์เซอร์ตรวจเอง
+  }).catch(function(){});
+  // มี Service Worker เวอร์ชันใหม่เข้าควบคุมหน้าเมื่อไหร่ รีเฟรชอัตโนมัติ 1 ครั้งทันที
+  // (กันไม่ให้ต้องปิดแอปเปิดใหม่เอง — สำคัญมากตอนสาธิตสด)
+  var _swRefreshed = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function() {
+    if (_swRefreshed) return;
+    _swRefreshed = true;
+    window.location.reload();
+  });
 }
 
 // Warn before closing if unsent photos exist
