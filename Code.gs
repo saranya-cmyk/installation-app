@@ -258,6 +258,14 @@ function deleteJobFn(jobId) {
 // ═══════════════════════════ UPLOAD (หัวใจของระบบ) ═══════════════════════════
 
 function uploadBatch(body) {
+  // กันส่งซ้ำ: ถ้าก้อนนี้เคยอัปโหลดสำเร็จไปแล้ว (เน็ตหลุดตอนรอผลลัพธ์ แอปเข้าใจผิดว่าพังแล้วส่งซ้ำ)
+  // ให้ส่งผลลัพธ์เดิมกลับไปเลย ไม่อัปโหลดรูปซ้ำเข้า Drive
+  var requestId = body.requestId || '';
+  var dedupCache = CacheService.getScriptCache();
+  if (requestId) {
+    var already = dedupCache.get('req_' + requestId);
+    if (already) return ContentService.createTextOutput(already).setMimeType(ContentService.MimeType.JSON);
+  }
   var installer    = body.installer    || '';
   var jobName      = body.jobName      || '';
   var media        = body.media        || '';
@@ -471,8 +479,12 @@ function uploadBatch(body) {
     try { checkJobCompletion(jobId); } catch(e) { Logger.log('completion: '+e.message); }
   }
 
-  return json({ success:true, codes:uploadedCodes, failed:failedTotal,
-    unmatched:unmatched.length, folderUrl:monthFolderUrl });
+  var _result = { success:true, codes:uploadedCodes, failed:failedTotal,
+    unmatched:unmatched.length, folderUrl:monthFolderUrl };
+  if (requestId) {
+    try { dedupCache.put('req_' + requestId, JSON.stringify(_result), 600); } catch(e) {} // เก็บ 10 นาที พอคลุมช่วง retry
+  }
+  return json(_result);
 }
 
 /** lock สั้นๆ แบบคืนค่า (ใช้ภายใน) */
