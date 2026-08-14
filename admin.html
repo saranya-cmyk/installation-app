@@ -794,13 +794,31 @@ function autoDetectAndBuild() {
     gps: (latCol && lngCol) ? latCol + ' + ' + lngCol : null
   };
 
-  // Build spots - accept anything non-empty in identity column
+  window._colState = {
+    codeCol: codeCol, productCol: productCol, addrCol: addrCol,
+    latCol: latCol, lngCol: lngCol, mediaCol: mediaCol,
+    isBusFile: isBusFile, busLine: busLine, busGarage: busGarage, busNum: busNum,
+    codePattern: codePattern, platePattern: platePattern
+  };
+
+  rebuildPendingSpots();
+
+  // ── Auto-fill form from file (user can still edit) ──
+  autoFillJobForm();
+}
+
+function rebuildPendingSpots() {
+  var st = window._colState || {};
+  var codeCol = st.codeCol, productCol = st.productCol, addrCol = st.addrCol;
+  var latCol = st.latCol, lngCol = st.lngCol, mediaCol = st.mediaCol;
+  var isBusFile = st.isBusFile, busLine = st.busLine, busGarage = st.busGarage, busNum = st.busNum;
+  var codePattern = st.codePattern, platePattern = st.platePattern;
+
   var seen = {};
   pendingSpots = rawExcelData.filter(function(r){
     if (!codeCol) return false;
     var v = String(r[codeCol]||'').trim();
     if (!(v.length > 0 && v.length < 30)) return false;
-    // Skip duplicates (same vehicle can appear twice)
     var key = v.toUpperCase();
     if (seen[key]) return false;
     seen[key] = true;
@@ -810,7 +828,6 @@ function autoDetectAndBuild() {
     if (addrCol) {
       addr = String(r[addrCol]||'').trim();
     } else if (isBusFile) {
-      // Bus: address = สาย + อู่ + เบอร์รถ
       var parts = [];
       if (busLine && r[busLine]) parts.push('สาย ' + String(r[busLine]).trim());
       if (busGarage && r[busGarage]) parts.push('อู่' + String(r[busGarage]).trim());
@@ -826,9 +843,14 @@ function autoDetectAndBuild() {
       media:   mediaCol   ? String(r[mediaCol]||'').trim()   : '',
     };
   });
+}
 
-  // ── Auto-fill form from file (user can still edit) ──
+function overrideCol(field, value) {
+  if (!window._colState) return;
+  window._colState[field] = (value === '__none__') ? null : value;
+  rebuildPendingSpots();
   autoFillJobForm();
+  showAutoPreview();
 }
 
 function toggleCreateForm() {
@@ -843,16 +865,29 @@ function toggleCreateForm() {
 function autoFillJobForm() {
   if (!pendingSpots.length) return;
 
-  // 1. Job name: most common product in file > parse from filename
+  // 1. Job name: ชื่อไฟล์ระบุ "สินค้า X" ตรงๆ ก่อน (คนตั้งใจเขียน เชื่อถือได้สุด)
+  //    > ค่าที่พบบ่อยสุดในคอลัมน์สินค้ารายจุด > เดาจากชื่อไฟล์แบบตัดคำทั่วไป
   var nameInput = document.getElementById('jobNameInput');
-  if (nameInput && !nameInput.value.trim()) {
+  if (nameInput && (!nameInput.value.trim() || nameInput.value === window._autoFilledJobName)) {
+    var fname00 = (window._excelFileName || '').replace(/\.(xlsx|xls|csv)$/i, '');
+    var labeled = null;
+    var lm = fname00.match(/สินค้า[:\s]+([^_]+)/);
+    if (lm && lm[1].trim()) labeled = lm[1].trim();
+    if (!labeled) {
+      var lm2 = fname00.match(/product[:\s]+([^_]+)/i);
+      if (lm2 && lm2[1].trim()) labeled = lm2[1].trim();
+    }
     var productCounts = {};
     pendingSpots.forEach(function(s) {
       if (s.product) productCounts[s.product] = (productCounts[s.product] || 0) + 1;
     });
     var topProduct = Object.keys(productCounts).sort(function(a,b){ return productCounts[b]-productCounts[a]; })[0];
-    if (topProduct) {
+    if (labeled) {
+      nameInput.value = labeled;
+      window._autoFilledJobName = labeled;
+    } else if (topProduct) {
       nameInput.value = topProduct;
+      window._autoFilledJobName = topProduct;
     } else {
       // Parse from filename: strip extension, known media names, dates, common words
       var fname = (window._excelFileName || '').replace(/\.(xlsx|xls|csv)$/i, '');
@@ -877,7 +912,7 @@ function autoFillJobForm() {
           .replace(/[_\-\.]+/g, ' ')
           .replace(/\s+/g, ' ')
           .trim();
-        if (cleaned && cleaned.length >= 2) nameInput.value = cleaned;
+        if (cleaned && cleaned.length >= 2) { nameInput.value = cleaned; window._autoFilledJobName = cleaned; }
       }
     }
   }
@@ -986,16 +1021,22 @@ function showAutoPreview() {
   if (!pendingSpots.length) { pd.style.display='none'; return; }
   var s = pendingSpots[0];
 
-  // Show detected column mapping so admin can verify
-  var mapping = window._detectedCols || {};
-  var mapHtml = '<div style="background:var(--s2);border-radius:8px;padding:10px;margin-bottom:8px;font-size:11px;line-height:1.8">';
-  mapHtml += '<div style="font-weight:600;color:var(--ac);margin-bottom:4px">📋 คอลัมน์ที่ระบบอ่าน:</div>';
-  mapHtml += '🔑 Code ← <b>' + (mapping.code || '?') + '</b><br>';
-  if (mapping.product) mapHtml += '📦 สินค้า ← <b>' + mapping.product + '</b><br>';
-  if (mapping.address) mapHtml += '📍 ที่อยู่ ← <b>' + mapping.address + '</b><br>';
-  else if (mapping.busParts) mapHtml += '📍 ที่อยู่ ← <b>' + mapping.busParts + '</b> (รวมอัตโนมัติ)<br>';
-  if (mapping.media) mapHtml += '📺 สื่อ ← <b>' + mapping.media + '</b><br>';
-  if (mapping.gps) mapHtml += '🗺️ GPS ← <b>' + mapping.gps + '</b><br>';
+  var st = window._colState || {};
+  function colSelect(field, current) {
+    var opts = '<option value="__none__">— ไม่ใช้ —</option>';
+    excelCols.forEach(function(c){
+      opts += '<option value="' + c + '"' + (c === current ? ' selected' : '') + '>' + c + '</option>';
+    });
+    return '<select onchange="overrideCol(\'' + field + '\', this.value)" ' +
+      'style="background:var(--s);border:1px solid var(--b);color:var(--ac);border-radius:6px;' +
+      'padding:2px 6px;font-size:11px;font-family:var(--f)">' + opts + '</select>';
+  }
+  var mapHtml = '<div style="background:var(--s2);border-radius:8px;padding:10px;margin-bottom:8px;font-size:11px;line-height:2.2">';
+  mapHtml += '<div style="font-weight:600;color:var(--ac);margin-bottom:4px">📋 คอลัมน์ที่ระบบอ่าน (เลือกใหม่ได้ถ้าไม่ตรง):</div>';
+  mapHtml += '🔑 Code ← ' + colSelect('codeCol', st.codeCol) + '<br>';
+  mapHtml += '📦 สินค้า ← ' + colSelect('productCol', st.productCol) + '<br>';
+  mapHtml += '📍 ที่อยู่ ← ' + colSelect('addrCol', st.addrCol) + '<br>';
+  mapHtml += '📺 สื่อ ← ' + colSelect('mediaCol', st.mediaCol) + '<br>';
   mapHtml += '</div>';
 
   var html = mapHtml + 'ตัวอย่างแถวแรก:<br>';
