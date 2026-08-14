@@ -743,7 +743,9 @@ function autoDetectAndBuild() {
   // Identity: ทะเบียนรถ first (bus), then Code (billboard)
   codeCol = findByName(['ทะเบียนรถ','code id','code','รหัส','code.id','license plate','license','plate','เลขรถ','หมายเลขรถ','ทะเบียน','เบอร์ป้าย','เลขป้าย','ป้ายที่','จุดที่','site id','site','id','asset']);
   // Product: โฆษณา (bus = brand name), then standard
-  productCol = findByName(['โฆษณา','ad.on','product','adsone','campaign','แคมเปญ','ลูกค้า','brand','สินค้า']);
+  // จัดลำดับใหม่: คำที่ชัดเจนไม่กำกวมมาก่อน (สินค้า/product/brand) — ad.on/adsone ในธุรกิจนี้มักหมายถึง
+  // "วันเริ่มแคมเปญ" ไม่ใช่ชื่อสินค้า จึงเลื่อนไปท้ายสุดเป็นตัวสำรองกรณีไม่มีคอลัมน์อื่นเลย (เช่นไฟล์รถเมล์บางแบบ)
+  productCol = findByName(['สินค้า','ชื่อสินค้า','product','brand','แบรนด์','แคมเปญ','campaign','ลูกค้า','โฆษณา','ad.on','adsone']);
   addrCol    = findByName(['location','ที่อยู่','สถานที่','address','เส้นทาง','route','จุดติดตั้ง','พื้นที่']);
   latCol     = findByName(['co_y','latitude','lat']);
   lngCol     = findByName(['co_x','longitude','lng','lon']);
