@@ -1694,6 +1694,9 @@ async function sendAllCodes() {
   })();
   var batches = batchList.length;
   var failedBatches = [];
+  // ID ประจำ "รอบส่งนี้" — ใช้ตัวเดียวกันทุกครั้งที่พยายามส่ง batch เดิมซ้ำ (ทั้ง retry ภายในและรอบ 2)
+  // กันกรณีเน็ตหลุดตอนรอผลลัพธ์ (อัปโหลดจริงสำเร็จแล้ว) แต่แอปเข้าใจผิดว่าพังแล้วส่งซ้ำ
+  var _runId = 'r' + Date.now() + Math.random().toString(36).slice(2, 8);
 
   for (var b = 0; b < batches; b++) {
     var batch = batchList[b];
@@ -1711,6 +1714,7 @@ async function sendAllCodes() {
         totalBatches: batches,
         modes: codeMode,
         files: batch,
+        requestId: _runId + '_b' + b,
         timestamp: new Date().toISOString()
       }, 3);
       if (result && result.codes && result.codes.length) {
@@ -1746,6 +1750,7 @@ async function sendAllCodes() {
           batchIndex: bIdx,
           totalBatches: batches,
           files: rBatch,
+          requestId: _runId + '_b' + bIdx,
           timestamp: new Date().toISOString()
         }, 3);
         if (rResult && rResult.codes && rResult.codes.length) {
