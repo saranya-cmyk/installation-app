@@ -833,15 +833,22 @@ function reportProblem(body) {
 // ═══════════════════════════ LOGS (อ่าน) ═══════════════════════════
 
 function getInstallLog(params) {
-  return respCache('resp_ilog', 45, buildInstallLog);
+  var jobId = params && params.jobId ? String(params.jobId) : '';
+  // มี jobId = แอปช่างขอแค่งานเดียว (กรองที่เซิร์ฟเวอร์ ลด JSON ที่ส่งกลับ ไม่ต้องรอโหลดทุกงาน)
+  // ไม่มี jobId = แอดมิน/War Room ขอภาพรวมทุกงาน (พฤติกรรมเดิมเป๊ะ ไม่กระทบ)
+  if (jobId) {
+    return respCache('resp_ilog_' + jobId, 45, function(){ return buildInstallLog(jobId); });
+  }
+  return respCache('resp_ilog', 45, function(){ return buildInstallLog(null); });
 }
-function buildInstallLog() {
+function buildInstallLog(filterJobId) {
   try {
     var ss = openNamedSS('_InstallLog', null);
     if (!ss) return { log: [] };
     var rows = ss.getActiveSheet().getDataRange().getValues();
     var log=[];
     for(var i=1;i<rows.length;i++){
+      if (filterJobId && String(rows[i][0]) !== filterJobId) continue; // ⭐ กรองตั้งแต่ตรงนี้ ถ้าขอเจาะจงงาน
       var wIds = [];
       try { wIds = JSON.parse(rows[i][7] || '[]').slice(0, 2); } catch(e) {}
       log.push({jobId:rows[i][0],code:rows[i][1],installer:rows[i][2],
