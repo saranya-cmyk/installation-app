@@ -234,12 +234,20 @@ function renderAll(jobs, log, newKeys) {
     byKey[keyOf(e.jobId, e.code)] = e;
   });
 
+  // นับจำนวนรูปจริง: imgs คือรูปจริงใน Drive (เชื่อถือได้) · count เป็นตัวเลขจดแยกที่อาจไม่ sync
+  // (เหมือนกับที่แก้ในแอปช่างไว้แล้ว — กันเลขไม่ตรงกับรูปจริงใน Drive)
+  function realCount(o) {
+    if (!o) return 0;
+    if (o.imgs && o.imgs.length) return o.imgs.length;
+    return Number(o.count) || 0;
+  }
+
   // สถิติ (เฉพาะสื่อที่เลือก)
   var doneToday = 0, photosToday = 0;
   log.forEach(function(e) {
     if (!fIds[e.jobId] || !okKey[keyOf(e.jobId, e.code)]) return;
     if (dOnly(e.date) === today || (e.date && String(e.date).indexOf(today) === 0)) {
-      doneToday++; photosToday += Number(e.count)||0;
+      doneToday++; photosToday += realCount(e);
     }
   });
   var allDone = 0, allTotal = 0;
@@ -356,7 +364,7 @@ function refresh() {
     log.forEach(function(e) {
       if (!e.jobId) return;
       var k = e.jobId + '|' + String(e.code).trim().toUpperCase();
-      counts[k] = Number(e.count)||0;
+      counts[k] = realCount(e);
       if (prevCounts && counts[k] > (prevCounts[k]||0)) newKeys[k] = true;
     });
 
