@@ -381,11 +381,12 @@ function loadSentState(jobId) {
   serverSent = {};
   _sentLoaded = false;
   _sentJobId = jobId;
-  return fetch(SCRIPT_URL + '?action=getInstallLog')
+  // ส่ง jobId ไปให้เซิร์ฟเวอร์กรองเลย (เร็วขึ้นมาก โดยเฉพาะเมื่อมี log สะสมเยอะ)
+  // ไม่ต้องกรอง e.jobId ที่นี่อีกแล้ว เซิร์ฟเวอร์กรองมาให้ครบแล้ว
+  return fetch(SCRIPT_URL + '?action=getInstallLog&jobId=' + encodeURIComponent(jobId))
     .then(function(r){ return r.json(); })
     .then(function(d) {
       (d.log || []).forEach(function(e) {
-        if (e.jobId !== jobId) return;
         serverSent[String(e.code).trim().toUpperCase()] = {
           count: Number(e.count) || 0,
           date: e.date ? String(e.date).substring(0, 10) : '',
