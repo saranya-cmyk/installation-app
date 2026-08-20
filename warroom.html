@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Plan B — War Room</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 :root { --bg:#0d0f12; --card:#16191e; --tx:#eef0e9; --mu:#8a8f97; --lime:#c8f542; --green:#5DCAA5; --amber:#FAC775; --red:#F09595; --f:'Sarabun','Segoe UI',sans-serif; }
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -116,7 +116,12 @@ body { background:var(--bg); color:var(--tx); font-family:var(--f); overflow:hid
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+if (typeof L === 'undefined') {
+  document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>');
+}
+</script>
 <script>
 var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwgA7ohAgzVS4C37dUQh0M3utU5l7Wb17GjURcSCkPXkAW-7XIyhgLbRq_iXl9mVtt0Sg/exec';
 var POLL_MS = 45000;
@@ -136,15 +141,35 @@ setInterval(tick, 1000); tick();
 try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(function(){}); } catch(e) {}
 
 // ── แผนที่ (โทนมืด) ──
-var map = L.map('map', { zoomControl:false, attributionControl:false }).setView([13.7563, 100.5018], 11);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
-var markerLayer = L.layerGroup().addTo(map);
-var popLayer = L.layerGroup().addTo(map); // รูปใหม่เด้งใหญ่ชั่วคราว
+// กันไว้: ถ้าไลบรารีแผนที่โหลดไม่ขึ้น (CDN ล่ม/เน็ตบล็อก) ต้องไม่ทำให้ทั้งหน้าล่ม
+var mapOK = (typeof L !== 'undefined');
+var map = null, markerLayer = null, popLayer = null;
+if (mapOK) {
+  try {
+    map = L.map('map', { zoomControl:false, attributionControl:false }).setView([13.7563, 100.5018], 11);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+    markerLayer = L.layerGroup().addTo(map);
+    popLayer = L.layerGroup().addTo(map); // รูปใหม่เด้งใหญ่ชั่วคราว
+  } catch(e) { mapOK = false; }
+}
+if (!mapOK) {
+  var mapEl = document.getElementById('map');
+  if (mapEl) mapEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;' +
+    'color:#8A8F97;font-size:13px;text-align:center;padding:20px">🗺️ แผนที่โหลดไม่ขึ้นชั่วคราว<br>' +
+    '<span style="font-size:11px">(ข้อมูลอื่นยังใช้งานได้ปกติ)</span></div>';
+}
 
 var prevCounts = null; // 'jobId|CODE' -> count ไว้จับรูปใหม่
 var firstLoad = true;
 var mediaFilter = '__all__';
 var productFilter = '__all__';
+// นับจำนวนรูปจริง: imgs คือรูปจริงใน Drive (เชื่อถือได้) · count เป็นตัวเลขจดแยกที่อาจไม่ sync
+// ต้องเป็น global function เพราะถูกเรียกจากทั้ง refresh() และ renderAll()
+function realCount(o) {
+  if (!o) return 0;
+  if (o.imgs && o.imgs.length) return o.imgs.length;
+  return Number(o.count) || 0;
+}
 var lastData = null;
 
 function todayStr() {
@@ -241,13 +266,6 @@ function renderAll(jobs, log, newKeys) {
     byKey[keyOf(e.jobId, e.code)] = e;
   });
 
-  // นับจำนวนรูปจริง: imgs คือรูปจริงใน Drive (เชื่อถือได้) · count เป็นตัวเลขจดแยกที่อาจไม่ sync
-  // (เหมือนกับที่แก้ในแอปช่างไว้แล้ว — กันเลขไม่ตรงกับรูปจริงใน Drive)
-  function realCount(o) {
-    if (!o) return 0;
-    if (o.imgs && o.imgs.length) return o.imgs.length;
-    return Number(o.count) || 0;
-  }
 
   // สถิติ (เฉพาะสื่อที่เลือก)
   var doneToday = 0, photosToday = 0;
@@ -269,7 +287,8 @@ function renderAll(jobs, log, newKeys) {
   document.getElementById('sPhotos').textContent = photosToday;
   document.getElementById('sJobs').textContent = fJobs.length;
 
-  // แผนที่
+  // แผนที่ — ทำเฉพาะเมื่อไลบรารีโหลดสำเร็จ (ถ้าไม่ ข้ามไปทำส่วนอื่นต่อได้ปกติ)
+  if (mapOK && markerLayer) {
   markerLayer.clearLayers();
   var bounds = [];
   fJobs.forEach(function(j) {
@@ -308,6 +327,7 @@ function renderAll(jobs, log, newKeys) {
     });
   });
   if (firstLoad && bounds.length) { map.fitBounds(bounds, { padding:[30,30] }); firstLoad = false; }
+  } // ── จบบล็อกแผนที่ ──
 
   // ใกล้ครบกำหนด
   var now = new Date(); now.setHours(0,0,0,0);
