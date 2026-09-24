@@ -2413,15 +2413,15 @@ if ('serviceWorker' in navigator) {
   <div id="aiqBody">
     <div id="aiqStats"></div>
     <div id="aiqResults"></div>
-    <div class="aiqNote">AI ตรวจ: รูปมืด/ไฟป้ายดับ · รูปเบลอมาก · อ่าน Code บนป้ายเทียบกับจุดที่ส่ง (ให้ช่างถ่ายป้าย Code ใกล้ๆ 1 รูป) · AI ช่วยคัดกรองเท่านั้น คนเป็นผู้ตัดสิน · ผลตรวจและการตัดสินบันทึกในชีท _AICheckLog · วิเคราะห์ในเครื่องนี้ รูปไม่ถูกส่งไปบริการ AI ภายนอก · ครั้งแรกต้องโหลดโมเดลรวม ~120 MB แล้วเครื่องจำไว้</div>
+    <div class="aiqNote">AI ตรวจ: รูปมืด/ไฟป้ายดับ · รูปเบลอมาก · ถ่ายเอียงมาก · อ่าน Code บนป้ายเทียบกับจุดที่ส่ง (ให้ช่างถ่ายป้าย Code ใกล้ๆ 1 รูป) · AI ช่วยคัดกรองเท่านั้น คนเป็นผู้ตัดสิน · ผลตรวจและการตัดสินบันทึกในชีท _AICheckLog · วิเคราะห์ในเครื่องนี้ รูปไม่ถูกส่งไปบริการ AI ภายนอก · ครั้งแรกต้องโหลดโมเดลรวม ~120 MB แล้วเครื่องจำไว้</div>
   </div>
 </div></div>
 <script>
 var AIQ_LABELS = [   // min = ความมั่นใจขั้นต่ำก่อนติดธง (สูง = เตือนเฉพาะกรณีชัดเจน)
   { en: 'a clear, sharp, well-lit photo of an outdoor advertising sign', th: null },
-  { en: 'a blurry, out of focus photo', th: 'รูปเบลอมาก', min: 0.65 },          // เบลอเล็กน้อยรับได้
-  { en: 'a very dark photo taken at night with lights off', th: 'รูปมืด / อาจไฟป้ายดับ', min: 0.45 },
-  { en: 'a tilted, crooked photo taken at a steep angle', th: null }            // เอียงรับได้ ไม่เตือน (คงไว้เพื่อไม่ให้รูปเอียงถูกจัดเป็นเบลอ)
+  { en: 'a blurry, out of focus photo', th: 'รูปเบลอมาก', min: 0.80, kind: 'blur' },          // กล้องช่างบางเครื่องความละเอียดต่ำ → เตือนเฉพาะ AI มั่นใจ ≥80%
+  { en: 'a very dark photo taken at night with lights off', th: 'รูปมืด / อาจไฟป้ายดับ', min: 0.45, kind: 'dark' },
+  { en: 'a tilted, crooked photo taken at a steep angle', th: 'ถ่ายเอียงมาก / ป้ายอาจติดไม่ตรง', min: 0.80, kind: 'tilt' } // เอียงเล็กน้อยรับได้ เตือนเฉพาะ AI มั่นใจ ≥80%
 ];
 var AIQ_AUTO = window.innerWidth >= 900 && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent); // มือถือไม่ตรวจเอง กันโหลด 100 MB ผ่านเน็ตมือถือ
 var _aiqPipe = null, _aiqBusy = false, _aiqState = { pending: [], flags: [], stats: {} }, _aiqJob = null, _aiqThumbCache = {};
@@ -2460,7 +2460,7 @@ function aiqClassify(pipe, dataUrl) {
   return pipe(dataUrl, AIQ_LABELS.map(function(l){ return l.en; }), { hypothesis_template: '{}' }).then(function(out) {
     var top = out[0], lab = AIQ_LABELS.find(function(l){ return l.en === top.label; });
     var flag = !!(lab && lab.th && top.score >= lab.min);
-    return { flag: flag, reason: flag ? lab.th : '', score: top.score };
+    return { flag: flag, reason: flag ? lab.th : '', score: top.score, kind: flag ? lab.kind : '' };
   });
 }
 
@@ -2646,7 +2646,9 @@ function aiRun() {
                     return aiqReadCode(t.data, codeOf[t.id], known).then(function(o) {
                       done++; aiqChip('🤖 AI ตรวจรูปใหม่ ' + done + '/' + pend.length);
                       var reasons = [];
-                      if (c.flag) reasons.push(c.reason);
+                      // เบลอ/เอียง: ถ้ายังอ่าน Code จากรูปได้ แปลว่ารูปยังใช้ยืนยันงานได้ → ไม่เตือน (มืด/ไฟดับ เตือนเสมอ)
+                      var readable = o.ocr === 'match' || o.ocr === 'other';
+                      if (c.flag && !((c.kind === 'blur' || c.kind === 'tilt') && readable)) reasons.push(c.reason);
                       if (o.ocr === 'other') reasons.push('อาจติดผิดป้าย — อ่านได้ ' + o.found);
                       var flag = reasons.length > 0;
                       if (flag) _aiqThumbCache[t.id] = t.data;
