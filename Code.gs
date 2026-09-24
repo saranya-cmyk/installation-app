@@ -17,9 +17,11 @@
  *    (URL เดิมใช้ได้ ไม่ต้องแก้ฝั่ง HTML)
  */
 
+// ค่าที่เคยเปิดเผยตรงๆ (Drive folder, อีเมลแอดมิน) ย้ายมาเก็บใน Script Properties แทน
+var _props = PropertiesService.getScriptProperties();
 var CONFIG = {
-  DRIVE_FOLDER_ID: '1_RNwEhs93SO-7XfxBCCOIjROCcaQDZ7r',
-  ADMIN_EMAIL:     'saranya@planbmedia.co.th',
+  DRIVE_FOLDER_ID: _props.getProperty('DRIVE_FOLDER_ID'),
+  ADMIN_EMAIL:     _props.getProperty('ADMIN_EMAIL'),
   REPAIR_EMAIL:    '', // 🔧 ใส่อีเมลทีมซ่อมตรงนี้ (เว้นว่าง = ส่งหาแอดมินอย่างเดียว, ใส่หลายคนคั่นด้วย ,)
   INSTALLERS_SHEET_ID: '', // 👷 ใส่ ID ชีทรายชื่อช่าง (จาก URL ของชีท) หรือเว้นว่างแล้วตั้งชื่อไฟล์ชีทว่า _Installers ไว้ในโฟลเดอร์แอป
 };
@@ -41,6 +43,7 @@ function doPost(e) {
     if (body.action === 'deletePhotos')    return deletePhotosFn(body);
     if (body.action === 'reportProblem')   return reportProblem(body);
     if (body.action === 'reportRepair')    return reportRepair(body);
+    if (body.action === 'aiQuery')         return aiQuery(body);
     return json({ error: 'unknown action' });
   } catch(err) { return json({ error: err.message }); }
 }
@@ -48,6 +51,7 @@ function doPost(e) {
 function doGet(e) {
   var p = e ? e.parameter : {};
   if (p.action === 'getPhotos')      return getPhotos(p);
+  if (p.action === 'getPhotoThumbs') return getPhotoThumbs(p);
   if (p.action === 'getJobs')        return getJobsList(p);
   if (p.action === 'getInstallLog')  return getInstallLog(p);
   if (p.action === 'getProblemLog')  return getProblemLog(p);
@@ -609,6 +613,29 @@ function getPhotos(params) {
     }
     return json({ photos:photos, total:photos.length });
   } catch(err) { return json({ photos:[], error:err.message }); }
+}
+
+// ═══════════════ AI ตรวจคุณภาพรูป (รันในเครื่องแอดมิน) ═══════════════
+// ส่งรูปย่อแบบ base64 ให้ Snaphub เอาไปวิเคราะห์ด้วย AI ในเบราว์เซอร์แอดมินเอง
+// รูปไม่ถูกส่งไปบริการ AI ภายนอกใดๆ · ดึงได้เฉพาะรูปในโฟลเดอร์งานติดตั้ง (ผ่าน findPhotoEntries)
+function getPhotoThumbs(params) {
+  try {
+    var code = String(params.code || '').trim();
+    if (!code) return json({ thumbs: [] });
+    var entries = findPhotoEntries(code);
+    var out = [];
+    for (var i = 0; i < entries.length && out.length < 6; i++) {
+      var f = entries[i].file;
+      var blob = null;
+      try { blob = f.getThumbnail(); } catch (e) {}
+      if (!blob) continue;
+      out.push({
+        id: f.getId(), name: f.getName(),
+        data: 'data:' + (blob.getContentType() || 'image/png') + ';base64,' + Utilities.base64Encode(blob.getBytes())
+      });
+    }
+    return json({ thumbs: out });
+  } catch (err) { return json({ thumbs: [], error: err.message }); }
 }
 
 // ═══════════════════════════ FIX CODE / DELETE ═══════════════════════════
@@ -1719,4 +1746,83 @@ function approveSend(p) {
   } catch(err) {
     return page('เกิดข้อผิดพลาด', err.message + '<br>ลองกดปุ่มในอีเมลอีกครั้ง หรือติดต่อผู้ดูแลระบบค่ะ', false);
   }
+}
+
+
+// ═══════════════ AI Query (War Room — ถามข้อมูลด้วยภาษาพูด) ═══════════════
+function aiQuery(body) {
+  try {
+    var apiKey = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
+    if (!apiKey) {
+      return jsonOut({ error: 'ยังไม่ได้ตั้งค่า API Key — ใส่ ANTHROPIC_API_KEY ใน Script Properties ก่อนครับ' });
+    }
+
+    var question = String(body.question || '').trim();
+    if (!question) return jsonOut({ error: 'ไม่มีคำถาม' });
+
+    // ดึงข้อมูลจริงจากระบบ (ของเดิมที่มีอยู่แล้ว ไม่สร้างใหม่)
+    var jobsData = buildJobsList();
+    var logData = buildInstallLog(null);
+
+    // สรุปข้อมูลให้กระชับก่อนส่งให้ Claude (กัน context ยาวเกินไป)
+    var jobsSummary = (jobsData.jobs || []).map(function(j) {
+      return { id: j.id, name: j.name, media: j.media, dateEnd: j.dateEnd, archived: !!j.archived,
+               totalSpots: (j.spots || []).length };
+    });
+    var logSummary = (logData.log || []).map(function(e) {
+      return { jobId: e.jobId, code: e.code, date: e.date, installer: e.installer, count: e.count };
+    });
+
+    var today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+
+    var systemPrompt = 'คุณคือผู้ช่วยตอบคำถามข้อมูลการติดตั้งป้ายโฆษณาจากข้อมูลจริงที่ให้มา ' +
+      'วันนี้คือ ' + today + ' (เขตเวลาไทย)\n' +
+      'ตอบเป็น JSON เท่านั้น รูปแบบ: {"answer": "คำตอบเป็นประโยคภาษาไทยอ่านง่าย", ' +
+      '"table": [{"คอลัมน์1": "ค่า", ...}, ...]} — table ใส่เฉพาะกรณีที่คำถามเหมาะจะสรุปเป็นตาราง ' +
+      'ถ้าไม่มีข้อมูลที่ตอบคำถามได้ ให้ตอบตรงๆ ว่าไม่พบข้อมูล ห้ามเดาหรือสร้างตัวเลขขึ้นเอง ' +
+      'ใช้เฉพาะข้อมูลที่ให้มาเท่านั้น ไม่ต้องอธิบายวิธีคิด ตอบ JSON อย่างเดียวไม่มีข้อความอื่นปน';
+
+    var userPrompt = 'ข้อมูลงาน (jobs):\n' + JSON.stringify(jobsSummary) +
+      '\n\nข้อมูลรูปที่ส่งแล้ว (log):\n' + JSON.stringify(logSummary) +
+      '\n\nคำถาม: ' + question;
+
+    var resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'post',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: 1500,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }]
+      }),
+      muteHttpExceptions: true
+    });
+
+    var code = resp.getResponseCode();
+    if (code !== 200) {
+      return jsonOut({ error: 'เรียก AI ไม่สำเร็จ (HTTP ' + code + ')' });
+    }
+
+    var data = JSON.parse(resp.getContentText());
+    var text = (data.content && data.content[0] && data.content[0].text) || '';
+    // กันเผื่อ Claude ห่อ JSON ด้วย ```json ... ``` มา
+    text = text.replace(/^```json\s*|\s*```$/g, '').trim();
+
+    var parsed;
+    try { parsed = JSON.parse(text); }
+    catch (e) { parsed = { answer: text, table: null }; }
+
+    return jsonOut({ answer: parsed.answer || '', table: parsed.table || null });
+
+  } catch (err) {
+    return jsonOut({ error: 'เกิดข้อผิดพลาด: ' + err.message });
+  }
+}
+
+function jsonOut(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
