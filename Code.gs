@@ -1760,34 +1760,66 @@ function checkJobCompletion(jobId) {
   if (!jr) return;
   if (String(jr.values[6]) === 'false') return;          // งานถูกลบแล้ว
   var sentStatus = String(jr.values[11] || '').trim();
-  if (sentStatus) return;                                 // แจ้งไปแล้ว (pending/sent) ไม่แจ้งซ้ำ
+  if (sentStatus) return;                                 // เข้าคิว/แจ้งไปแล้ว (queued/pending/sent) ไม่ทำซ้ำ
 
   var spots;
   try { spots = JSON.parse(jr.values[2] || '[]'); } catch(e) { return; }
   if (!spots.length) return;
+  if (_jobDoneCount(jobId, spots) < spots.length) return; // ยังไม่ครบ
 
-  // นับจุดที่ติดแล้วจาก _InstallLog
+  // ครบ 100% → เข้าคิว รอส่งอีเมลยืนยันถึงแอดมินรอบ 10:00 น.
+  // (เผื่อเวลาให้ AI ตรวจรูปก่อน อีเมลจะบอกผลตรวจของงานนี้ด้วย)
+  jr.sh.getRange(jr.row, 12).setValue('queued');
+}
+
+function _jobDoneCount(jobId, spots) {
   var doneCodes = {};
-  var folder = DriveApp.getFolderById(CONFIG.DRIVE_FOLDER_ID);
-  var files = folder.getFilesByName('_InstallLog');
-  if (!files.hasNext()) return;
-  var lrows = SpreadsheetApp.open(files.next()).getActiveSheet().getDataRange().getValues();
+  var ss = openNamedSS('_InstallLog', null);
+  if (!ss) return 0;
+  var lrows = ss.getActiveSheet().getDataRange().getValues();
   for (var i = 1; i < lrows.length; i++) {
     if (lrows[i][0] === jobId) doneCodes[String(lrows[i][1]).trim().toUpperCase()] = true;
   }
-  var doneCount = 0;
-  spots.forEach(function(s){ if (doneCodes[String(s.code).trim().toUpperCase()]) doneCount++; });
-  if (doneCount < spots.length) return; // ยังไม่ครบ
+  var n = 0;
+  spots.forEach(function(s){ if (doneCodes[String(s.code).trim().toUpperCase()]) n++; });
+  return n;
+}
 
-  // ครบ 100% — สร้าง approveKey + ตั้งสถานะ pending + ส่งอีเมลยืนยันถึงแอดมิน
+// สรุปผล AI ตรวจรูปของงานเดียว → กล่อง HTML ในอีเมล
+function _aiJobSummaryHtml(jobId) {
+  var index = _aiPhotoIndex(), total = 0;
+  for (var id in index) if (index[id].jobId === String(jobId)) total++;
+  var rows = _aiLogSheet().getDataRange().getValues();
+  var checked = 0, waiting = 0, reshoot = 0;
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][1]) !== String(jobId) || !index[String(rows[i][3])]) continue;
+    if (rows[i][4] === 'skip') continue;
+    checked++;
+    if (rows[i][4] === 'flag' && !rows[i][7]) waiting++;
+    if (rows[i][7] === 'reshoot') reshoot++;
+  }
+  var unchecked = Math.max(0, total - checked);
+  var lines = [], color = '#2e7d32', bg = '#eef7ee';
+  if (!total) lines.push('🤖 ยังไม่มีข้อมูลรูปสำหรับ AI ตรวจ');
+  else lines.push('🤖 AI ตรวจรูปแล้ว <b>' + checked + '/' + total + '</b> รูป');
+  if (waiting)   { lines.push('⚠️ AI ติดธง <b>' + waiting + '</b> รูปที่ยังไม่ได้ตัดสิน — เปิด Snaphub ตรวจก่อนกดยืนยัน'); color = '#b25e00'; bg = '#fff4e5'; }
+  if (reshoot)   { lines.push('📷 แอดมินสั่งถ่ายใหม่ <b>' + reshoot + '</b> รูป'); color = '#b25e00'; bg = '#fff4e5'; }
+  if (unchecked) { lines.push('⏳ AI ยังไม่ได้ตรวจ ' + unchecked + ' รูป (เปิด Snaphub บนคอมเพื่อให้ตรวจ)'); if (color === '#2e7d32') { color = '#555'; bg = '#f3f3f3'; } }
+  if (total && !waiting && !reshoot && !unchecked) lines.push('✓ ไม่พบรูปที่ต้องแก้');
+  return '<div style="background:' + bg + ';color:' + color + ';border-radius:10px;padding:12px;font-size:13px;line-height:1.7;margin-bottom:18px">' + lines.join('<br>') + '</div>';
+}
+
+function _sendCompletionEmail(jr, spotCount, aiHtml) {
+  var jobId = jr.values[0];
   var approveKey = genPortalKey() + genPortalKey(); // 20 ตัวอักษร
   jr.sh.getRange(jr.row, 11).setValue(approveKey);
   jr.sh.getRange(jr.row, 12).setValue('pending');
-
   var jobName = jr.values[1] || '';
   var media = jr.values[7] || '';
   var salesEmail = String(jr.values[9] || '').trim();
-  var confirmUrl = ScriptApp.getService().getUrl() + '?action=approveSend&jobId=' + encodeURIComponent(jobId) + '&k=' + approveKey;
+  var base = ''; try { base = ScriptApp.getService().getUrl() || ''; } catch (e) {}
+  if (!/\/exec$/.test(base)) base = 'https://script.google.com/macros/s/AKfycbwgA7ohAgzVS4C37dUQh0M3utU5l7Wb17GjURcSCkPXkAW-7XIyhgLbRq_iXl9mVtt0Sg/exec'; // กันลิงก์ผิดเมื่อรันจากตัวตั้งเวลา
+  var confirmUrl = base + '?action=approveSend&jobId=' + encodeURIComponent(jobId) + '&k=' + approveKey;
 
   var html = '<div style="font-family:Sarabun,Arial,sans-serif;max-width:600px;padding:24px">'+
     '<div style="background:linear-gradient(135deg,#2e7d32,#66bb6a);color:#fff;padding:22px;border-radius:12px 12px 0 0;text-align:center">'+
@@ -1796,7 +1828,8 @@ function checkJobCompletion(jobId) {
     '<div style="border:1px solid #e5e5e5;border-top:none;border-radius:0 0 12px 12px;padding:22px;text-align:center">'+
       (media ? '<div style="color:#1665c1;font-weight:bold;margin-bottom:4px">📺 '+media+'</div>' : '')+
       '<div style="font-size:20px;font-weight:bold;margin-bottom:6px">'+jobName+'</div>'+
-      '<div style="color:#555;margin-bottom:18px">ติดตั้งครบทั้ง <b>'+spots.length+' จุด</b> เรียบร้อยแล้ว</div>'+
+      '<div style="color:#555;margin-bottom:18px">ติดตั้งครบทั้ง <b>'+spotCount+' จุด</b> เรียบร้อยแล้ว</div>'+
+      aiHtml +
       '<div style="background:#f7f7f7;border-radius:10px;padding:12px;font-size:13px;color:#666;margin-bottom:18px">'+
         (salesEmail ? 'เมื่อกดยืนยัน ระบบจะสร้าง PDF รูปติดตั้ง แล้วส่งให้เซล<br><b style="color:#111">'+salesEmail+'</b><br>พร้อมลิงก์ให้ลูกค้าดูสถานะเรียลไทม์ (CC ถึงคุณด้วย)'
                     : '⚠️ งานนี้<b>ไม่ได้ระบุอีเมลเซล</b> — เมื่อกดยืนยัน ระบบจะสร้าง PDF และส่งทุกอย่างมาที่อีเมลคุณ เพื่อส่งต่อเอง')+
@@ -1808,6 +1841,40 @@ function checkJobCompletion(jobId) {
   MailApp.sendEmail({ to: CONFIG.ADMIN_EMAIL,
     subject: '🎉 [งานครบ 100%] ' + jobName + ' — กดยืนยันเพื่อส่งเซล',
     htmlBody: html });
+}
+
+// ทำงานทุกวันราว 10:00 น. (ตั้งด้วย setupDailyEmailTrigger) — ส่งอีเมลงานครบที่อยู่ในคิว
+function sendQueuedCompletionEmails() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return;
+  try {
+    var ss = openNamedSS('_Jobs', null);
+    if (!ss) return;
+    var rows = ss.getActiveSheet().getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][11] || '').trim() !== 'queued') continue;
+      try {
+        var jr = findJobRow(rows[i][0]);
+        if (!jr || String(jr.values[6]) === 'false') continue;
+        var spots = JSON.parse(jr.values[2] || '[]');
+        if (_jobDoneCount(jr.values[0], spots) < spots.length) {  // มีการลบรูปหลังเข้าคิว → ยังไม่ครบแล้ว
+          jr.sh.getRange(jr.row, 12).setValue('');
+          continue;
+        }
+        _sendCompletionEmail(jr, spots.length, _aiJobSummaryHtml(jr.values[0]));
+      } catch (e) { Logger.log('queued email ' + rows[i][0] + ': ' + e.message); }
+    }
+  } finally { lock.releaseLock(); }
+}
+
+// กด Run ฟังก์ชันนี้ครั้งเดียวใน Apps Script Editor เพื่อตั้งเวลาส่งทุกวัน 10:00 น.
+function setupDailyEmailTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'sendQueuedCompletionEmails') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('sendQueuedCompletionEmails').timeBased()
+    .atHour(10).nearMinute(0).everyDays(1).inTimezone('Asia/Bangkok').create();
+  Logger.log('ตั้งเวลาส่งอีเมลงานครบ ทุกวันราว 10:00 น. เรียบร้อย');
 }
 
 /** แอดมินกดปุ่มยืนยันจากอีเมล → สร้าง PDF → ส่งเซล + ลิงก์ Portal → ปิดจ็อบ */
