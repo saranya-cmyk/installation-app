@@ -182,7 +182,7 @@ function makeCodeFolderChain(monthStr, mediaName, productName, dateStr, code) {
 // ═══════════════════════════ JOBS SHEET ═══════════════════════════
 
 function getJobSheet() {
-  var ss = openNamedSS('_Jobs', ['id','name','spots','created','dateStart','dateEnd','active','media','portalKey','salesEmail','approveKey','sentStatus']);
+  var ss = openNamedSS('_Jobs', ['id','name','spots','created','dateStart','dateEnd','active','media','portalKey','salesEmail','approveKey','sentStatus','reportedCodes','pendingCodes']);
   var sh = ss.getSheetByName('Jobs');
   if (!sh) { sh = ss.getActiveSheet(); try { sh.setName('Jobs'); } catch(e) {} }
   return sh;
@@ -670,7 +670,8 @@ function getPhotoThumbs(params) {
 
 // ═══════════════ บันทึกผล AI ตรวจรูป (_AICheckLog) ═══════════════
 // AI (CLIP) รันในเบราว์เซอร์แอดมิน · เซิร์ฟเวอร์ทำหน้าที่แค่ส่งรูปย่อ + บันทึกผล · ไม่มีการเรียก AI ภายนอก
-var AI_LOG_HEADER = ['checkedAt','jobId','code','fileId','result','reason','score','decision','decidedAt'];
+var AI_LOG_HEADER = ['checkedAt','jobId','code','fileId','result','reason','score','decision','decidedAt','ocr'];
+var AI_WRONG_SIGN = 'อาจติดผิดป้าย';
 
 // ดัชนีรูปทั้งหมดจาก _InstallLog: fileId → {jobId, code}
 function _aiPhotoIndex() {
@@ -689,7 +690,9 @@ function _aiPhotoIndex() {
 }
 
 function _aiLogSheet() {
-  return openNamedSS('_AICheckLog', AI_LOG_HEADER).getActiveSheet();
+  var sh = openNamedSS('_AICheckLog', AI_LOG_HEADER).getActiveSheet();
+  if (!sh.getRange(1, 10).getValue()) sh.getRange(1, 10).setValue('ocr');   // ชีทที่สร้างก่อนมี OCR
+  return sh;
 }
 
 // รายการรูปที่ยังไม่ตรวจ + รูปที่ AI ติดธงแต่แอดมินยังไม่ตัดสิน + สถิติ
@@ -697,10 +700,11 @@ function aiPending(p) {
   try {
     var index = _aiPhotoIndex();
     var rows = _aiLogSheet().getDataRange().getValues();
-    var checked = {}, flags = [], nFlag = 0, nDecided = 0;
+    var checked = {}, flags = [], nFlag = 0, nDecided = 0, codeOk = {};
     for (var i = 1; i < rows.length; i++) {
       var fid = String(rows[i][3]);
       checked[fid] = true;
+      if (rows[i][9] === 'match') codeOk[rows[i][1] + '|' + rows[i][2]] = true;
       if (rows[i][4] === 'flag') {
         nFlag++;
         if (rows[i][7]) nDecided++;
@@ -714,20 +718,22 @@ function aiPending(p) {
       if (pending.length >= 200) break;
     }
     return json({ pending: pending, flags: flags,
-      stats: { checked: rows.length - 1, flagged: nFlag, decided: nDecided } });
+      stats: { checked: rows.length - 1, flagged: nFlag, decided: nDecided, codeMatch: Object.keys(codeOk).length } });
   } catch (err) { return json({ pending: [], flags: [], error: err.message }); }
 }
 
 // ส่งรูปย่อตาม ID — ยอมเฉพาะรูปที่อยู่ในดัชนีงานติดตั้งเท่านั้น (ขอไฟล์อื่นใน Drive ไม่ได้)
 function aiThumbs(p) {
   try {
-    var ids = String(p.ids || '').split(',').filter(String).slice(0, 8);
+    var full = String(p.full || '') === '1';                 // รูปขนาดจริง (≤1200px) สำหรับอ่าน Code
+    var ids = String(p.ids || '').split(',').filter(String).slice(0, full ? 3 : 8);
     var index = _aiPhotoIndex();
     var out = [];
     for (var i = 0; i < ids.length; i++) {
       if (!index[ids[i]]) continue;
       try {
-        var blob = DriveApp.getFileById(ids[i]).getThumbnail();
+        var file = DriveApp.getFileById(ids[i]);
+        var blob = (full && file.getSize() <= 4 * 1024 * 1024) ? file.getBlob() : file.getThumbnail();
         if (!blob) continue;
         out.push({ id: ids[i], data: 'data:' + (blob.getContentType() || 'image/png') + ';base64,' +
           Utilities.base64Encode(blob.getBytes()) });
@@ -752,10 +758,24 @@ function aiSaveChecks(body) {
     if (!index[fid] || seen[fid]) continue;
     seen[fid] = true;
     add.push([now, index[fid].jobId, index[fid].code, fid, (r.result === 'flag' || r.result === 'skip') ? r.result : 'ok',
-      String(r.reason || '').slice(0, 60), Math.round((Number(r.score) || 0) * 100) / 100, '', '']);
+      String(r.reason || '').slice(0, 80), Math.round((Number(r.score) || 0) * 100) / 100, '', '',
+      String(r.ocr || '').slice(0, 40)]);
   }
   if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, AI_LOG_HEADER.length).setValues(add);
+  _aiReconcileWrongSign(sh);
   return json({ success: true, saved: add.length });
+}
+
+// รูปมุมกว้างอาจเห็นป้ายข้างๆ → ถ้ารูปอื่นของจุดเดียวกันอ่าน Code ตรงแล้ว ยกเลิกธง "ติดผิดป้าย" ที่ยังไม่มีคนตัดสิน
+function _aiReconcileWrongSign(sh) {
+  var data = sh.getDataRange().getValues(), ok = {};
+  for (var i = 1; i < data.length; i++) if (data[i][9] === 'match') ok[data[i][1] + '|' + data[i][2]] = true;
+  for (i = 1; i < data.length; i++) {
+    var r = data[i];
+    if (r[4] !== 'flag' || r[7] || String(r[9]).indexOf('other:') !== 0 || !ok[r[1] + '|' + r[2]]) continue;
+    var rest = String(r[5]).split(' · ').filter(function(s){ return s.indexOf(AI_WRONG_SIGN) !== 0; }).join(' · ');
+    sh.getRange(i + 1, 5, 1, 2).setValues([[rest ? 'flag' : 'ok', rest || 'ยกเลิกธงติดผิดป้าย: รูปอื่นของจุดนี้อ่าน Code ตรง']]);
+  }
 }
 
 // แอดมินตัดสินรูปที่ติดธง: ok = รูปใช้ได้ (AI เตือนผิด) · reshoot = ให้ช่างถ่ายใหม่
@@ -1756,52 +1776,40 @@ function findJobRow(jobId) {
 
 /** เช็คว่าทุกจุดของงานติดตั้งครบหรือยัง — ถ้าครบและยังไม่เคยแจ้ง ส่งอีเมลให้แอดมินกดยืนยัน */
 function checkJobCompletion(jobId) {
-  var jr = findJobRow(jobId);
-  if (!jr) return;
-  if (String(jr.values[6]) === 'false') return;          // งานถูกลบแล้ว
-  var sentStatus = String(jr.values[11] || '').trim();
-  if (sentStatus) return;                                 // เข้าคิว/แจ้งไปแล้ว (queued/pending/sent) ไม่ทำซ้ำ
-
-  var spots;
-  try { spots = JSON.parse(jr.values[2] || '[]'); } catch(e) { return; }
-  if (!spots.length) return;
-  if (_jobDoneCount(jobId, spots) < spots.length) return; // ยังไม่ครบ
-
-  // ครบ 100% → เข้าคิว รอส่งอีเมลยืนยันถึงแอดมินรอบ 10:00 น.
-  // (เผื่อเวลาให้ AI ตรวจรูปก่อน อีเมลจะบอกผลตรวจของงานนี้ด้วย)
-  jr.sh.getRange(jr.row, 12).setValue('queued');
+  // เดิม: ส่งอีเมลเมื่องานครบ 100% → เปลี่ยนเป็นรายงานรายวัน (sendDailyReports ทุกวันราว 10:00 น.)
+  // เพื่อให้เซลได้รูปทุกวัน ไม่ต้องรอวันสุดท้ายของงานที่ติดหลายวัน
 }
 
-function _jobDoneCount(jobId, spots) {
-  var doneCodes = {};
-  var ss = openNamedSS('_InstallLog', null);
-  if (!ss) return 0;
-  var lrows = ss.getActiveSheet().getDataRange().getValues();
-  for (var i = 1; i < lrows.length; i++) {
-    if (lrows[i][0] === jobId) doneCodes[String(lrows[i][1]).trim().toUpperCase()] = true;
-  }
-  var n = 0;
-  spots.forEach(function(s){ if (doneCodes[String(s.code).trim().toUpperCase()]) n++; });
-  return n;
-}
-
-// สรุปผล AI ตรวจรูปของงานเดียว → กล่อง HTML ในอีเมล
-function _aiJobSummaryHtml(jobId) {
+function _aiJobCounts(jobId, codes) {
+  var only = null;
+  if (codes && codes.length) { only = {}; codes.forEach(function(c){ only[String(c).trim().toUpperCase()] = true; }); }
+  var inScope = function(code) { return !only || only[String(code).trim().toUpperCase()]; };
   var index = _aiPhotoIndex(), total = 0;
-  for (var id in index) if (index[id].jobId === String(jobId)) total++;
+  for (var id in index) if (index[id].jobId === String(jobId) && inScope(index[id].code)) total++;
   var rows = _aiLogSheet().getDataRange().getValues();
   var checked = 0, waiting = 0, reshoot = 0;
   for (var i = 1; i < rows.length; i++) {
-    if (String(rows[i][1]) !== String(jobId) || !index[String(rows[i][3])]) continue;
+    if (String(rows[i][1]) !== String(jobId) || !index[String(rows[i][3])] || !inScope(rows[i][2])) continue;
     if (rows[i][4] === 'skip') continue;
     checked++;
     if (rows[i][4] === 'flag' && !rows[i][7]) waiting++;
     if (rows[i][7] === 'reshoot') reshoot++;
   }
-  var unchecked = Math.max(0, total - checked);
+  var spotsAll = {}, spotsOk = {};
+  for (var id2 in index) if (index[id2].jobId === String(jobId) && inScope(index[id2].code)) spotsAll[index[id2].code] = true;
+  for (i = 1; i < rows.length; i++)
+    if (String(rows[i][1]) === String(jobId) && rows[i][9] === 'match' && inScope(rows[i][2])) spotsOk[String(rows[i][2])] = true;
+  return { total: total, checked: checked, waiting: waiting, reshoot: reshoot, unchecked: Math.max(0, total - checked),
+           spots: Object.keys(spotsAll).length, codeMatch: Object.keys(spotsOk).length };
+}
+
+function _aiJobSummaryHtml(jobId, codes) {
+  var c = _aiJobCounts(jobId, codes);
+  var total = c.total, checked = c.checked, waiting = c.waiting, reshoot = c.reshoot, unchecked = c.unchecked;
   var lines = [], color = '#2e7d32', bg = '#eef7ee';
   if (!total) lines.push('🤖 ยังไม่มีข้อมูลรูปสำหรับ AI ตรวจ');
   else lines.push('🤖 AI ตรวจรูปแล้ว <b>' + checked + '/' + total + '</b> รูป');
+  if (total) lines.push('🔎 อ่าน Code บนป้ายยืนยันตรง <b>' + c.codeMatch + '/' + c.spots + '</b> จุด' + (c.codeMatch < c.spots ? ' (จุดที่เหลือไม่มีรูปป้าย Code ที่อ่านได้)' : ''));
   if (waiting)   { lines.push('⚠️ AI ติดธง <b>' + waiting + '</b> รูปที่ยังไม่ได้ตัดสิน — เปิด Snaphub ตรวจก่อนกดยืนยัน'); color = '#b25e00'; bg = '#fff4e5'; }
   if (reshoot)   { lines.push('📷 แอดมินสั่งถ่ายใหม่ <b>' + reshoot + '</b> รูป'); color = '#b25e00'; bg = '#fff4e5'; }
   if (unchecked) { lines.push('⏳ AI ยังไม่ได้ตรวจ ' + unchecked + ' รูป (เปิด Snaphub บนคอมเพื่อให้ตรวจ)'); if (color === '#2e7d32') { color = '#555'; bg = '#f3f3f3'; } }
@@ -1809,73 +1817,134 @@ function _aiJobSummaryHtml(jobId) {
   return '<div style="background:' + bg + ';color:' + color + ';border-radius:10px;padding:12px;font-size:13px;line-height:1.7;margin-bottom:18px">' + lines.join('<br>') + '</div>';
 }
 
-function _sendCompletionEmail(jr, spotCount, aiHtml) {
-  var jobId = jr.values[0];
-  var approveKey = genPortalKey() + genPortalKey(); // 20 ตัวอักษร
-  jr.sh.getRange(jr.row, 11).setValue(approveKey);
-  jr.sh.getRange(jr.row, 12).setValue('pending');
-  var jobName = jr.values[1] || '';
-  var media = jr.values[7] || '';
-  var salesEmail = String(jr.values[9] || '').trim();
+function _webAppUrl() {
   var base = ''; try { base = ScriptApp.getService().getUrl() || ''; } catch (e) {}
-  if (!/\/exec$/.test(base)) base = 'https://script.google.com/macros/s/AKfycbwgA7ohAgzVS4C37dUQh0M3utU5l7Wb17GjURcSCkPXkAW-7XIyhgLbRq_iXl9mVtt0Sg/exec'; // กันลิงก์ผิดเมื่อรันจากตัวตั้งเวลา
-  var confirmUrl = base + '?action=approveSend&jobId=' + encodeURIComponent(jobId) + '&k=' + approveKey;
-
-  var html = '<div style="font-family:Sarabun,Arial,sans-serif;max-width:600px;padding:24px">'+
-    '<div style="background:linear-gradient(135deg,#2e7d32,#66bb6a);color:#fff;padding:22px;border-radius:12px 12px 0 0;text-align:center">'+
-      '<div style="font-size:34px">🎉</div>'+
-      '<h2 style="margin:6px 0 0 0">งานติดตั้งครบ 100%</h2></div>'+
-    '<div style="border:1px solid #e5e5e5;border-top:none;border-radius:0 0 12px 12px;padding:22px;text-align:center">'+
-      (media ? '<div style="color:#1665c1;font-weight:bold;margin-bottom:4px">📺 '+media+'</div>' : '')+
-      '<div style="font-size:20px;font-weight:bold;margin-bottom:6px">'+jobName+'</div>'+
-      '<div style="color:#555;margin-bottom:18px">ติดตั้งครบทั้ง <b>'+spotCount+' จุด</b> เรียบร้อยแล้ว</div>'+
-      aiHtml +
-      '<div style="background:#f7f7f7;border-radius:10px;padding:12px;font-size:13px;color:#666;margin-bottom:18px">'+
-        (salesEmail ? 'เมื่อกดยืนยัน ระบบจะสร้าง PDF รูปติดตั้ง แล้วส่งให้เซล<br><b style="color:#111">'+salesEmail+'</b><br>พร้อมลิงก์ให้ลูกค้าดูสถานะเรียลไทม์ (CC ถึงคุณด้วย)'
-                    : '⚠️ งานนี้<b>ไม่ได้ระบุอีเมลเซล</b> — เมื่อกดยืนยัน ระบบจะสร้าง PDF และส่งทุกอย่างมาที่อีเมลคุณ เพื่อส่งต่อเอง')+
-      '</div>'+
-      '<a href="'+confirmUrl+'" style="background:#2e7d32;color:#fff;padding:16px 36px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">✅ ยืนยัน — สร้าง PDF และส่งเซล</a>'+
-      '<div style="color:#999;font-size:11px;margin-top:14px">การสร้าง PDF ใช้เวลา 1-3 นาที กดแล้วรอหน้ายืนยันขึ้นก่อนปิดนะคะ</div>'+
-    '</div></div>';
-
-  MailApp.sendEmail({ to: CONFIG.ADMIN_EMAIL,
-    subject: '🎉 [งานครบ 100%] ' + jobName + ' — กดยืนยันเพื่อส่งเซล',
-    htmlBody: html });
+  if (!/\/exec$/.test(base)) base = 'https://script.google.com/macros/s/AKfycbwgA7ohAgzVS4C37dUQh0M3utU5l7Wb17GjURcSCkPXkAW-7XIyhgLbRq_iXl9mVtt0Sg/exec'; // กันลิงก์ผิดบางสภาพแวดล้อม
+  return base;
 }
 
-// ทำงานทุกวันราว 10:00 น. (ตั้งด้วย setupDailyEmailTrigger) — ส่งอีเมลงานครบที่อยู่ในคิว
-function sendQueuedCompletionEmails() {
+// ด่านรอผล AI ตอนแอดมินกดยืนยัน: ยังมีรูปติดธงค้าง / สั่งถ่ายใหม่ / ยังไม่ได้ตรวจ → เตือนก่อน พร้อมปุ่ม "ส่งเลย"
+function _aiGatePage(jobId, key, jobName, codes) {
+  var c = _aiJobCounts(jobId, codes);
+  if (!c.waiting && !c.reshoot && !c.unchecked) return null;
+  var lines = [];
+  if (c.waiting)   lines.push('⚠️ AI ติดธง <b>' + c.waiting + '</b> รูป ที่ยังไม่ได้ตัดสิน');
+  if (c.reshoot)   lines.push('📷 มีรูปที่สั่งให้ช่างถ่ายใหม่ <b>' + c.reshoot + '</b> รูป (ยังไม่มีรูปใหม่มาแทน)');
+  if (c.unchecked) lines.push('⏳ AI ยังไม่ได้ตรวจ <b>' + c.unchecked + '</b> รูป (เปิด Snaphub บนคอมเพื่อให้ตรวจ)');
+  var forceUrl = _webAppUrl() + '?action=approveSend&jobId=' + encodeURIComponent(jobId) + '&k=' + encodeURIComponent(key) + '&force=1';
+  return HtmlService.createHtmlOutput(
+    '<div style="font-family:Sarabun,Arial,sans-serif;max-width:480px;margin:50px auto;text-align:center;padding:20px">' +
+    '<div style="font-size:52px">🤖</div>' +
+    '<h2 style="color:#b25e00;margin:8px 0">ยังมีรูปรอตรวจ</h2>' +
+    '<div style="font-weight:bold;margin-bottom:12px">' + jobName + '</div>' +
+    '<div style="background:#fff4e5;color:#7a4300;border-radius:10px;padding:14px;line-height:1.8;text-align:left;font-size:14px">' + lines.join('<br>') + '</div>' +
+    '<p style="color:#555;line-height:1.7;margin-top:16px">แนะนำให้ตรวจใน Snaphub ให้เรียบร้อยก่อน แล้วกดปุ่มในอีเมลอีกครั้ง<br>ยังไม่ได้ส่งอะไรถึงเซลค่ะ</p>' +
+    '<a href="https://saranya-cmyk.github.io/installation-app/admin.html" target="_blank" style="background:#1a1a1a;color:#fff;padding:13px 26px;border-radius:10px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px">เปิด Snaphub ตรวจรูป</a>' +
+    '<a href="' + forceUrl + '" style="background:#fff;color:#b25e00;border:2px solid #b25e00;padding:11px 24px;border-radius:10px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px">ส่งเลย (รีบ)</a>' +
+    '<p style="color:#aaa;font-size:12px;margin-top:24px">กด "ส่งเลย" แล้วระบบจะบันทึกไว้ว่าส่งโดยข้ามการตรวจ</p></div>')
+    .setTitle('Plan B — ยังมีรูปรอตรวจ');
+}
+
+// ═══════════════ รายงานรายวัน (แทนการรอครบ 100%) ═══════════════
+// _Jobs คอลัมน์ 13 = reportedCodes (จุดที่ส่งเซลแล้ว) · 14 = pendingCodes (จุดรอบนี้ที่รอแอดมินยืนยัน)
+function _codesOf(v) {
+  try { var a = JSON.parse(v || '[]'); return Array.isArray(a) ? a.map(function(c){ return String(c).trim().toUpperCase(); }) : []; }
+  catch (e) { return []; }
+}
+function _installedByJob() {
+  var out = {}, ss = openNamedSS('_InstallLog', null);
+  if (!ss) return out;
+  var rows = ss.getActiveSheet().getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    var j = String(rows[i][0]);
+    (out[j] = out[j] || {})[String(rows[i][1]).trim().toUpperCase()] = true;
+  }
+  return out;
+}
+
+// ทำงานทุกวันราว 10:00 น. (ตั้งด้วย setupDailyReportTrigger) · กด Run เองเพื่อทดสอบได้
+function sendDailyReports() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return;
   try {
-    var ss = openNamedSS('_Jobs', null);
-    if (!ss) return;
-    var rows = ss.getActiveSheet().getDataRange().getValues();
+    var sh = openNamedSS('_Jobs', null).getActiveSheet();
+    if (!sh.getRange(1, 13).getValue()) sh.getRange(1, 13, 1, 2).setValues([['reportedCodes', 'pendingCodes']]);
+    var rows = sh.getDataRange().getValues();
+    var inst = _installedByJob();
     for (var i = 1; i < rows.length; i++) {
-      if (String(rows[i][11] || '').trim() !== 'queued') continue;
       try {
-        var jr = findJobRow(rows[i][0]);
-        if (!jr || String(jr.values[6]) === 'false') continue;
-        var spots = JSON.parse(jr.values[2] || '[]');
-        if (_jobDoneCount(jr.values[0], spots) < spots.length) {  // มีการลบรูปหลังเข้าคิว → ยังไม่ครบแล้ว
-          jr.sh.getRange(jr.row, 12).setValue('');
+        var id = String(rows[i][0] || '');
+        if (!id || String(rows[i][6]) === 'false') continue;
+        var spots = JSON.parse(rows[i][2] || '[]');
+        if (!spots.length) continue;
+        var spotSet = {};
+        spots.forEach(function(s){ spotSet[String(s.code).trim().toUpperCase()] = true; });
+        var done = Object.keys(inst[id] || {}).filter(function(c){ return spotSet[c]; });
+        var status = String(rows[i][11] || '').trim();
+        var reported = _codesOf(rows[i][12]), pending = _codesOf(rows[i][13]);
+        // งานที่ส่งเซลครบไปแล้วก่อนมีรายงานรายวัน → ถือว่าส่งทุกจุดที่ติดแล้ว ไม่ส่งซ้ำ
+        if (status.indexOf('sent') === 0 && !String(rows[i][12] || '').trim()) {
+          sh.getRange(i + 1, 13).setValue(JSON.stringify(done));
           continue;
         }
-        _sendCompletionEmail(jr, spots.length, _aiJobSummaryHtml(jr.values[0]));
-      } catch (e) { Logger.log('queued email ' + rows[i][0] + ': ' + e.message); }
+        var known = {};
+        reported.concat(pending).forEach(function(c){ known[c] = true; });
+        var fresh = done.filter(function(c){ return !known[c]; });
+        if (!fresh.length) continue;
+        var carried = pending.length;           // จุดจากรอบก่อนที่แอดมินยังไม่ได้ยืนยัน
+        pending = pending.concat(fresh);
+        sh.getRange(i + 1, 14).setValue(JSON.stringify(pending));
+        var jr = { sh: sh, row: i + 1, values: sh.getRange(i + 1, 1, 1, 14).getValues()[0] };
+        _sendDailyAdminEmail(jr, spots.length, reported.length, pending, carried);
+      } catch (err) { Logger.log('daily report ' + rows[i][0] + ': ' + err.message); }
     }
   } finally { lock.releaseLock(); }
 }
 
-// กด Run ฟังก์ชันนี้ครั้งเดียวใน Apps Script Editor เพื่อตั้งเวลาส่งทุกวัน 10:00 น.
-function setupDailyEmailTrigger() {
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction() === 'sendQueuedCompletionEmails') ScriptApp.deleteTrigger(t);
-  });
-  ScriptApp.newTrigger('sendQueuedCompletionEmails').timeBased()
-    .atHour(10).nearMinute(0).everyDays(1).inTimezone('Asia/Bangkok').create();
-  Logger.log('ตั้งเวลาส่งอีเมลงานครบ ทุกวันราว 10:00 น. เรียบร้อย');
+function _sendDailyAdminEmail(jr, total, reportedCount, pending, carried) {
+  var jobId = jr.values[0], jobName = jr.values[1] || '', media = jr.values[7] || '';
+  var salesEmail = String(jr.values[9] || '').trim();
+  var approveKey = genPortalKey() + genPortalKey();
+  jr.sh.getRange(jr.row, 11).setValue(approveKey);
+  jr.sh.getRange(jr.row, 12).setValue('pending');
+  var cum = reportedCount + pending.length, isDone = cum >= total;
+  var confirmUrl = _webAppUrl() + '?action=approveSend&jobId=' + encodeURIComponent(jobId) + '&k=' + approveKey;
+  var codeList = pending.slice(0, 40).join(', ') + (pending.length > 40 ? ' และอีก ' + (pending.length - 40) + ' จุด' : '');
+  var html = '<div style="font-family:Sarabun,Arial,sans-serif;max-width:600px;padding:24px">' +
+    '<div style="background:' + (isDone ? 'linear-gradient(135deg,#2e7d32,#66bb6a)' : 'linear-gradient(135deg,#1665c1,#4a90e2)') +
+      ';color:#fff;padding:20px;border-radius:12px 12px 0 0;text-align:center">' +
+      '<div style="font-size:30px">' + (isDone ? '🎉' : '📋') + '</div>' +
+      '<h2 style="margin:6px 0 0 0">' + (isDone ? 'งานติดตั้งครบ 100%' : 'รายงานติดตั้งประจำวัน') + '</h2></div>' +
+    '<div style="border:1px solid #e5e5e5;border-top:none;border-radius:0 0 12px 12px;padding:22px;text-align:center">' +
+      (media ? '<div style="color:#1665c1;font-weight:bold;margin-bottom:4px">📺 ' + media + '</div>' : '') +
+      '<div style="font-size:20px;font-weight:bold;margin-bottom:6px">' + jobName + '</div>' +
+      '<div style="color:#555;margin-bottom:6px">รอบนี้ติดตั้ง <b>' + pending.length + ' จุด</b> · สะสม <b>' + cum + '/' + total + '</b> จุด</div>' +
+      (carried ? '<div style="color:#b25e00;font-size:12px;margin-bottom:6px">(รวม ' + carried + ' จุดจากรอบก่อนที่ยังไม่ได้กดยืนยัน)</div>' : '') +
+      '<div style="color:#888;font-size:12px;margin-bottom:14px;word-break:break-word">' + codeList + '</div>' +
+      _aiJobSummaryHtml(jobId, pending) +
+      '<div style="background:#f7f7f7;border-radius:10px;padding:12px;font-size:13px;color:#666;margin-bottom:18px">' +
+        (salesEmail ? 'เมื่อกดยืนยัน ระบบจะส่ง PDF รูปของจุดรอบนี้ + ลิงก์เรียลไทม์ ให้เซล<br><b style="color:#111">' + salesEmail + '</b> (CC ถึงคุณ)'
+                    : '⚠️ งานนี้<b>ไม่ได้ระบุอีเมลเซล</b> — เมื่อกดยืนยัน ระบบจะส่งมาที่อีเมลคุณ เพื่อส่งต่อเอง') +
+      '</div>' +
+      '<a href="' + confirmUrl + '" style="background:#2e7d32;color:#fff;padding:16px 32px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">✅ ยืนยัน — ส่งรูปรอบนี้ให้เซล</a>' +
+      '<div style="color:#999;font-size:11px;margin-top:14px">การสร้าง PDF ใช้เวลา 1-3 นาที กดแล้วรอหน้ายืนยันขึ้นก่อนปิดนะคะ · ใช้ปุ่มจากอีเมลฉบับล่าสุดเท่านั้น</div>' +
+    '</div></div>';
+  MailApp.sendEmail({ to: CONFIG.ADMIN_EMAIL,
+    subject: (isDone ? '🎉 [งานครบ 100%] ' : '📋 [รายงานประจำวัน] ') + jobName + ' — +' + pending.length + ' จุด (' + cum + '/' + total + ') กดยืนยันเพื่อส่งเซล',
+    htmlBody: html });
 }
+
+// กด Run ฟังก์ชันนี้ครั้งเดียวใน Apps Script Editor เพื่อตั้งเวลาส่งรายงานทุกวันราว 10:00 น.
+function setupDailyReportTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    var h = t.getHandlerFunction();
+    if (h === 'sendDailyReports' || h === 'sendQueuedCompletionEmails') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('sendDailyReports').timeBased()
+    .atHour(10).nearMinute(0).everyDays(1).inTimezone('Asia/Bangkok').create();
+  Logger.log('ตั้งเวลาส่งรายงานประจำวัน ทุกวันราว 10:00 น. เรียบร้อย');
+}
+
 
 /** แอดมินกดปุ่มยืนยันจากอีเมล → สร้าง PDF → ส่งเซล + ลิงก์ Portal → ปิดจ็อบ */
 function approveSend(p) {
@@ -1899,13 +1968,24 @@ function approveSend(p) {
       return page('ส่งไปแล้วค่ะ', 'งานนี้ถูกยืนยันและส่งให้เซลไปแล้วเมื่อ ' + sentStatus.replace('sent ','') + '<br>ไม่ต้องส่งซ้ำค่ะ', true);
 
     var jobId = jr.values[0], jobName = jr.values[1] || '', media = jr.values[7] || '';
+    var pending = _codesOf(jr.values[13]), reported = _codesOf(jr.values[12]);
+    if (!pending.length) return page('ไม่มีจุดใหม่รอส่ง', 'รอบนี้ไม่มีจุดติดตั้งใหม่ที่รอส่งเซลค่ะ', true);
+    var forced = String(p.force || '') === '1';
+    if (!forced) {
+      var gate = null;
+      try { gate = _aiGatePage(jobId, p.k, jobName, pending); } catch (e) { gate = null; } // ด่าน AI มีปัญหา → ไม่ขวางการส่ง
+      if (gate) return gate;
+    }
     var dateStart = jr.values[4] ? String(jr.values[4]) : '';
     var dateEnd = jr.values[5] ? String(jr.values[5]) : '';
     var salesEmail = String(jr.values[9] || '').trim();
     var spots = JSON.parse(jr.values[2] || '[]');
 
     // 1) สร้าง PDF รูปติดตั้ง
-    var codes = spots.map(function(s){ return { code: s.code, address: s.address || '', product: s.product || '' }; });
+    var pendSet = {}; pending.forEach(function(c){ pendSet[c] = true; });
+    var codes = spots.filter(function(s){ return pendSet[String(s.code).trim().toUpperCase()]; })
+      .map(function(s){ return { code: s.code, address: s.address || '', product: s.product || '' }; });
+    var cum = reported.length + pending.length, isDone = cum >= spots.length;
     var pdfRes = JSON.parse(createSalesPDF({ jobName: jobName, media: media,
       dateStart: dateStart, dateEnd: dateEnd, codes: codes }).getContent());
     if (!pdfRes.success) return page('สร้าง PDF ไม่สำเร็จ', (pdfRes.error||'') + '<br>ลองกดปุ่มในอีเมลอีกครั้งค่ะ', false);
@@ -1919,11 +1999,11 @@ function approveSend(p) {
     var noSales = !salesEmail;
     var to = noSales ? CONFIG.ADMIN_EMAIL : salesEmail;
     var mailHtml = '<div style="font-family:Sarabun,Arial,sans-serif;max-width:620px;padding:24px">'+
-      '<h2 style="margin:0 0 4px 0">📦 งานติดตั้งเสร็จสมบูรณ์ พร้อมส่งมอบ</h2>'+
+      '<h2 style="margin:0 0 4px 0">'+(isDone ? '📦 งานติดตั้งเสร็จสมบูรณ์ พร้อมส่งมอบ' : '📋 อัปเดตงานติดตั้งประจำวัน')+'</h2>'+
       (media ? '<div style="color:#1665c1;font-weight:bold">📺 '+media+'</div>' : '')+
       '<div style="font-size:19px;font-weight:bold;margin:4px 0 14px 0">'+jobName+'</div>'+
       (noSales ? '<p style="color:#c62828;font-weight:bold">⚠️ งานนี้ไม่ได้ระบุอีเมลเซล — กรุณาส่งต่อให้เซลผู้ดูแลเองค่ะ</p>' : '')+
-      '<p style="color:#555">ติดตั้งครบทั้ง <b>'+spots.length+' จุด</b> เรียบร้อยแล้ว เอกสารส่งมอบตามนี้ค่ะ</p>'+
+      '<p style="color:#555">รอบนี้ติดตั้ง <b>'+pending.length+' จุด</b> · สะสม <b>'+cum+'/'+spots.length+' จุด</b>'+(isDone ? ' — <b style="color:#2e7d32">ครบแล้ว</b>' : '')+'<br>PDF ด้านล่างเป็นรูปของจุดรอบนี้ ส่วนลิงก์เรียลไทม์ดูได้ทุกจุดค่ะ</p>'+
       '<div style="margin:18px 0">'+
         '<a href="'+(pdfRes.pdfUrl||pdfRes.docUrl)+'" style="background:#c62828;color:#fff;padding:13px 22px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block;margin:0 8px 8px 0">📄 ดาวน์โหลด PDF รูปติดตั้ง</a>'+
         '<a href="'+portalUrl+'" style="background:#2e7d32;color:#fff;padding:13px 22px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block;margin-bottom:8px">🔗 ลิงก์สถานะเรียลไทม์ (ส่งให้ลูกค้าได้เลย)</a>'+
@@ -1933,17 +2013,20 @@ function approveSend(p) {
         '<span style="color:#888;word-break:break-all">'+portalUrl+'</span>'+
       '</div></div>';
     var mailOpts = { to: to,
-      subject: '📦 [ส่งมอบงาน] ' + (media ? media + ' · ' : '') + jobName + ' — ครบ ' + spots.length + ' จุด',
+      subject: (isDone ? '📦 [ส่งมอบงาน] ' : '📋 [อัปเดตรายวัน] ') + (media ? media + ' · ' : '') + jobName +
+        (isDone ? ' — ครบ ' + spots.length + ' จุด' : ' — +' + pending.length + ' จุด (' + cum + '/' + spots.length + ')'),
       htmlBody: mailHtml };
     if (!noSales) mailOpts.cc = CONFIG.ADMIN_EMAIL;
     MailApp.sendEmail(mailOpts);
 
     // 4) ปิดสถานะ
     var doneStamp = 'sent ' + Utilities.formatDate(new Date(),'Asia/Bangkok','dd/MM/yyyy HH:mm');
+    if (forced) doneStamp += ' (ข้ามตรวจ AI)';  // บันทึกว่าแอดมินกด "ส่งเลย" โดยยังมีรูปค้างตรวจ
     jr.sh.getRange(jr.row, 12).setValue(doneStamp);
+    jr.sh.getRange(jr.row, 13, 1, 2).setValues([[JSON.stringify(reported.concat(pending)), '[]']]); // ย้ายจุดรอบนี้ → ส่งแล้ว
 
     return page('ส่งเรียบร้อยแล้ว 🎉',
-      'งาน <b>'+jobName+'</b><br>PDF รูปติดตั้ง ('+(pdfRes.photoCount||0)+' รูป) + ลิงก์เรียลไทม์<br>ส่งถึง <b>'+to+'</b> แล้ว'+
+      'งาน <b>'+jobName+'</b> · รอบนี้ '+pending.length+' จุด (สะสม '+cum+'/'+spots.length+')<br>PDF รูปติดตั้ง ('+(pdfRes.photoCount||0)+' รูป) + ลิงก์เรียลไทม์<br>ส่งถึง <b>'+to+'</b> แล้ว'+
       (noSales ? '<br><span style="color:#c62828">(งานนี้ไม่มีอีเมลเซล จึงส่งเข้าอีเมลแอดมิน)</span>' : ' (CC ถึงแอดมิน)'), true);
   } catch(err) {
     return page('เกิดข้อผิดพลาด', err.message + '<br>ลองกดปุ่มในอีเมลอีกครั้ง หรือติดต่อผู้ดูแลระบบค่ะ', false);
