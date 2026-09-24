@@ -1153,6 +1153,7 @@ function renderOneJobCard(j) {
         '<button class="copy-btn btn-ghost h-edit" onclick="editJobDates(\'' + j.id + '\')">📅 แก้ไข</button>' +
         '<button class="copy-btn btn-ghost h-pdf" onclick="createPDF(\'' + j.id + '\',this)">📄 PDF</button>' +
         (getJobFolderUrl(j.id) ? '<a class="copy-btn btn-ghost h-drive" href="' + getJobFolderUrl(j.id) + '" target="_blank">📁 Drive</a>' : '') +
+        '<button class="copy-btn btn-ghost h-copy" onclick="aiCheckJob(\'' + j.id + '\',this)">🤖 ตรวจรูป AI</button>' +
         '<button class="copy-btn btn-hero" data-jobid="' + j.id + '" onclick="copyPortalLink(this)">🔗 ลูกค้า</button>' +
         '<button class="copy-btn btn-ghost h-line" data-jobid="' + j.id + '" onclick="sharePortalToLine(this)">💬 ส่งลิงก์</button>' +
       '</div>' +
@@ -2387,5 +2388,121 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
+<!-- ═══════════ AI ตรวจคุณภาพรูป (CLIP รันในเบราว์เซอร์แอดมิน · 0 บาท · รูปไม่ออกนอกเครื่อง) ═══════════ -->
+<style>
+#aiqOverlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px}
+#aiqOverlay.open{display:flex}
+#aiqBox{background:#141414;border:1px solid #333;border-radius:14px;width:100%;max-width:620px;max-height:86vh;display:flex;flex-direction:column;color:#f0f0f0;font-family:var(--f,sans-serif)}
+#aiqHead{padding:14px 18px;border-bottom:1px solid #2a2a2a;display:flex;justify-content:space-between;align-items:center;font-weight:700}
+#aiqClose{cursor:pointer;color:#888;font-size:18px}
+#aiqBody{padding:14px 18px;overflow-y:auto;font-size:13px}
+#aiqStatus{color:#bbb;margin-bottom:8px}
+#aiqBarWrap{height:6px;background:#2a2a2a;border-radius:3px;overflow:hidden;margin-bottom:12px}
+#aiqBar{height:100%;width:0;background:#c8f542;transition:width .2s}
+.aiqItem{display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid #222}
+.aiqItem img{width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid #333}
+.aiqTag{display:inline-block;padding:2px 8px;border-radius:10px;background:#3a2a00;color:#ffb347;font-size:11px;margin-top:3px}
+.aiqNote{color:#777;font-size:11px;margin-top:10px;line-height:1.5}
+</style>
+<div id="aiqOverlay"><div id="aiqBox">
+  <div id="aiqHead"><span>🤖 AI ตรวจคุณภาพรูป</span><span id="aiqClose" onclick="aiqCloseBox()">✕</span></div>
+  <div id="aiqBody">
+    <div id="aiqStatus">กำลังเตรียม...</div>
+    <div id="aiqBarWrap"><div id="aiqBar"></div></div>
+    <div id="aiqResults"></div>
+    <div class="aiqNote">AI ทำหน้าที่ช่วยคัดกรองเท่านั้น ไม่ได้ตัดสินแทนคน — รูปที่ติดธงควรเปิดดูด้วยตาก่อนตัดสินใจ · วิเคราะห์ในเครื่องนี้ทั้งหมด รูปไม่ถูกส่งไปบริการ AI ภายนอก · ครั้งแรกต้องโหลดตัวโมเดล (~100 MB) หลังจากนั้นเครื่องจำไว้ใช้ต่อได้ทันที</div>
+  </div>
+</div></div>
+<script>
+// ป้ายคำอธิบายให้ CLIP เทียบ (ภาษาอังกฤษแม่นกว่าสำหรับโมเดลนี้) → เหตุผลภาษาไทยที่โชว์ให้แอดมิน
+var AIQ_LABELS = [
+  { en: 'a clear, sharp, well-lit photo of an outdoor advertising sign', th: null },
+  { en: 'a blurry, out of focus photo', th: 'รูปเบลอ / ไม่ชัด' },
+  { en: 'a very dark photo taken at night with lights off', th: 'รูปมืด / อาจไฟป้ายดับ' },
+  { en: 'a tilted, crooked photo taken at a steep angle', th: 'ถ่ายเอียง / ป้ายอาจติดไม่ตรง' }
+];
+var AIQ_MIN_SCORE = 0.40;   // ต้องมั่นใจอย่างน้อยเท่านี้ถึงจะติดธง กันเตือนมั่วจนแอดมินเมิน
+var _aiqPipe = null, _aiqBusy = false;
+
+function aiqCloseBox(){ document.getElementById('aiqOverlay').classList.remove('open'); }
+function aiqSet(msg, pct){
+  document.getElementById('aiqStatus').textContent = msg;
+  if (pct != null) document.getElementById('aiqBar').style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+
+function aiqLoadModel(){
+  if (_aiqPipe) return Promise.resolve(_aiqPipe);
+  aiqSet('กำลังโหลดโมเดล AI (ครั้งแรกเท่านั้น)...', 0);
+  return import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3').then(function(T){
+    return T.pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32', {
+      progress_callback: function(p){
+        if (p && p.status === 'progress' && p.progress != null)
+          aiqSet('กำลังโหลดโมเดล AI... ' + Math.round(p.progress) + '%', p.progress);
+      }
+    });
+  }).then(function(pipe){ _aiqPipe = pipe; return pipe; });
+}
+
+function aiqClassify(pipe, dataUrl){
+  return pipe(dataUrl, AIQ_LABELS.map(function(l){ return l.en; }), { hypothesis_template: '{}' })
+    .then(function(out){
+      var top = out[0];
+      var lab = AIQ_LABELS.find(function(l){ return l.en === top.label; });
+      if (!lab || !lab.th || top.score < AIQ_MIN_SCORE) return null;   // รูปปกติ หรือ AI ไม่มั่นใจพอ
+      return { reason: lab.th, score: top.score };
+    });
+}
+
+function aiCheckJob(jobId, btn){
+  if (_aiqBusy) return;
+  var log = (typeof codeLog !== 'undefined' && codeLog[jobId]) ? codeLog[jobId] : {};
+  var codes = Object.keys(log);
+  document.getElementById('aiqResults').innerHTML = '';
+  document.getElementById('aiqOverlay').classList.add('open');
+  if (!codes.length){ aiqSet('งานนี้ยังไม่มีรูปเข้าระบบ', 0); return; }
+
+  _aiqBusy = true;
+  var checked = 0, flagged = [];
+  aiqLoadModel().then(function(pipe){
+    var i = 0;
+    function next(){
+      if (i >= codes.length) return Promise.resolve();
+      var code = codes[i++];
+      aiqSet('กำลังตรวจจุด ' + code + ' (' + i + '/' + codes.length + ')', i / codes.length * 100);
+      return fetch(SCRIPT_URL + '?action=getPhotoThumbs&code=' + encodeURIComponent(code))
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+          var thumbs = res.thumbs || [];
+          return thumbs.reduce(function(p, t){
+            return p.then(function(){
+              return aiqClassify(pipe, t.data).then(function(flag){
+                checked++;
+                if (flag) flagged.push({ code: code, id: t.id, data: t.data, reason: flag.reason, score: flag.score });
+              });
+            });
+          }, Promise.resolve());
+        })
+        .catch(function(){ /* จุดนี้ดึงรูปไม่ได้ ข้ามไปจุดถัดไป */ })
+        .then(next);
+    }
+    return next();
+  }).then(function(){
+    aiqSet('ตรวจแล้ว ' + checked + ' รูป · ควรตรวจซ้ำ ' + flagged.length + ' รูป', 100);
+    var box = document.getElementById('aiqResults');
+    if (!flagged.length){
+      box.innerHTML = '<div style="color:#c8f542;padding:10px 0">✓ ไม่พบรูปที่น่าสงสัย</div>';
+      return;
+    }
+    box.innerHTML = flagged.map(function(f){
+      return '<div class="aiqItem"><a href="https://drive.google.com/file/d/' + f.id + '/view" target="_blank"><img src="' + f.data + '"></a>' +
+        '<div><b>' + f.code + '</b><br><span class="aiqTag">⚠️ ' + f.reason + '</span>' +
+        '<div style="color:#777;font-size:11px;margin-top:3px">ความมั่นใจของ AI ' + Math.round(f.score * 100) + '%</div></div></div>';
+    }).join('');
+  }).catch(function(err){
+    aiqSet('ใช้งาน AI ไม่ได้: ' + (err && err.message ? err.message : err) + ' — ลองใช้ Chrome/Edge เวอร์ชันล่าสุด หรือตรวจว่าเครือข่ายบริษัทอนุญาต cdn.jsdelivr.net และ huggingface.co', null);
+  }).then(function(){ _aiqBusy = false; });
+}
+</script>
+
 </body>
 </html>
