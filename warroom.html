@@ -40,6 +40,7 @@ body { background:var(--bg); color:var(--tx); font-family:var(--f); overflow:hid
 .panel .tt { font-size:1.8vh; color:var(--mu); margin-bottom:.8vh; flex:none; }
 #map { flex:1; border-radius:1vh; background:#101318; min-height:0; }
 .leaflet-container { background:#101318; font-family:var(--f); }
+.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9); } /* แผนที่ OSM สว่าง → กลับสีให้เป็นธีมมืด */
 
 .side { display:flex; flex-direction:column; gap:1vh; min-height:0; }
 .side .panel { flex:1; overflow:hidden; }
@@ -147,7 +148,7 @@ var map = null, markerLayer = null, popLayer = null;
 if (mapOK) {
   try {
     map = L.map('map', { zoomControl:false, attributionControl:false }).setView([13.7563, 100.5018], 11);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map); // CARTO ต้องใช้ API key ตั้งแต่ ส.ค. 2569 → ใช้ OSM ที่ไม่ต้องมี key
     markerLayer = L.layerGroup().addTo(map);
     popLayer = L.layerGroup().addTo(map); // รูปใหม่เด้งใหญ่ชั่วคราว
   } catch(e) { mapOK = false; }
