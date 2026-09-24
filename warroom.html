@@ -413,5 +413,269 @@ function refresh() {
 refresh();
 setInterval(refresh, POLL_MS);
 </script>
+
+<!-- ═══════════ AI ตรวจรูปอัตโนมัติ (CLIP + Tesseract OCR รันในเครื่องนี้ · 0 บาท · รูปไม่ออกนอกบริษัท) ═══════════ -->
+<style>
+#aiqChip{position:fixed;left:2vh;bottom:2vh;z-index:500;background:var(--card,#161a20);border:1px solid #2a2e35;color:var(--tx,#e8e8e8);
+  border-radius:3vh;padding:1vh 1.6vh;font-size:1.6vh;display:none;box-shadow:0 4px 14px rgba(0,0,0,.4);font-family:var(--f,sans-serif);max-width:70vw}
+#aiqChip.warn{border-color:#ffb347;color:#ffb347}
+</style>
+<div id="aiqChip"></div>
+<script>
+var AIQ_LABELS = [   // min = ความมั่นใจขั้นต่ำก่อนติดธง (สูง = เตือนเฉพาะกรณีชัดเจน)
+  { en: 'a clear, sharp, well-lit photo of an outdoor advertising sign', th: null },
+  { en: 'a blurry, out of focus photo', th: 'รูปเบลอมาก', min: 0.65 },          // เบลอเล็กน้อยรับได้
+  { en: 'a very dark photo taken at night with lights off', th: 'รูปมืด / อาจไฟป้ายดับ', min: 0.45 },
+  { en: 'a tilted, crooked photo taken at a steep angle', th: null }            // เอียงรับได้ ไม่เตือน (คงไว้เพื่อไม่ให้รูปเอียงถูกจัดเป็นเบลอ)
+];
+var AIQ_AUTO = !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent); // จอ War Room ตรวจเองเสมอ (มือถือไม่ตรวจ กันโหลดโมเดลผ่านเน็ตมือถือ)
+var _aiqPipe = null, _aiqBusy = false, _aiqState = { pending: [], flags: [], stats: {} }, _aiqJob = null, _aiqThumbCache = {};
+
+function aiqChip(text, warn) {
+  var c = document.getElementById('aiqChip');
+  if (!text) { c.style.display = 'none'; return; }
+  c.textContent = text; c.className = warn ? 'warn' : ''; c.style.display = 'block';
+}
+function aiqLoadModel() {
+  if (_aiqPipe) return Promise.resolve(_aiqPipe);
+  aiqChip('🤖 กำลังโหลดโมเดล AI...');
+  return import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3').then(function(T) {
+    return T.pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32', {
+      progress_callback: function(p) {
+        if (p && p.status === 'progress' && p.progress != null) aiqChip('🤖 กำลังโหลดโมเดล AI ' + Math.round(p.progress) + '%');
+      }
+    });
+  }).then(function(pipe) { _aiqPipe = pipe; return pipe; });
+}
+function aiqClassify(pipe, dataUrl) {
+  return pipe(dataUrl, AIQ_LABELS.map(function(l){ return l.en; }), { hypothesis_template: '{}' }).then(function(out) {
+    var top = out[0], lab = AIQ_LABELS.find(function(l){ return l.en === top.label; });
+    var flag = !!(lab && lab.th && top.score >= lab.min);
+    return { flag: flag, reason: flag ? lab.th : '', score: top.score };
+  });
+}
+
+// ═══════ OCR อ่าน Code บนป้าย (Tesseract รันในเครื่องนี้ · 0 บาท · รูปไม่ออกนอกบริษัท) ═══════
+// หาบรรทัดตัวอักษรในภาพ (connected components → จัดกลุ่มเป็นบรรทัด) แล้วตัดออกมาทีละบรรทัดเพื่ออ่านแบบ psm 7
+function aiqGray(img){
+  var W=img.width,H=img.height,c=document.createElement('canvas'); c.width=W; c.height=H; var x=c.getContext('2d'); x.drawImage(img,0,0);
+  var p=x.getImageData(0,0,W,H).data, g=new Uint8Array(W*H), hist=new Array(256).fill(0);
+  for (var i=0,j=0;i<p.length;i+=4,j++){ var v=(p[i]*0.299+p[i+1]*0.587+p[i+2]*0.114)|0; g[j]=v; hist[v]++; }
+  var n=W*H,lo=0,hi=255,acc=0; while(acc+hist[lo]<n*0.01) acc+=hist[lo++]; acc=0; while(acc+hist[hi]<n*0.01) acc+=hist[hi--];
+  var r=Math.max(1,hi-lo); for (j=0;j<n;j++) g[j]=Math.max(0,Math.min(255,((g[j]-lo)*255/r)|0));
+  return {W:W,H:H,g:g};
+}
+function aiqLineBoxes(G, R){
+  var W=G.W,H=G.H,g=G.g,n=W*H,boxes=[];
+  // เกณฑ์ขาวดำแบบปรับตามพื้นที่ (ค่าเฉลี่ยในหน้าต่าง 31px) — ทนแสงไม่สม่ำเสมอ
+  var I=new Float64Array((W+1)*(H+1));
+  for (var y=0;y<H;y++){ var s=0; for (var x=0;x<W;x++){ s+=g[y*W+x]; I[(y+1)*(W+1)+x+1]=I[y*(W+1)+x+1]+s; } }
+  [0,1].forEach(function(inv){
+    var b=new Uint8Array(n);
+    for (var y=0;y<H;y++) for (var x=0;x<W;x++){
+      var x0=Math.max(0,x-R),y0=Math.max(0,y-R),x1=Math.min(W,x+R+1),y1=Math.min(H,y+R+1);
+      var m=(I[y1*(W+1)+x1]-I[y0*(W+1)+x1]-I[y1*(W+1)+x0]+I[y0*(W+1)+x0])/((x1-x0)*(y1-y0));
+      var v=g[y*W+x]; b[y*W+x] = inv ? (v>m+18?1:0) : (v<m-18?1:0);
+    }
+    // ติดป้ายชิ้นส่วนที่ต่อกัน
+    var lab=new Int32Array(n).fill(-1), comps=[], stack=[];
+    for (var i=0;i<n;i++){ if(!b[i]||lab[i]>=0) continue; var id=comps.length, c={x0:1e9,y0:1e9,x1:-1,y1:-1,cnt:0}; lab[i]=id; stack.push(i);
+      while(stack.length){ var k=stack.pop(), kx=k%W, ky=(k/W)|0; c.cnt++; if(kx<c.x0)c.x0=kx; if(kx>c.x1)c.x1=kx; if(ky<c.y0)c.y0=ky; if(ky>c.y1)c.y1=ky;
+        for (var dy=-1;dy<=1;dy++) for (var dx=-1;dx<=1;dx++){ var nx=kx+dx, ny=ky+dy; if(nx<0||ny<0||nx>=W||ny>=H) continue; var q=ny*W+nx; if(b[q]&&lab[q]<0){lab[q]=id;stack.push(q);} } }
+      comps.push(c); }
+    var ch=comps.filter(function(c){ var w=c.x1-c.x0+1,h=c.y1-c.y0+1; return h>=10 && h<=H/4 && w<=h*4 && w>=2 && c.cnt>=20 && c.cnt/(w*h)>0.08 && c.cnt/(w*h)<0.95; });
+    ch.sort(function(a,b){return a.x0-b.x0;});
+    // จัดกลุ่มเป็นบรรทัด: สูงใกล้กัน อยู่แนวเดียวกัน ห่างกันไม่มาก (ต่อทีละตัว รองรับบรรทัดเอียง)
+    var par=ch.map(function(_,i){return i;}); function f(i){ while(par[i]!==i){par[i]=par[par[i]];i=par[i];} return i; }
+    for (var a=0;a<ch.length;a++){ var A=ch[a],ha=A.y1-A.y0+1,ca=(A.y0+A.y1)/2;
+      for (var bb=a+1;bb<ch.length;bb++){ var B=ch[bb]; if (B.x0-A.x1>ha*1.6) break; var hb=B.y1-B.y0+1, cb=(B.y0+B.y1)/2;
+        if (hb/ha<0.6||hb/ha>1.65) continue; if (Math.abs(ca-cb)>Math.max(ha,hb)*0.6) continue; par[f(bb)]=f(a); } }
+    var groups={}; ch.forEach(function(c,i){ var r=f(i); (groups[r]=groups[r]||[]).push(c); });
+    Object.keys(groups).forEach(function(k){ var gs=groups[k]; var gw=Math.max.apply(null,gs.map(function(c){return c.x1;}))-Math.min.apply(null,gs.map(function(c){return c.x0;}));
+      if (gs.length<3 && !(gs.length===2 && gw>=gs[0].y1-gs[0].y0)) return;
+      var bx={x0:1e9,y0:1e9,x1:-1,y1:-1}, hs=[]; gs.forEach(function(c){ bx.x0=Math.min(bx.x0,c.x0); bx.y0=Math.min(bx.y0,c.y0); bx.x1=Math.max(bx.x1,c.x1); bx.y1=Math.max(bx.y1,c.y1); hs.push(c.y1-c.y0+1); });
+      hs.sort(function(a,b){return a-b;}); bx.h=hs[hs.length>>1]; bx.n=gs.length; bx.inv=inv;
+      var mx=0,my=0; gs.forEach(function(c){ mx+=(c.x0+c.x1)/2; my+=(c.y0+c.y1)/2; }); mx/=gs.length; my/=gs.length;
+      var sxy=0,sxx=0; gs.forEach(function(c){ var dx=(c.x0+c.x1)/2-mx, dy=(c.y0+c.y1)/2-my; sxy+=dx*dy; sxx+=dx*dx; });
+      bx.ang = sxx>0 ? Math.atan(sxy/sxx)*180/Math.PI : 0; if (Math.abs(bx.ang)>25) bx.ang=0;
+      if (Math.abs(bx.ang)>2) bx.h = Math.max(8, Math.round(bx.h*Math.cos(bx.ang*Math.PI/180)*0.85)); // ความสูงตัวอักษรจริงเมื่อเอียง
+      boxes.push(bx); });
+  });
+  return boxes;
+}
+// หาบรรทัด 2 ขนาดหน้าต่าง (ตัวเล็ก/ตัวใหญ่) แล้วตัดกล่องที่ซ้ำกันออก
+function aiqAllLines(G){
+  var all=aiqLineBoxes(G,15).concat(aiqLineBoxes(G,40)), out=[];
+  all.forEach(function(b){ var dup=out.some(function(o){ var ix=Math.max(0,Math.min(o.x1,b.x1)-Math.max(o.x0,b.x0)), iy=Math.max(0,Math.min(o.y1,b.y1)-Math.max(o.y0,b.y0));
+    var a1=(b.x1-b.x0)*(b.y1-b.y0), a2=(o.x1-o.x0)*(o.y1-o.y0); return o.inv===b.inv && ix*iy>0.7*Math.min(a1,a2); }); if(!dup) out.push(b); });
+  return out.slice(0,40);
+}
+// ตัดบรรทัดออกมา + ขยายให้ตัวอักษรสูง ~48px + ทำให้ตัวหนังสือดำบนพื้นขาวเสมอ
+function aiqCropLine(G, bx){
+  var pad=Math.round(bx.h*0.5), x0=Math.max(0,bx.x0-pad), y0=Math.max(0,bx.y0-pad), x1=Math.min(G.W-1,bx.x1+pad), y1=Math.min(G.H-1,bx.y1+pad);
+  var w=x1-x0+1, h=y1-y0+1, s=Math.max(1, Math.min(4, 48/bx.h));
+  var c=document.createElement('canvas'); c.width=Math.round(w*s); c.height=Math.round(h*s); var x=c.getContext('2d');
+  var src=document.createElement('canvas'); src.width=w; src.height=h; var sx=src.getContext('2d'), id=sx.createImageData(w,h);
+  for (var yy=0;yy<h;yy++) for (var xx=0;xx<w;xx++){ var v=G.g[(y0+yy)*G.W+x0+xx]; if (bx.inv) v=255-v; var o=(yy*w+xx)*4; id.data[o]=id.data[o+1]=id.data[o+2]=v; id.data[o+3]=255; }
+  sx.putImageData(id,0,0); x.fillStyle='#fff'; x.fillRect(0,0,c.width,c.height); x.imageSmoothingQuality='high';
+  if (bx.ang && Math.abs(bx.ang)>2){ x.translate(c.width/2,c.height/2); x.rotate(-bx.ang*Math.PI/180); x.translate(-c.width/2,-c.height/2); }
+  x.drawImage(src,0,0,c.width,c.height); return c;
+}
+
+// ตรรกะเทียบ Code — ตัวเดียวกับที่จะใส่ใน admin.html
+function aiqCanon(s){
+  return String(s||'').toUpperCase().replace(/[\s\-_.,:;·\/\\|'"`~()\[\]{}]/g,'')
+    .replace(/O/g,'0').replace(/[IL|]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2').replace(/G/g,'6').replace(/Q/g,'0');
+}
+function aiqLev(a,b){ var m=a.length,n=b.length,d=[]; for(var i=0;i<=m;i++){d[i]=[i];} for(var j=1;j<=n;j++) d[0][j]=j;
+  for(i=1;i<=m;i++) for(j=1;j<=n;j++) d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1)); return d[m][n]; }
+// พบ code ในข้อความไหม: ตรงเป๊ะ หรือ (code ยาว ≥5) ผิดได้ 1 ตัวอักษร
+function aiqFind(textCanon, code){
+  var c=aiqCanon(code); if(!c) return false;
+  if (textCanon.indexOf(c)>-1) return true;
+  if (c.length<5) return false;
+  for (var L=c.length-1; L<=c.length+1; L++) for (var i=0;i+L<=textCanon.length;i++) if (aiqLev(textCanon.substr(i,L),c)<=1) return true;
+  return false;
+}
+// ตัดสินผลของ 1 จุด จากข้อความทุกบรรทัดที่อ่านได้
+// ลำดับ: ตรงเป๊ะกับ Code จุดนี้ → ตรงเป๊ะกับ Code จุดอื่น (ติดผิดป้าย) → ใกล้เคียง (ผิด 1 ตัว) แบบไม่กำกวม → อ่านไม่ได้
+function aiqNear(textCanon, c){ if (c.length<5) return false;
+  for (var L=c.length-1; L<=c.length+1; L++) for (var i=0;i+L<=textCanon.length;i++) if (aiqLev(textCanon.substr(i,L),c)<=1) return true; return false; }
+function aiqJudge(texts, expected, known){
+  var T=texts.map(aiqCanon), ce=aiqCanon(expected);
+  var others=(known||[]).map(function(k){ return {code:k, c:aiqCanon(k)}; })
+    .filter(function(o){ return o.c.length>=4 && o.c!==ce && ce.indexOf(o.c)<0 && o.c.indexOf(ce)<0; });
+  var has=function(c){ return T.some(function(t){ return t.indexOf(c)>-1; }); };
+  var near=function(c){ return T.some(function(t){ return aiqNear(t,c); }); };
+  if (ce && has(ce)) return { ocr:'match' };
+  var exactOther=others.find(function(o){ return has(o.c); });
+  if (exactOther) return { ocr:'other', found:exactOther.code };
+  var nearMe = ce.length>=5 && near(ce);
+  var nearOther = others.filter(function(o){ return o.c.length>=6 && near(o.c); });
+  if (nearMe && !nearOther.length) return { ocr:'match' };
+  if (!nearMe && nearOther.length===1) return { ocr:'other', found:nearOther[0].code };
+  return { ocr:'none' };   // ไม่เจอ หรือคลุมเครือ → ไม่เตือน ไม่ยืนยัน
+}
+
+var _aiqOcr = {}, _aiqTessP = null;
+function aiqLoadTess() {
+  if (_aiqTessP) return _aiqTessP;
+  _aiqTessP = new Promise(function(res, rej) {
+    if (window.Tesseract) return res(window.Tesseract);
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload = function(){ res(window.Tesseract); }; s.onerror = function(){ _aiqTessP = null; rej(new Error('โหลดตัวอ่าน Code ไม่สำเร็จ')); };
+    document.head.appendChild(s);
+  });
+  return _aiqTessP;
+}
+// Code ภาษาอังกฤษ/ตัวเลข → โหมดอังกฤษ อ่านเฉพาะ A-Z 0-9 - (กันอ่านเป็นตัวไทย) · Code มีตัวไทย → โหมดไทย+อังกฤษ
+function aiqOcrWorker(thai) {
+  var k = thai ? 'tha' : 'eng';
+  if (_aiqOcr[k]) return _aiqOcr[k];
+  aiqChip('🤖 กำลังโหลดตัวอ่าน Code (' + (thai ? 'ไทย' : 'อังกฤษ') + ')...');
+  _aiqOcr[k] = aiqLoadTess().then(function(T) {
+    return T.createWorker(thai ? ['tha', 'eng'] : 'eng', 1);
+  }).then(function(w) {
+    var prm = { tessedit_pageseg_mode: '7' };
+    if (!thai) prm.tessedit_char_whitelist = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
+    return w.setParameters(prm).then(function(){ return w; });
+  });
+  _aiqOcr[k].catch(function(){ _aiqOcr[k] = null; });
+  return _aiqOcr[k];
+}
+// หาบรรทัดตัวอักษรในรูป → หมุนให้ตรง → อ่านทีละบรรทัด → เทียบกับ Code ของจุดนี้และ Code อื่นในระบบ
+function aiqReadCode(dataUrl, expected, known) {
+  if (!expected) return Promise.resolve({ ocr: 'none' });
+  var thai = /[\u0E00-\u0E7F]/.test(expected);
+  var img = new Image(); img.src = dataUrl;
+  return img.decode().then(function() { return aiqOcrWorker(thai); }).then(function(worker) {
+    var G = aiqGray(img), boxes = aiqAllLines(G), texts = [], i = 0;
+    function next() {
+      if (i >= boxes.length) return Promise.resolve(aiqJudge(texts, expected, known));
+      return worker.recognize(aiqCropLine(G, boxes[i++])).then(function(r) {
+        texts.push((r.data && r.data.text || '').trim());
+        var j = aiqJudge(texts, expected, known);
+        return j.ocr === 'match' ? j : next();          // เจอ Code ตรงแล้ว หยุดได้เลย
+      });
+    }
+    return next();
+  }).catch(function(err) { console.warn('OCR:', err); return { ocr: 'none' }; });
+}
+function aiqFetchState() {
+  return fetch(SCRIPT_URL + '?action=aiPending').then(function(r){ return r.json(); })
+    .then(function(d) { if (!d.error) _aiqState = d; return _aiqState; });
+}
+
+// ตรวจรูปที่ยังไม่เคยตรวจทั้งหมด แล้วบันทึกผลลงชีท
+function aiRun() {
+  if (_aiqBusy) return Promise.resolve();
+  _aiqBusy = true;
+  return aiqFetchState().then(function(st) {
+    var pend = st.pending || [];
+    if (!pend.length) return;
+    return aiqLoadModel().then(function(pipe) {
+      var done = 0, batches = [], codeOf = {}, known = aiqKnownCodes();
+      pend.forEach(function(x){ codeOf[x.id] = x.code; });
+      for (var i = 0; i < pend.length; i += 3) batches.push(pend.slice(i, i + 3));
+      return batches.reduce(function(chain, b) {
+        return chain.then(function() {
+          var ids = b.map(function(x){ return x.id; });
+          return fetch(SCRIPT_URL + '?action=aiThumbs&full=1&ids=' + ids.join(',')).then(function(r){ return r.json(); })
+            .then(function(res) {
+              var thumbs = res.thumbs || [], rows = [], got = {};
+              return thumbs.reduce(function(q, t) {
+                return q.then(function() {
+                  got[t.id] = true;
+                  return aiqClassify(pipe, t.data).then(function(c) {
+                    return aiqReadCode(t.data, codeOf[t.id], known).then(function(o) {
+                      done++; aiqChip('🤖 AI ตรวจรูปใหม่ ' + done + '/' + pend.length);
+                      var reasons = [];
+                      if (c.flag) reasons.push(c.reason);
+                      if (o.ocr === 'other') reasons.push('อาจติดผิดป้าย — อ่านได้ ' + o.found);
+                      var flag = reasons.length > 0;
+                      if (flag) _aiqThumbCache[t.id] = t.data;
+                      rows.push({ fileId: t.id, result: flag ? 'flag' : 'ok', reason: reasons.join(' · '),
+                        score: o.ocr === 'other' ? 1 : c.score, ocr: o.ocr === 'other' ? 'other:' + o.found : o.ocr });
+                    });
+                  });
+                });
+              }, Promise.resolve()).then(function() {
+                ids.forEach(function(id){ if (!got[id]) { done++; rows.push({ fileId: id, result: 'skip' }); } }); // ดึงรูปไม่ได้ → ข้าม ไม่วนมาดึงซ้ำ
+                if (rows.length) return fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'aiSaveChecks', rows: rows }) });
+              });
+            });
+        });
+      }, Promise.resolve());
+    }).then(aiqFetchState);
+  }).catch(function(err) {
+    console.warn('AI ตรวจรูปไม่สำเร็จ:', err);
+    aiqChip('🤖 ใช้งาน AI ไม่ได้ — ตรวจว่าเครือข่ายอนุญาต cdn.jsdelivr.net / huggingface.co', true);
+    setTimeout(aiqRefreshChip, 8000);
+  }).then(function() {
+    _aiqBusy = false;
+    aiqRefreshChip();
+  });
+}
+
+function aiqKnownCodes() {
+  var out = [];
+  ((lastData && lastData.jobs) || []).forEach(function(j){ (j.spots || []).forEach(function(s){ if (s.code) out.push(String(s.code)); }); });
+  return out;
+}
+// แถบสถานะบนจอ War Room — การตัดสินรูปที่ติดธงทำใน Snaphub
+function aiqRefreshChip() {
+  if (_aiqBusy) return;
+  var s = _aiqState.stats || {}, f = (_aiqState.flags || []).length;
+  aiqChip('🤖 AI ตรวจรูปแล้ว ' + (s.checked || 0) + ' รูป · อ่าน Code ตรง ' + (s.codeMatch || 0) + ' จุด' +
+    (f ? ' · ⚠️ รอแอดมินตรวจใน Snaphub ' + f + ' รูป' : ' · ✓ ไม่มีรูปค้างตรวจ'), f > 0);
+}
+// ตรวจอัตโนมัติ: เริ่มหลังข้อมูลงานโหลดแล้ว + ตรวจรอบใหม่ทุก 5 นาที (จอ War Room เปิดค้างไว้)
+(function aiqStart(tries) {
+  if (!lastData && tries < 60) return setTimeout(function(){ aiqStart(tries + 1); }, 2000);
+  if (AIQ_AUTO) { aiRun(); setInterval(aiRun, 5 * 60 * 1000); }
+  else aiqFetchState().then(aiqRefreshChip).catch(function(){});
+})(0);
+</script>
 </body>
 </html>
