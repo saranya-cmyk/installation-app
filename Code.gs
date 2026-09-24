@@ -70,7 +70,8 @@ function doPost(e) {
     if (body.action === 'deletePhotos')    return deletePhotosFn(body);
     if (body.action === 'reportProblem')   return reportProblem(body);
     if (body.action === 'reportRepair')    return reportRepair(body);
-    if (body.action === 'aiQuery')         return aiQuery(body);
+    if (body.action === 'aiSaveChecks')    return withLock(function(){ return aiSaveChecks(body); });
+    if (body.action === 'aiDecision')      return withLock(function(){ return aiDecision(body); });
     return json({ error: 'unknown action' });
   } catch(err) { return json({ error: err.message }); }
 }
@@ -79,6 +80,8 @@ function doGet(e) {
   var p = e ? e.parameter : {};
   if (p.action === 'getPhotos')      return getPhotos(p);
   if (p.action === 'getPhotoThumbs') return getPhotoThumbs(p);
+  if (p.action === 'aiPending')      return aiPending(p);
+  if (p.action === 'aiThumbs')       return aiThumbs(p);
   if (p.action === 'getJobs')        return getJobsList(p);
   if (p.action === 'getInstallLog')  return getInstallLog(p);
   if (p.action === 'getProblemLog')  return getProblemLog(p);
@@ -663,6 +666,111 @@ function getPhotoThumbs(params) {
     }
     return json({ thumbs: out });
   } catch (err) { return json({ thumbs: [], error: err.message }); }
+}
+
+// ═══════════════ บันทึกผล AI ตรวจรูป (_AICheckLog) ═══════════════
+// AI (CLIP) รันในเบราว์เซอร์แอดมิน · เซิร์ฟเวอร์ทำหน้าที่แค่ส่งรูปย่อ + บันทึกผล · ไม่มีการเรียก AI ภายนอก
+var AI_LOG_HEADER = ['checkedAt','jobId','code','fileId','result','reason','score','decision','decidedAt'];
+
+// ดัชนีรูปทั้งหมดจาก _InstallLog: fileId → {jobId, code}
+function _aiPhotoIndex() {
+  var idx = {};
+  var ss = openNamedSS('_InstallLog', null);
+  if (!ss) return idx;
+  var rows = ss.getActiveSheet().getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    var ids = [];
+    try { ids = JSON.parse(rows[i][7] || '[]'); } catch (e) {}
+    for (var k = 0; k < ids.length; k++) {
+      if (ids[k]) idx[String(ids[k])] = { jobId: String(rows[i][0]), code: String(rows[i][1]) };
+    }
+  }
+  return idx;
+}
+
+function _aiLogSheet() {
+  return openNamedSS('_AICheckLog', AI_LOG_HEADER).getActiveSheet();
+}
+
+// รายการรูปที่ยังไม่ตรวจ + รูปที่ AI ติดธงแต่แอดมินยังไม่ตัดสิน + สถิติ
+function aiPending(p) {
+  try {
+    var index = _aiPhotoIndex();
+    var rows = _aiLogSheet().getDataRange().getValues();
+    var checked = {}, flags = [], nFlag = 0, nDecided = 0;
+    for (var i = 1; i < rows.length; i++) {
+      var fid = String(rows[i][3]);
+      checked[fid] = true;
+      if (rows[i][4] === 'flag') {
+        nFlag++;
+        if (rows[i][7]) nDecided++;
+        else if (index[fid]) flags.push({ jobId: String(rows[i][1]), code: String(rows[i][2]), id: fid,
+          reason: String(rows[i][5]), score: Number(rows[i][6]) || 0, checkedAt: String(rows[i][0]) });
+      }
+    }
+    var pending = [];
+    for (var id in index) {
+      if (!checked[id]) pending.push({ jobId: index[id].jobId, code: index[id].code, id: id });
+      if (pending.length >= 200) break;
+    }
+    return json({ pending: pending, flags: flags,
+      stats: { checked: rows.length - 1, flagged: nFlag, decided: nDecided } });
+  } catch (err) { return json({ pending: [], flags: [], error: err.message }); }
+}
+
+// ส่งรูปย่อตาม ID — ยอมเฉพาะรูปที่อยู่ในดัชนีงานติดตั้งเท่านั้น (ขอไฟล์อื่นใน Drive ไม่ได้)
+function aiThumbs(p) {
+  try {
+    var ids = String(p.ids || '').split(',').filter(String).slice(0, 8);
+    var index = _aiPhotoIndex();
+    var out = [];
+    for (var i = 0; i < ids.length; i++) {
+      if (!index[ids[i]]) continue;
+      try {
+        var blob = DriveApp.getFileById(ids[i]).getThumbnail();
+        if (!blob) continue;
+        out.push({ id: ids[i], data: 'data:' + (blob.getContentType() || 'image/png') + ';base64,' +
+          Utilities.base64Encode(blob.getBytes()) });
+      } catch (e) {}
+    }
+    return json({ thumbs: out });
+  } catch (err) { return json({ thumbs: [], error: err.message }); }
+}
+
+// บันทึกผลตรวจ (ทั้งรูปปกติและรูปติดธง) — ไม่บันทึกซ้ำถ้า fileId เคยตรวจแล้ว
+function aiSaveChecks(body) {
+  var list = body.rows || [];
+  var index = _aiPhotoIndex();
+  var sh = _aiLogSheet();
+  var data = sh.getDataRange().getValues();
+  var seen = {};
+  for (var i = 1; i < data.length; i++) seen[String(data[i][3])] = true;
+  var now = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss');
+  var add = [];
+  for (var j = 0; j < list.length && j < 50; j++) {
+    var r = list[j], fid = String(r.fileId || '');
+    if (!index[fid] || seen[fid]) continue;
+    seen[fid] = true;
+    add.push([now, index[fid].jobId, index[fid].code, fid, (r.result === 'flag' || r.result === 'skip') ? r.result : 'ok',
+      String(r.reason || '').slice(0, 60), Math.round((Number(r.score) || 0) * 100) / 100, '', '']);
+  }
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, AI_LOG_HEADER.length).setValues(add);
+  return json({ success: true, saved: add.length });
+}
+
+// แอดมินตัดสินรูปที่ติดธง: ok = รูปใช้ได้ (AI เตือนผิด) · reshoot = ให้ช่างถ่ายใหม่
+function aiDecision(body) {
+  var fid = String(body.fileId || ''), d = String(body.decision || '');
+  if (d !== 'ok' && d !== 'reshoot') return json({ success: false, error: 'decision ไม่ถูกต้อง' });
+  var sh = _aiLogSheet();
+  var data = sh.getDataRange().getValues();
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][3]) === fid) {
+      sh.getRange(i + 1, 8, 1, 2).setValues([[d, Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss')]]);
+      return json({ success: true });
+    }
+  }
+  return json({ success: false, error: 'ไม่พบรูปนี้ในบันทึก' });
 }
 
 // ═══════════════════════════ FIX CODE / DELETE ═══════════════════════════
@@ -1773,83 +1881,4 @@ function approveSend(p) {
   } catch(err) {
     return page('เกิดข้อผิดพลาด', err.message + '<br>ลองกดปุ่มในอีเมลอีกครั้ง หรือติดต่อผู้ดูแลระบบค่ะ', false);
   }
-}
-
-
-// ═══════════════ AI Query (War Room — ถามข้อมูลด้วยภาษาพูด) ═══════════════
-function aiQuery(body) {
-  try {
-    var apiKey = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
-    if (!apiKey) {
-      return jsonOut({ error: 'ยังไม่ได้ตั้งค่า API Key — ใส่ ANTHROPIC_API_KEY ใน Script Properties ก่อนครับ' });
-    }
-
-    var question = String(body.question || '').trim();
-    if (!question) return jsonOut({ error: 'ไม่มีคำถาม' });
-
-    // ดึงข้อมูลจริงจากระบบ (ของเดิมที่มีอยู่แล้ว ไม่สร้างใหม่)
-    var jobsData = buildJobsList();
-    var logData = buildInstallLog(null);
-
-    // สรุปข้อมูลให้กระชับก่อนส่งให้ Claude (กัน context ยาวเกินไป)
-    var jobsSummary = (jobsData.jobs || []).map(function(j) {
-      return { id: j.id, name: j.name, media: j.media, dateEnd: j.dateEnd, archived: !!j.archived,
-               totalSpots: (j.spots || []).length };
-    });
-    var logSummary = (logData.log || []).map(function(e) {
-      return { jobId: e.jobId, code: e.code, date: e.date, installer: e.installer, count: e.count };
-    });
-
-    var today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
-
-    var systemPrompt = 'คุณคือผู้ช่วยตอบคำถามข้อมูลการติดตั้งป้ายโฆษณาจากข้อมูลจริงที่ให้มา ' +
-      'วันนี้คือ ' + today + ' (เขตเวลาไทย)\n' +
-      'ตอบเป็น JSON เท่านั้น รูปแบบ: {"answer": "คำตอบเป็นประโยคภาษาไทยอ่านง่าย", ' +
-      '"table": [{"คอลัมน์1": "ค่า", ...}, ...]} — table ใส่เฉพาะกรณีที่คำถามเหมาะจะสรุปเป็นตาราง ' +
-      'ถ้าไม่มีข้อมูลที่ตอบคำถามได้ ให้ตอบตรงๆ ว่าไม่พบข้อมูล ห้ามเดาหรือสร้างตัวเลขขึ้นเอง ' +
-      'ใช้เฉพาะข้อมูลที่ให้มาเท่านั้น ไม่ต้องอธิบายวิธีคิด ตอบ JSON อย่างเดียวไม่มีข้อความอื่นปน';
-
-    var userPrompt = 'ข้อมูลงาน (jobs):\n' + JSON.stringify(jobsSummary) +
-      '\n\nข้อมูลรูปที่ส่งแล้ว (log):\n' + JSON.stringify(logSummary) +
-      '\n\nคำถาม: ' + question;
-
-    var resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
-      method: 'post',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json'
-      },
-      payload: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: 1500,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
-      }),
-      muteHttpExceptions: true
-    });
-
-    var code = resp.getResponseCode();
-    if (code !== 200) {
-      return jsonOut({ error: 'เรียก AI ไม่สำเร็จ (HTTP ' + code + ')' });
-    }
-
-    var data = JSON.parse(resp.getContentText());
-    var text = (data.content && data.content[0] && data.content[0].text) || '';
-    // กันเผื่อ Claude ห่อ JSON ด้วย ```json ... ``` มา
-    text = text.replace(/^```json\s*|\s*```$/g, '').trim();
-
-    var parsed;
-    try { parsed = JSON.parse(text); }
-    catch (e) { parsed = { answer: text, table: null }; }
-
-    return jsonOut({ answer: parsed.answer || '', table: parsed.table || null });
-
-  } catch (err) {
-    return jsonOut({ error: 'เกิดข้อผิดพลาด: ' + err.message });
-  }
-}
-
-function jsonOut(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
