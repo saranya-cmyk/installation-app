@@ -18,10 +18,37 @@
  */
 
 // ค่าที่เคยเปิดเผยตรงๆ (Drive folder, อีเมลแอดมิน) ย้ายมาเก็บใน Script Properties แทน
+// + กันพัง: ถ้าไม่มีค่า/พิมพ์ผิด ระบบหาเองจากข้อมูลที่จำไว้แล้ว และบันทึกกลับให้อัตโนมัติ
 var _props = PropertiesService.getScriptProperties();
+function _resolveFolderId() {
+  var id = String(_props.getProperty('DRIVE_FOLDER_ID') || '').trim();
+  if (id) {
+    try { DriveApp.getFolderById(id); return id; } catch (e) { /* ID ผิด → ลองหาเองด้านล่าง */ }
+  }
+  // โฟลเดอร์หลัก = โฟลเดอร์ที่เก็บชีท _InstallLog / _Jobs ซึ่งระบบจำ ID ไว้แล้ว
+  var keys = ['fid__InstallLog', 'fid__Jobs', 'fid__ProblemLog'];
+  for (var i = 0; i < keys.length; i++) {
+    var fid = _props.getProperty(keys[i]);
+    if (!fid) continue;
+    try {
+      var parents = DriveApp.getFileById(fid).getParents();
+      if (parents.hasNext()) {
+        var found = parents.next().getId();
+        _props.setProperty('DRIVE_FOLDER_ID', found);
+        return found;
+      }
+    } catch (e) {}
+  }
+  return id || null;
+}
+function _resolveAdminEmail() {
+  var e = String(_props.getProperty('ADMIN_EMAIL') || '').trim();
+  if (e) return e;
+  try { return Session.getEffectiveUser().getEmail(); } catch (err) { return ''; }
+}
 var CONFIG = {
-  DRIVE_FOLDER_ID: _props.getProperty('DRIVE_FOLDER_ID'),
-  ADMIN_EMAIL:     _props.getProperty('ADMIN_EMAIL'),
+  DRIVE_FOLDER_ID: _resolveFolderId(),
+  ADMIN_EMAIL:     _resolveAdminEmail(),
   REPAIR_EMAIL:    '', // 🔧 ใส่อีเมลทีมซ่อมตรงนี้ (เว้นว่าง = ส่งหาแอดมินอย่างเดียว, ใส่หลายคนคั่นด้วย ,)
   INSTALLERS_SHEET_ID: '', // 👷 ใส่ ID ชีทรายชื่อช่าง (จาก URL ของชีท) หรือเว้นว่างแล้วตั้งชื่อไฟล์ชีทว่า _Installers ไว้ในโฟลเดอร์แอป
 };
