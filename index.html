@@ -375,29 +375,51 @@ function realCount(o) {
   if (o.imgs && o.imgs.length) return o.imgs.length;
   return Number(o.count) || 0;
 }
+var SENT_CACHE_KEY = 'sentCache_';
+function _sentCacheLoad(jobId) {
+  try {
+    var raw = localStorage.getItem(SENT_CACHE_KEY + jobId);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; } // เครื่อง/เบราว์เซอร์ไม่รองรับ localStorage → ไม่พัง แค่ไม่มี cache
+}
+function _sentCacheSave(jobId, data) {
+  try { localStorage.setItem(SENT_CACHE_KEY + jobId, JSON.stringify(data)); } catch (e) {} // เต็ม/ไม่รองรับ → ข้ามเงียบๆ ไม่กระทบการทำงาน
+}
 function loadSentState(jobId) {
   if (!jobId) { _sentLoaded = true; return Promise.resolve(); }
   if (_sentLoaded && _sentJobId === jobId) return Promise.resolve(); // โหลดแล้ว ไม่ต้องยิงซ้ำ
-  serverSent = {};
-  _sentLoaded = false;
+
+  var cached = (_sentJobId === jobId) ? null : _sentCacheLoad(jobId); // งานเดิมที่เพิ่งใช้ในเซสชันนี้ ไม่ต้องอ่าน cache ซ้ำ
+  serverSent = cached || {};
   _sentJobId = jobId;
+  // มี cache จากครั้งก่อน → ใช้ตอบสนองช่างได้ทันที ไม่ต้องรอ แล้วค่อยรีเฟรชเงียบๆ เบื้องหลัง
+  // ไม่มี cache (เข้างานนี้ครั้งแรก) → ต้องรอผลจริงก่อนเหมือนเดิม กันรูปหาย
+  _sentLoaded = !!cached;
+
   // ส่ง jobId ไปให้เซิร์ฟเวอร์กรองเลย (เร็วขึ้นมาก โดยเฉพาะเมื่อมี log สะสมเยอะ)
   // ไม่ต้องกรอง e.jobId ที่นี่อีกแล้ว เซิร์ฟเวอร์กรองมาให้ครบแล้ว
   return fetch(SCRIPT_URL + '?action=getInstallLog&jobId=' + encodeURIComponent(jobId))
     .then(function(r){ return r.json(); })
     .then(function(d) {
+      var fresh = {};
       (d.log || []).forEach(function(e) {
-        serverSent[String(e.code).trim().toUpperCase()] = {
+        fresh[String(e.code).trim().toUpperCase()] = {
           count: Number(e.count) || 0,
           date: e.date ? String(e.date).substring(0, 10) : '',
           installer: e.installer || '',
           imgs: e.imgs || []
         };
       });
+      serverSent = fresh;
       _sentLoaded = true;
+      _sentCacheSave(jobId, fresh);
       try { renderCodeList(); } catch(err) {}
     })
-    .catch(function(){ _sentLoaded = true; /* ดึงไม่ได้ = ปล่อยผ่าน แต่ backend กันรูปหายให้อยู่แล้ว */ });
+    .catch(function(){
+      // ดึงไม่ได้: มี cache ให้ใช้ต่อไปได้เลย (_sentLoaded เป็น true อยู่แล้วจากตอนต้น)
+      // ไม่มี cache เลย = ปล่อยผ่าน แต่ backend กันรูปหายให้อยู่แล้ว
+      _sentLoaded = true;
+    });
 }
 
 function renderJobs() {
