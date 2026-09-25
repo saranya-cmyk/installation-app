@@ -1775,9 +1775,36 @@ function findJobRow(jobId) {
 }
 
 /** เช็คว่าทุกจุดของงานติดตั้งครบหรือยัง — ถ้าครบและยังไม่เคยแจ้ง ส่งอีเมลให้แอดมินกดยืนยัน */
+// เรียกทันทีทุกครั้งที่ช่างส่งรูปครบชุด (ไม่รอรอบเวลา) — ถ้ามีจุดใหม่ที่ยังไม่เคยแจ้ง ส่งอีเมลแอดมินทันที
 function checkJobCompletion(jobId) {
-  // เดิม: ส่งอีเมลเมื่องานครบ 100% → เปลี่ยนเป็นรายงานรายวัน (sendDailyReports ทุกวันราว 10:00 น.)
-  // เพื่อให้เซลได้รูปทุกวัน ไม่ต้องรอวันสุดท้ายของงานที่ติดหลายวัน
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return;
+  try {
+    var sh = openNamedSS('_Jobs', null).getActiveSheet();
+    if (!sh.getRange(1, 13).getValue()) sh.getRange(1, 13, 1, 2).setValues([['reportedCodes', 'pendingCodes']]);
+    var jr0 = findJobRow(jobId);
+    if (!jr0 || String(jr0.values[6]) === 'false') return;
+    var spots = JSON.parse(jr0.values[2] || '[]');
+    if (!spots.length) return;
+    var spotSet = {};
+    spots.forEach(function(s){ spotSet[String(s.code).trim().toUpperCase()] = true; });
+    var done = Object.keys((_installedByJob()[jobId] || {})).filter(function(c){ return spotSet[c]; });
+    var status = String(jr0.values[11] || '').trim();
+    var reported = _codesOf(jr0.values[12]), pending = _codesOf(jr0.values[13]);
+    if (status.indexOf('sent') === 0 && !String(jr0.values[12] || '').trim()) {
+      sh.getRange(jr0.row, 13).setValue(JSON.stringify(done));
+      return;
+    }
+    var known = {};
+    reported.concat(pending).forEach(function(c){ known[c] = true; });
+    var fresh = done.filter(function(c){ return !known[c]; });
+    if (!fresh.length) return;
+    var carried = pending.length;
+    pending = pending.concat(fresh);
+    sh.getRange(jr0.row, 14).setValue(JSON.stringify(pending));
+    var jr = { sh: sh, row: jr0.row, values: sh.getRange(jr0.row, 1, 1, 14).getValues()[0] };
+    _sendDailyAdminEmail(jr, spots.length, reported.length, pending, carried);
+  } finally { lock.releaseLock(); }
 }
 
 function _aiJobCounts(jobId, codes) {
@@ -1862,44 +1889,6 @@ function _installedByJob() {
   return out;
 }
 
-// ทำงานทุกวันราว 10:00 น. (ตั้งด้วย setupDailyReportTrigger) · กด Run เองเพื่อทดสอบได้
-function sendDailyReports() {
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) return;
-  try {
-    var sh = openNamedSS('_Jobs', null).getActiveSheet();
-    if (!sh.getRange(1, 13).getValue()) sh.getRange(1, 13, 1, 2).setValues([['reportedCodes', 'pendingCodes']]);
-    var rows = sh.getDataRange().getValues();
-    var inst = _installedByJob();
-    for (var i = 1; i < rows.length; i++) {
-      try {
-        var id = String(rows[i][0] || '');
-        if (!id || String(rows[i][6]) === 'false') continue;
-        var spots = JSON.parse(rows[i][2] || '[]');
-        if (!spots.length) continue;
-        var spotSet = {};
-        spots.forEach(function(s){ spotSet[String(s.code).trim().toUpperCase()] = true; });
-        var done = Object.keys(inst[id] || {}).filter(function(c){ return spotSet[c]; });
-        var status = String(rows[i][11] || '').trim();
-        var reported = _codesOf(rows[i][12]), pending = _codesOf(rows[i][13]);
-        // งานที่ส่งเซลครบไปแล้วก่อนมีรายงานรายวัน → ถือว่าส่งทุกจุดที่ติดแล้ว ไม่ส่งซ้ำ
-        if (status.indexOf('sent') === 0 && !String(rows[i][12] || '').trim()) {
-          sh.getRange(i + 1, 13).setValue(JSON.stringify(done));
-          continue;
-        }
-        var known = {};
-        reported.concat(pending).forEach(function(c){ known[c] = true; });
-        var fresh = done.filter(function(c){ return !known[c]; });
-        if (!fresh.length) continue;
-        var carried = pending.length;           // จุดจากรอบก่อนที่แอดมินยังไม่ได้ยืนยัน
-        pending = pending.concat(fresh);
-        sh.getRange(i + 1, 14).setValue(JSON.stringify(pending));
-        var jr = { sh: sh, row: i + 1, values: sh.getRange(i + 1, 1, 1, 14).getValues()[0] };
-        _sendDailyAdminEmail(jr, spots.length, reported.length, pending, carried);
-      } catch (err) { Logger.log('daily report ' + rows[i][0] + ': ' + err.message); }
-    }
-  } finally { lock.releaseLock(); }
-}
 
 function _sendDailyAdminEmail(jr, total, reportedCount, pending, carried) {
   var jobId = jr.values[0], jobName = jr.values[1] || '', media = jr.values[7] || '';
@@ -1935,15 +1924,6 @@ function _sendDailyAdminEmail(jr, total, reportedCount, pending, carried) {
 }
 
 // กด Run ฟังก์ชันนี้ครั้งเดียวใน Apps Script Editor เพื่อตั้งเวลาส่งรายงานทุกวันราว 10:00 น.
-function setupDailyReportTrigger() {
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    var h = t.getHandlerFunction();
-    if (h === 'sendDailyReports' || h === 'sendQueuedCompletionEmails') ScriptApp.deleteTrigger(t);
-  });
-  ScriptApp.newTrigger('sendDailyReports').timeBased()
-    .atHour(10).nearMinute(0).everyDays(1).inTimezone('Asia/Bangkok').create();
-  Logger.log('ตั้งเวลาส่งรายงานประจำวัน ทุกวันราว 10:00 น. เรียบร้อย');
-}
 
 
 /** แอดมินกดปุ่มยืนยันจากอีเมล → สร้าง PDF → ส่งเซล + ลิงก์ Portal → ปิดจ็อบ */
