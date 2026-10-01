@@ -1,6 +1,6 @@
 // ═══ หุ่นยนต์ตรวจรูป AI — ทำให้ AI ตรวจรูปครบ 100% โดยไม่ต้องมีใครเปิด Snaphub ค้างไว้ ═══
 // วิธีทำงาน: เปิด Snaphub (admin.html) ในเบราว์เซอร์แบบไม่มีหน้าจอ → ใช้โค้ด AI ชุดเดียวกับที่แอดมินใช้ (CLIP + Tesseract OCR)
-// ตรวจรูปที่ยังไม่เคยตรวจจนหมด แล้วบันทึกผลลงชีท _AICheckLog — AI แค่ติดธงเตือน คนยังเป็นผู้ตัดสินใน Snaphub เหมือนเดิม
+// ตรวจรูปที่ยังไม่เคยตรวจจนหมด แล้วบันทึกผลลงชีท _AICheckLog — AI ตรวจและบันทึกธงเองทั้งหมด ไม่ต้องมีคนตัดสิน — ธงใช้แจ้งช่างทีหลัง
 // รันบน GitHub Actions ทุก 30 นาที (.github/workflows/ai-check.yml) · ไม่ใช้บริการ AI ภายนอก · 0 บาท
 const { chromium } = require('playwright');
 
@@ -96,7 +96,7 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
     ]);
     if (r.timeout) { timedOut = true; log('⏱ ครบเวลารอบนี้ — รูปที่เหลือจะตรวจต่อรอบหน้า (ผลที่ตรวจแล้วบันทึกไว้หมดแล้ว)'); break; }
     last = r;
-    log(`รอบ ${round}: ตรวจแล้วรวม ${r.stats.checked || 0} รูป · รอตรวจ ${r.pending} รูป · ติดธงรอคนตัดสิน ${r.flags} รูป`);
+    log(`รอบ ${round}: ตรวจแล้วรวม ${r.stats.checked || 0} รูป · รอตรวจ ${r.pending} รูป · ติดธง (บันทึกไว้แจ้งช่าง) ${r.flags} รูป`);
     if (/ใช้งาน AI ไม่ได้/.test(r.chip)) { clearInterval(tick); log('❌', r.chip); await ctx.close().catch(() => {}); fail(r.chip); }
     if (!r.pending) break;
   }
@@ -108,10 +108,10 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
   if (last) {
     const n = (last.stats.checked || 0) - (before.stats.checked || 0);
     const more = last.pending ? `${last.pending}${last.pending >= 200 ? '+' : ''}` : '0';
-    log(`✅ เสร็จ: รอบนี้ AI ตรวจรูปใหม่ ${n} รูป · ค้างตรวจ ${more} รูป · รอแอดมินตัดสิน ${last.flags} รูป`);
+    log(`✅ เสร็จ: รอบนี้ AI ตรวจรูปใหม่ ${n} รูป · ค้างตรวจ ${more} รูป · ติดธงบันทึกไว้แจ้งช่าง ${last.flags} รูป`);
     if (process.env.GITHUB_STEP_SUMMARY) {
       require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-        `### 🤖 AI ตรวจรูปอัตโนมัติ\n\n| ตรวจรูปใหม่รอบนี้ | ตรวจแล้วทั้งหมด | ค้างตรวจ (ตรวจต่อรอบหน้า) | รอแอดมินตัดสิน |\n|---|---|---|---|\n` +
+        `### 🤖 AI ตรวจรูปอัตโนมัติ\n\n| ตรวจรูปใหม่รอบนี้ | ตรวจแล้วทั้งหมด | ค้างตรวจ (ตรวจต่อรอบหน้า) | ติดธง (บันทึกไว้แจ้งช่าง) |\n|---|---|---|---|\n` +
         `| ${n} | ${last.stats.checked || 0} | ${more} | ${last.flags} |\n\n` +
         '```\n' + LINES.slice(-25).join('\n') + '\n```\n');
     }
