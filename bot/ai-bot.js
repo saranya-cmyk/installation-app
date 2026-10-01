@@ -65,38 +65,55 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
   await page.goto(ADMIN_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => typeof aiRun === 'function' && typeof _aiqState !== 'undefined', null, { timeout: 120000 });
 
-  let before = null, last = null;
+  // ยอดตั้งต้นก่อนเริ่มตรวจ (ไว้คำนวณว่ารอบนี้ตรวจไปกี่รูป)
+  const snap = () => page.evaluate(async () => {
+    try { await aiqFetchState(); } catch (e) {}
+    return { stats: _aiqState.stats || {}, pending: (_aiqState.pending || []).length, flags: (_aiqState.flags || []).length };
+  });
+  const before = await snap().catch(() => ({ stats: {} }));
+  log(`เริ่ม: ตรวจแล้ว ${before.stats.checked || 0} รูป · รอตรวจ ${before.pending || 0}${before.pending >= 200 ? '+' : ''} รูป`);
+  // รายงานความคืบหน้าทุก 2 นาที (เห็นใน log ว่ายังทำงานอยู่)
+  const tick = setInterval(() => {
+    page.evaluate(() => { const c = document.getElementById('aiqChip'); return c ? c.textContent : ''; })
+      .then(t => t && log('…', t)).catch(() => {});
+  }, 120000);
+
+  let last = null, timedOut = false;
   for (let round = 1; round <= MAX_ROUNDS && left() > 60000; round++) {
     const r = await Promise.race([
       page.evaluate(async () => {
         const sleep = ms => new Promise(res => setTimeout(res, ms));
         while (_aiqBusy) await sleep(1000);            // Snaphub อาจเริ่มตรวจเองไปแล้ว รอให้จบก่อน
-        const start = JSON.parse(JSON.stringify(_aiqState.stats || {}));
         await aiRun();
         while (_aiqBusy) await sleep(1000);
         const chip = document.getElementById('aiqChip');
         return {
-          start, stats: _aiqState.stats || {}, pending: (_aiqState.pending || []).length,
+          stats: _aiqState.stats || {}, pending: (_aiqState.pending || []).length,
           flags: (_aiqState.flags || []).length, chip: chip ? chip.textContent : '',
         };
       }),
       new Promise(res => setTimeout(() => res({ timeout: true }), Math.max(left(), 1000))),
     ]);
-    if (r.timeout) { log('⏱ หมดเวลารอบนี้ — รูปที่เหลือจะตรวจต่อรอบหน้า'); break; }
-    if (!before) before = r.start;
+    if (r.timeout) { timedOut = true; log('⏱ ครบเวลารอบนี้ — รูปที่เหลือจะตรวจต่อรอบหน้า (ผลที่ตรวจแล้วบันทึกไว้หมดแล้ว)'); break; }
     last = r;
     log(`รอบ ${round}: ตรวจแล้วรวม ${r.stats.checked || 0} รูป · รอตรวจ ${r.pending} รูป · ติดธงรอคนตัดสิน ${r.flags} รูป`);
-    if (/ใช้งาน AI ไม่ได้/.test(r.chip)) { log('❌', r.chip); await ctx.close().catch(() => {}); fail(r.chip); }
+    if (/ใช้งาน AI ไม่ได้/.test(r.chip)) { clearInterval(tick); log('❌', r.chip); await ctx.close().catch(() => {}); fail(r.chip); }
     if (!r.pending) break;
+  }
+  clearInterval(tick);
+  if (timedOut || !last) {
+    last = await Promise.race([snap(), new Promise(res => setTimeout(() => res(null), 90000))]).catch(() => null) || last;
   }
 
   if (last) {
-    const n = (last.stats.checked || 0) - ((before && before.checked) || 0);
-    log(`✅ เสร็จ: รอบนี้ AI ตรวจรูปใหม่ ${n} รูป · ค้างตรวจ ${last.pending} รูป · รอแอดมินตัดสิน ${last.flags} รูป`);
+    const n = (last.stats.checked || 0) - (before.stats.checked || 0);
+    const more = last.pending ? `${last.pending}${last.pending >= 200 ? '+' : ''}` : '0';
+    log(`✅ เสร็จ: รอบนี้ AI ตรวจรูปใหม่ ${n} รูป · ค้างตรวจ ${more} รูป · รอแอดมินตัดสิน ${last.flags} รูป`);
     if (process.env.GITHUB_STEP_SUMMARY) {
       require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-        `### 🤖 AI ตรวจรูปอัตโนมัติ\n\n| ตรวจรูปใหม่รอบนี้ | ตรวจแล้วทั้งหมด | ค้างตรวจ | รอแอดมินตัดสิน |\n|---|---|---|---|\n` +
-        `| ${n} | ${last.stats.checked || 0} | ${last.pending} | ${last.flags} |\n`);
+        `### 🤖 AI ตรวจรูปอัตโนมัติ\n\n| ตรวจรูปใหม่รอบนี้ | ตรวจแล้วทั้งหมด | ค้างตรวจ (ตรวจต่อรอบหน้า) | รอแอดมินตัดสิน |\n|---|---|---|---|\n` +
+        `| ${n} | ${last.stats.checked || 0} | ${more} | ${last.flags} |\n\n` +
+        '```\n' + LINES.slice(-25).join('\n') + '\n```\n');
     }
   }
   await ctx.close();
