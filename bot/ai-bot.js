@@ -8,6 +8,7 @@ const ADMIN_URL = process.env.ADMIN_URL || 'https://saranya-cmyk.github.io/insta
 const CACHE_DIR = process.env.CACHE_DIR || '.ai-cache';          // เก็บโมเดล AI ไว้ใช้รอบถัดไป ไม่ต้องโหลดใหม่
 const BUDGET_MIN = Number(process.env.BUDGET_MIN || 45);         // รอบนี้ทำงานได้นานสุดกี่นาที (ที่เหลือรอบหน้าตรวจต่อ)
 const MAX_ROUNDS = Number(process.env.MAX_ROUNDS || 50);         // aiRun 1 รอบ = รูปค้างตรวจสูงสุด 200 รูป
+const SCRIPT_TARGET = process.env.SCRIPT_TARGET || '';           // ใช้ตอนทดสอบเท่านั้น (ชี้ไป Apps Script จำลอง)
 
 const t0 = Date.now();
 const LINES = [];
@@ -28,6 +29,30 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
     headless: true,
     executablePath: process.env.CHROME_PATH || undefined,   // ปกติไม่ต้องตั้ง (ใช้ Chromium ของ Playwright)
     viewport: { width: 1280, height: 900 },            // ขนาดคอมพิวเตอร์ → Snaphub เปิดโหมดตรวจอัตโนมัติ
+  });
+  // เบราว์เซอร์บนเครื่อง GitHub เรียก Apps Script ตรงๆ ไม่ผ่าน (Failed to fetch)
+  // → ให้หุ่นยนต์เป็นคนเรียก Apps Script แทนเบราว์เซอร์ แล้วส่งคำตอบกลับเข้าหน้า Snaphub (ข้อมูลเหมือนเดิมทุกอย่าง)
+  await ctx.route(/^https:\/\/script\.google\.com\/macros\/s\//, async route => {
+    const req = route.request();
+    const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS, body: '' });
+    const url = SCRIPT_TARGET ? req.url().replace('https://script.google.com', SCRIPT_TARGET) : req.url();
+    const isPost = req.method() === 'POST';
+    try {
+      const res = await fetch(url, {
+        method: isPost ? 'POST' : 'GET', redirect: 'follow',
+        body: isPost ? (req.postData() || '') : undefined,
+        headers: isPost ? { 'Content-Type': 'text/plain;charset=utf-8' } : undefined,
+      });
+      const body = await res.text();
+      if (!res.ok || !/^\s*[\[{]/.test(body)) {
+        log('⚠️ Apps Script ตอบผิดปกติ:', res.status, (res.url || '').slice(0, 90), '|', body.slice(0, 200).replace(/\s+/g, ' '));
+      }
+      await route.fulfill({ status: res.status, headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' }, body });
+    } catch (e) {
+      log('⚠️ เรียก Apps Script ไม่ได้:', e.message, e.cause ? '(' + (e.cause.code || e.cause.message) + ')' : '');
+      await route.abort().catch(() => {});
+    }
   });
   const page = ctx.pages()[0] || await ctx.newPage();
   page.on('pageerror', e => log('⚠️ page error:', e.message));
