@@ -41,5 +41,25 @@ const field = JSON.parse(getJobsList({view:'field'}).getContent());
 t('ช่าง (view=field) เห็น 2 งาน ไม่เห็นงาน A', field.jobs.length === 2 && !field.jobs.find(j=>j.id==='A'));
 const admin = JSON.parse(getJobsList({}).getContent());
 t('แอดมิน (full) เห็นครบ 3 งาน พร้อมธง archived', admin.jobs.length === 3 && admin.jobs.find(j=>j.id==='A').archived);
+
+// ── AI ธง → รายการแจ้งช่าง (ไม่มีด่านล็อก) ──
+const logRows2 = [
+  ['jobId','code','installer','date','count','f','p','imgIds'],
+  ['J','A1','สมชาย', yest, 2, '', '', JSON.stringify(['f1','f2'])],
+  ['J','A2','สมหญิง', yest, 1, '', '', JSON.stringify(['f3'])],
+];
+const aiRows = [
+  ['checkedAt','jobId','code','fileId','result','reason','score','decision','decidedAt','ocr'],
+  ['t','J','A1','f1','flag','รูปมืด','0.9','','',''],
+  ['t','J','A1','f2','ok','','0.1','','',''],
+  ['t','J','A2','f3','flag','รูปเบลอ','0.9','','',''],
+];
+openNamedSS = (name) => name === '_InstallLog' ? { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => logRows2 }) }) }
+  : { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => aiRows }), getRange: () => ({ getValue: () => 'x', setValue(){} }) }) };
+const rep = _aiFlagReport('J', ['A1','A2']);
+t('รายงานธงจัดกลุ่มตามช่าง (สมชาย: A1 รูปมืด, สมหญิง: A2 รูปเบลอ)',
+  rep['สมชาย'] && rep['สมชาย'].length === 1 && rep['สมชาย'][0].code === 'A1' && rep['สมหญิง'][0].reason === 'รูปเบลอ');
+t('สรุป AI ในอีเมลแอดมินระบุชื่อช่างและไม่ขวางการส่ง', _aiJobSummaryHtml('J', ['A1','A2']).indexOf('สมชาย') > -1 && _aiJobSummaryHtml('J', ['A1','A2']).indexOf('ไม่ขวาง') > -1);
+t('approveSend ไม่มีด่านล็อกจาก AI แล้ว', String(approveSend).indexOf('_aiGatePage') === -1 && typeof _aiGatePage === 'undefined');
 console.log(`\nผล: ${pass}/${pass+fail}`);
 process.exit(fail?1:0);
