@@ -683,7 +683,7 @@ function _aiPhotoIndex() {
     var ids = [];
     try { ids = JSON.parse(rows[i][7] || '[]'); } catch (e) {}
     for (var k = 0; k < ids.length; k++) {
-      if (ids[k]) idx[String(ids[k])] = { jobId: String(rows[i][0]), code: String(rows[i][1]) };
+      if (ids[k]) idx[String(ids[k])] = { jobId: String(rows[i][0]), code: String(rows[i][1]), installer: String(rows[i][2] || '').trim() };
     }
   }
   return idx;
@@ -709,7 +709,7 @@ function aiPending(p) {
         nFlag++;
         if (rows[i][7]) nDecided++;
         else if (index[fid]) flags.push({ jobId: String(rows[i][1]), code: String(rows[i][2]), id: fid,
-          reason: String(rows[i][5]), score: Number(rows[i][6]) || 0, checkedAt: String(rows[i][0]) });
+          installer: index[fid].installer || '', reason: String(rows[i][5]), score: Number(rows[i][6]) || 0, checkedAt: String(rows[i][0]) });
       }
     }
     var pending = [];
@@ -1814,13 +1814,12 @@ function _aiJobCounts(jobId, codes) {
   var index = _aiPhotoIndex(), total = 0;
   for (var id in index) if (index[id].jobId === String(jobId) && inScope(index[id].code)) total++;
   var rows = _aiLogSheet().getDataRange().getValues();
-  var checked = 0, waiting = 0, reshoot = 0;
+  var checked = 0, waiting = 0, reshoot = 0;  // reshoot คงไว้เพื่อความเข้ากันได้ (ไม่ใช้แล้ว)
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][1]) !== String(jobId) || !index[String(rows[i][3])] || !inScope(rows[i][2])) continue;
     if (rows[i][4] === 'skip') continue;
     checked++;
-    if (rows[i][4] === 'flag' && !rows[i][7]) waiting++;
-    if (rows[i][7] === 'reshoot') reshoot++;
+    if (rows[i][4] === 'flag') waiting++;   // ธงที่ AI บันทึกไว้ (ใช้แจ้งช่าง ไม่ขวางการส่งเซล)
   }
   var spotsAll = {}, spotsOk = {};
   for (var id2 in index) if (index[id2].jobId === String(jobId) && inScope(index[id2].code)) spotsAll[index[id2].code] = true;
@@ -1830,46 +1829,48 @@ function _aiJobCounts(jobId, codes) {
            spots: Object.keys(spotsAll).length, codeMatch: Object.keys(spotsOk).length };
 }
 
+// รายการรูปที่ AI ติดธง จัดกลุ่มตามช่าง — ใช้แจ้งช่างทีหลัง (ไม่ขวางการส่งเซล ไม่ต้องมีคนตัดสิน)
+function _aiFlagReport(jobId, codes) {
+  var only = null;
+  if (codes && codes.length) { only = {}; codes.forEach(function(c){ only[String(c).trim().toUpperCase()] = true; }); }
+  var index = _aiPhotoIndex(), rows = _aiLogSheet().getDataRange().getValues(), seen = {}, by = {};
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][1]) !== String(jobId) || rows[i][4] !== 'flag' || !index[String(rows[i][3])]) continue;
+    var code = String(rows[i][2]).trim().toUpperCase();
+    if (only && !only[code]) continue;
+    var who = index[String(rows[i][3])].installer || 'ไม่ระบุช่าง';
+    var key = who + '|' + code + '|' + rows[i][5];
+    if (seen[key]) continue; seen[key] = true;
+    (by[who] = by[who] || []).push({ code: code, reason: String(rows[i][5]) });
+  }
+  return by;
+}
+
 function _aiJobSummaryHtml(jobId, codes) {
   var c = _aiJobCounts(jobId, codes);
-  var total = c.total, checked = c.checked, waiting = c.waiting, reshoot = c.reshoot, unchecked = c.unchecked;
+  var total = c.total, checked = c.checked, waiting = c.waiting, unchecked = c.unchecked;
   var lines = [], color = '#2e7d32', bg = '#eef7ee';
   if (!total) lines.push('🤖 ยังไม่มีข้อมูลรูปสำหรับ AI ตรวจ');
   else lines.push('🤖 AI ตรวจรูปแล้ว <b>' + checked + '/' + total + '</b> รูป');
   if (total) lines.push('🔎 อ่าน Code บนป้ายยืนยันตรง <b>' + c.codeMatch + '/' + c.spots + '</b> จุด' + (c.codeMatch < c.spots ? ' (จุดที่เหลือไม่มีรูปป้าย Code ที่อ่านได้)' : ''));
-  if (waiting)   { lines.push('⚠️ AI ติดธง <b>' + waiting + '</b> รูปที่ยังไม่ได้ตัดสิน — เปิด Snaphub ตรวจก่อนกดยืนยัน'); color = '#b25e00'; bg = '#fff4e5'; }
-  if (reshoot)   { lines.push('📷 แอดมินสั่งถ่ายใหม่ <b>' + reshoot + '</b> รูป'); color = '#b25e00'; bg = '#fff4e5'; }
-  if (unchecked) { lines.push('⏳ AI ยังไม่ได้ตรวจ ' + unchecked + ' รูป (เปิด Snaphub บนคอมเพื่อให้ตรวจ)'); if (color === '#2e7d32') { color = '#555'; bg = '#f3f3f3'; } }
-  if (total && !waiting && !reshoot && !unchecked) lines.push('✓ ไม่พบรูปที่ต้องแก้');
-  return '<div style="background:' + bg + ';color:' + color + ';border-radius:10px;padding:12px;font-size:13px;line-height:1.7;margin-bottom:18px">' + lines.join('<br>') + '</div>';
+  if (waiting) {
+    lines.push('📝 AI บันทึกรูปที่ควรแจ้งช่าง <b>' + waiting + '</b> รูป (บันทึกในชีท _AICheckLog — ไม่ขวางการส่งเซล)');
+    var by = _aiFlagReport(jobId, codes), who;
+    for (who in by) {
+      var items = by[who].slice(0, 12).map(function(x){ return x.code + ' (' + x.reason + ')'; }).join(', ');
+      lines.push('&nbsp;&nbsp;👷 <b>' + who + '</b>: ' + items + (by[who].length > 12 ? ' และอีก ' + (by[who].length - 12) + ' จุด' : ''));
+    }
+    color = '#b25e00'; bg = '#fff4e5';
+  }
+  if (unchecked) { lines.push('⏳ AI ยังไม่ได้ตรวจ ' + unchecked + ' รูป (บอทจะตรวจให้ในรอบถัดไป)'); if (color === '#2e7d32') { color = '#555'; bg = '#f3f3f3'; } }
+  if (total && !waiting && !unchecked) lines.push('✓ ไม่พบรูปที่ต้องแจ้งช่าง');
+  return '<div style="background:' + bg + ';color:' + color + ';border-radius:10px;padding:12px;font-size:13px;line-height:1.7;margin-bottom:18px;text-align:left">' + lines.join('<br>') + '</div>';
 }
 
 function _webAppUrl() {
   var base = ''; try { base = ScriptApp.getService().getUrl() || ''; } catch (e) {}
   if (!/\/exec$/.test(base)) base = 'https://script.google.com/macros/s/AKfycbwgA7ohAgzVS4C37dUQh0M3utU5l7Wb17GjURcSCkPXkAW-7XIyhgLbRq_iXl9mVtt0Sg/exec'; // กันลิงก์ผิดบางสภาพแวดล้อม
   return base;
-}
-
-// ด่านรอผล AI ตอนแอดมินกดยืนยัน: ยังมีรูปติดธงค้าง / สั่งถ่ายใหม่ / ยังไม่ได้ตรวจ → เตือนก่อน พร้อมปุ่ม "ส่งเลย"
-function _aiGatePage(jobId, key, jobName, codes) {
-  var c = _aiJobCounts(jobId, codes);
-  if (!c.waiting && !c.reshoot && !c.unchecked) return null;
-  var lines = [];
-  if (c.waiting)   lines.push('⚠️ AI ติดธง <b>' + c.waiting + '</b> รูป ที่ยังไม่ได้ตัดสิน');
-  if (c.reshoot)   lines.push('📷 มีรูปที่สั่งให้ช่างถ่ายใหม่ <b>' + c.reshoot + '</b> รูป (ยังไม่มีรูปใหม่มาแทน)');
-  if (c.unchecked) lines.push('⏳ AI ยังไม่ได้ตรวจ <b>' + c.unchecked + '</b> รูป (เปิด Snaphub บนคอมเพื่อให้ตรวจ)');
-  var forceUrl = _webAppUrl() + '?action=approveSend&jobId=' + encodeURIComponent(jobId) + '&k=' + encodeURIComponent(key) + '&force=1';
-  return HtmlService.createHtmlOutput(
-    '<div style="font-family:Sarabun,Arial,sans-serif;max-width:480px;margin:50px auto;text-align:center;padding:20px">' +
-    '<div style="font-size:52px">🤖</div>' +
-    '<h2 style="color:#b25e00;margin:8px 0">ยังมีรูปรอตรวจ</h2>' +
-    '<div style="font-weight:bold;margin-bottom:12px">' + jobName + '</div>' +
-    '<div style="background:#fff4e5;color:#7a4300;border-radius:10px;padding:14px;line-height:1.8;text-align:left;font-size:14px">' + lines.join('<br>') + '</div>' +
-    '<p style="color:#555;line-height:1.7;margin-top:16px">แนะนำให้ตรวจใน Snaphub ให้เรียบร้อยก่อน แล้วกดปุ่มในอีเมลอีกครั้ง<br>ยังไม่ได้ส่งอะไรถึงเซลค่ะ</p>' +
-    '<a href="https://saranya-cmyk.github.io/installation-app/admin.html" target="_blank" style="background:#1a1a1a;color:#fff;padding:13px 26px;border-radius:10px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px">เปิด Snaphub ตรวจรูป</a>' +
-    '<a href="' + forceUrl + '" style="background:#fff;color:#b25e00;border:2px solid #b25e00;padding:11px 24px;border-radius:10px;text-decoration:none;font-weight:bold;display:inline-block;margin:6px">ส่งเลย (รีบ)</a>' +
-    '<p style="color:#aaa;font-size:12px;margin-top:24px">กด "ส่งเลย" แล้วระบบจะบันทึกไว้ว่าส่งโดยข้ามการตรวจ</p></div>')
-    .setTitle('Plan B — ยังมีรูปรอตรวจ');
 }
 
 // ═══════════════ รายงานรายวัน (แทนการรอครบ 100%) ═══════════════
@@ -1950,12 +1951,6 @@ function approveSend(p) {
     var jobId = jr.values[0], jobName = jr.values[1] || '', media = jr.values[7] || '';
     var pending = _codesOf(jr.values[13]), reported = _codesOf(jr.values[12]);
     if (!pending.length) return page('ไม่มีจุดใหม่รอส่ง', 'รอบนี้ไม่มีจุดติดตั้งใหม่ที่รอส่งเซลค่ะ', true);
-    var forced = String(p.force || '') === '1';
-    if (!forced) {
-      var gate = null;
-      try { gate = _aiGatePage(jobId, p.k, jobName, pending); } catch (e) { gate = null; } // ด่าน AI มีปัญหา → ไม่ขวางการส่ง
-      if (gate) return gate;
-    }
     var dateStart = jr.values[4] ? String(jr.values[4]) : '';
     var dateEnd = jr.values[5] ? String(jr.values[5]) : '';
     var salesEmail = String(jr.values[9] || '').trim();
@@ -2001,7 +1996,6 @@ function approveSend(p) {
 
     // 4) ปิดสถานะ
     var doneStamp = 'sent ' + Utilities.formatDate(new Date(),'Asia/Bangkok','dd/MM/yyyy HH:mm');
-    if (forced) doneStamp += ' (ข้ามตรวจ AI)';  // บันทึกว่าแอดมินกด "ส่งเลย" โดยยังมีรูปค้างตรวจ
     jr.sh.getRange(jr.row, 12).setValue(doneStamp);
     jr.sh.getRange(jr.row, 13, 1, 2).setValues([[JSON.stringify(reported.concat(pending)), '[]']]); // ย้ายจุดรอบนี้ → ส่งแล้ว
 
