@@ -22,6 +22,9 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
   const page = ctx.pages()[0] || await ctx.newPage();
   page.on('pageerror', e => log('⚠️ page error:', e.message));
   page.on('dialog', d => d.dismiss().catch(() => {}));   // กันหน้าต่าง alert ค้าง
+  // ส่งข้อความเตือน/ผิดพลาดจากหน้าเว็บออกมาใน log ของ GitHub — ไว้ดูสาเหตุเวลาขึ้นสีแดง
+  page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') log('🌐', m.type() + ':', m.text().slice(0, 400)); });
+  page.on('requestfailed', r => log('⚠️ โหลดไม่สำเร็จ:', r.url().slice(0, 150), '→', (r.failure() || {}).errorText));
 
   log('เปิด Snaphub:', ADMIN_URL);
   await page.goto(ADMIN_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
