@@ -1,0 +1,7 @@
+{
+  "name": "snaphub-ai-bot",
+  "private": true,
+  "description": "เปิด Snaphub แบบไม่มีหน้าจอ ให้ AI ตรวจรูปใหม่ทุกใบอัตโนมัติ (โค้ด AI ตัวเดียวกับที่แอดมินใช้)",
+  "scripts": { "start": "node ai-bot.js" },
+  "dependencies": { "playwright": "1.56.0" }
+}

@@ -1,0 +1,28 @@
+name: ai-check
+# หุ่นยนต์ตรวจรูป AI — ตรวจรูปใหม่ทุกใบอัตโนมัติทุก 30 นาที ไม่ต้องมีใครเปิด Snaphub
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:        # กดรันเองได้ที่แท็บ Actions → ai-check → Run workflow
+
+concurrency:
+  group: ai-check           # กันรันซ้อน รอบใหม่รอรอบเก่าจบ
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: เก็บโมเดล AI ไว้ใช้ซ้ำ
+        uses: actions/cache@v4
+        with:
+          path: bot/.ai-cache
+          key: ai-models-v1-${{ github.run_id }}
+          restore-keys: ai-models-v1-
+      - run: cd bot && npm install --no-audit --no-fund && npx playwright install --with-deps chromium
+      - name: AI ตรวจรูปที่ยังไม่ได้ตรวจ
+        run: cd bot && node ai-bot.js
