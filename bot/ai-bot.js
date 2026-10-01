@@ -10,7 +10,17 @@ const BUDGET_MIN = Number(process.env.BUDGET_MIN || 45);         // รอบน
 const MAX_ROUNDS = Number(process.env.MAX_ROUNDS || 50);         // aiRun 1 รอบ = รูปค้างตรวจสูงสุด 200 รูป
 
 const t0 = Date.now();
-const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
+const LINES = [];
+const log = (...a) => { const t = new Date().toISOString().slice(11, 19) + ' ' + a.join(' '); LINES.push(t); console.log(t); };
+// เวลาพัง: เขียนสาเหตุลงหน้าสรุปของรอบนั้น (คนที่ไม่ได้ล็อกอิน GitHub ก็เปิดดูได้) แล้วจบด้วยสถานะสีแดง
+function fail(reason) {
+  console.log('::error title=AI bot::' + String(reason).replace(/\r?\n/g, ' ').slice(0, 500));
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+      '### ❌ หุ่นยนต์ตรวจรูปไม่สำเร็จ\n\n**สาเหตุ:** ' + String(reason).slice(0, 500) + '\n\n```\n' + LINES.slice(-60).join('\n') + '\n```\n');
+  }
+  process.exit(1);
+}
 const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
 
 (async () => {
@@ -51,7 +61,7 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
     if (!before) before = r.start;
     last = r;
     log(`รอบ ${round}: ตรวจแล้วรวม ${r.stats.checked || 0} รูป · รอตรวจ ${r.pending} รูป · ติดธงรอคนตัดสิน ${r.flags} รูป`);
-    if (/ใช้งาน AI ไม่ได้/.test(r.chip)) { log('❌', r.chip); await ctx.close(); process.exit(1); }
+    if (/ใช้งาน AI ไม่ได้/.test(r.chip)) { log('❌', r.chip); await ctx.close().catch(() => {}); fail(r.chip); }
     if (!r.pending) break;
   }
 
@@ -65,4 +75,4 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
     }
   }
   await ctx.close();
-})().catch(e => { console.error('❌ หุ่นยนต์ตรวจรูปล้มเหลว:', e); process.exit(1); });
+})().catch(e => { log('❌ หุ่นยนต์ตรวจรูปล้มเหลว:', e && e.stack || e); fail(e && e.message || e); });
