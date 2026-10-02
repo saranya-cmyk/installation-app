@@ -713,10 +713,11 @@ function aiPending(p) {
       }
     }
     // รูปใหม่ก่อนเสมอ — รูปที่ช่างเพิ่งส่งไม่ต้องรอคิวรูปเก่าที่ค้างอยู่
-    var ids = Object.keys(index).filter(function(id){ return !checked[id]; }).reverse().slice(0, 200);
+    var allIds = Object.keys(index).filter(function(id){ return !checked[id]; });
+    var ids = allIds.slice().reverse().slice(0, 200);
     var pending = ids.map(function(id){ return { jobId: index[id].jobId, code: index[id].code, id: id }; });
     return json({ pending: pending, flags: flags,
-      stats: { checked: rows.length - 1, flagged: nFlag, decided: nDecided, codeMatch: Object.keys(codeOk).length } });
+      stats: { checked: rows.length - 1, flagged: nFlag, decided: nDecided, codeMatch: Object.keys(codeOk).length, pending: allIds.length } });
   } catch (err) { return json({ pending: [], flags: [], error: err.message }); }
 }
 
