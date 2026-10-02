@@ -2686,7 +2686,8 @@ function aiqRenderReview() {
   document.getElementById('aiqTitle').textContent = '🤖 AI ตรวจคุณภาพรูป' + (job ? ' — ' + (job.name || '') : '');
   document.getElementById('aiqStats').innerHTML =
     (_aiqBusy ? '⏳ กำลังตรวจรูปใหม่...<br>' : '') +
-    'AI ตรวจแล้วทั้งหมด <b>' + (s.checked || 0) + '</b> รูป · อ่าน Code ตรง <b>' + (s.codeMatch || 0) + '</b> จุด · ติดธง (บันทึกไว้แจ้งช่าง) <b>' + (s.flagged || 0) + '</b>';
+    'AI ตรวจแล้วทั้งหมด <b>' + (s.checked || 0) + '</b> รูป · อ่าน Code ตรง <b>' + (s.codeMatch || 0) + '</b> จุด · ติดธง (บันทึกไว้แจ้งช่าง) <b>' + (s.flagged || 0) + '</b>' +
+    (s.pending != null ? '<br>' + (s.pending ? '⏳ รอ AI ตรวจอีก <b>' + s.pending + '</b> รูป — หุ่นยนต์ตรวจให้เองทุกรอบ โดยตรวจรูปที่เพิ่งส่งก่อน' : '✓ AI ตรวจครบทุกรูปแล้ว') : '');
   var list = (_aiqState.flags || []).filter(function(f){ return !_aiqJob || f.jobId === _aiqJob; });
   var box = document.getElementById('aiqResults');
   if (!list.length) { box.innerHTML = '<div style="color:#c8f542;padding:10px 0">✓ ไม่มีรูปที่ต้องแจ้งช่าง</div>'; return; }
