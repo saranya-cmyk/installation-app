@@ -712,11 +712,9 @@ function aiPending(p) {
           installer: index[fid].installer || '', reason: String(rows[i][5]), score: Number(rows[i][6]) || 0, checkedAt: String(rows[i][0]) });
       }
     }
-    var pending = [];
-    for (var id in index) {
-      if (!checked[id]) pending.push({ jobId: index[id].jobId, code: index[id].code, id: id });
-      if (pending.length >= 200) break;
-    }
+    // รูปใหม่ก่อนเสมอ — รูปที่ช่างเพิ่งส่งไม่ต้องรอคิวรูปเก่าที่ค้างอยู่
+    var ids = Object.keys(index).filter(function(id){ return !checked[id]; }).reverse().slice(0, 200);
+    var pending = ids.map(function(id){ return { jobId: index[id].jobId, code: index[id].code, id: id }; });
     return json({ pending: pending, flags: flags,
       stats: { checked: rows.length - 1, flagged: nFlag, decided: nDecided, codeMatch: Object.keys(codeOk).length } });
   } catch (err) { return json({ pending: [], flags: [], error: err.message }); }
