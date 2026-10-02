@@ -61,5 +61,16 @@ t('รายงานธงจัดกลุ่มตามช่าง (สม
   rep['สมชาย'] && rep['สมชาย'].length === 1 && rep['สมชาย'][0].code === 'A1' && rep['สมหญิง'][0].reason === 'รูปเบลอ');
 t('สรุป AI ในอีเมลแอดมินระบุชื่อช่างและไม่ขวางการส่ง', _aiJobSummaryHtml('J', ['A1','A2']).indexOf('สมชาย') > -1 && _aiJobSummaryHtml('J', ['A1','A2']).indexOf('ไม่ขวาง') > -1);
 t('approveSend ไม่มีด่านล็อกจาก AI แล้ว', String(approveSend).indexOf('_aiGatePage') === -1 && typeof _aiGatePage === 'undefined');
+
+// ── รูปใหม่ต้องได้ตรวจก่อนรูปเก่า ──
+const logRows3 = [
+  ['jobId','code','installer','date','count','f','p','imgIds'],
+  ['OLD','O1','ก', yest, 1, '', '', JSON.stringify(['old1'])],
+  ['NEW','N1','ข', yest, 1, '', '', JSON.stringify(['new1'])],
+];
+openNamedSS = (name) => name === '_InstallLog' ? { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => logRows3 }) }) }
+  : { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => [aiRows[0]] }), getRange: () => ({ getValue: () => 'x', setValue(){} }) }) };
+const pend = JSON.parse(aiPending({}).getContent()).pending;
+t('AI ตรวจรูปที่เพิ่งส่งก่อนรูปเก่าที่ค้าง', pend.length === 2 && pend[0].id === 'new1');
 console.log(`\nผล: ${pass}/${pass+fail}`);
 process.exit(fail?1:0);
