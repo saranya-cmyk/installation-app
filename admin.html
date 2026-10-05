@@ -547,7 +547,7 @@ function loadExcel(file) {
           if (thaiText) text = thaiText;
         } catch(err) {}
       }
-      wb = XLSX.read(text, { type: 'string' });
+      wb = XLSX.read(text, { type: 'string', raw: true });   // raw = เก็บค่าเป็นข้อความ รหัส "001" ไม่กลายเป็น 1
     } else {
       wb = XLSX.read(e.target.result, { type: 'binary' });
     }
@@ -584,7 +584,7 @@ function loadExcel(file) {
           if (attempt2 && attempt2.length) {
             var cols2 = Object.keys(attempt2[0]);
             var empty2 = cols2.filter(function(c){ return c.indexOf('__EMPTY') === 0; }).length;
-            if (empty2 < emptyCount) { attempt = attempt2; cols = cols2; }
+            if (empty2 < emptyCount) { attempt = attempt2; cols = cols2; attempt._range = r + 1; }
           }
         }
         var colStr = cols.join(' ').toLowerCase();
@@ -637,6 +637,7 @@ function loadExcel(file) {
           bestScore = score;
           rawExcelData = attempt;
           excelCols = cols;
+          window._bestWs = ws; window._bestRange = (attempt._range != null ? attempt._range : r);
         }
       }
     }
@@ -645,6 +646,20 @@ function loadExcel(file) {
       alert('ไม่พบข้อมูลที่ใช้ได้ในไฟล์ — ต้องมีคอลัมน์ Code / รหัส / ทะเบียนรถ หรือคอลัมน์ที่มีรหัสจุดติดตั้ง' + foundCols + '\n\nส่งหัวคอลัมน์นี้ให้ผู้ดูแลระบบเพื่อเพิ่มการรองรับได้ค่ะ');
       return;
     }
+
+    // รหัสที่เป็นตัวเลขขึ้นต้นด้วย 0 (เช่น 001) — Excel เก็บเป็นเลข 1 แต่แสดงผลเป็น 001
+    // → ใช้ข้อความตามที่เห็นใน Excel แทน ไม่ให้รหัสไม่ตรงกับป้ายจริง
+    try {
+      var shown = XLSX.utils.sheet_to_json(window._bestWs, { defval: '', range: window._bestRange, raw: false });
+      if (shown.length === rawExcelData.length) {
+        rawExcelData.forEach(function(row, i) {
+          Object.keys(row).forEach(function(k) {
+            var t = String(shown[i][k] == null ? '' : shown[i][k]).trim();
+            if (typeof row[k] === 'number' && /^0[0-9]+$/.test(t)) row[k] = t;
+          });
+        });
+      }
+    } catch (e3) {}
 
     // Auto-detect columns by data pattern (no header name required)
     autoDetectAndBuild();
