@@ -145,14 +145,35 @@ function openNamedSS(name, header) {
   return nss;
 }
 
+/** เก็บ/อ่าน cache ขนาดใหญ่ (เกิน 100KB) แบบแบ่งก้อน — งานใหญ่ก็ไม่ต้องคำนวณใหม่ทุกครั้ง */
+function putBig_(c, key, str, ttl) {
+  try {
+    if (str.length < 95000) { c.put(key, str, ttl); return; }
+    var n = Math.ceil(str.length / 90000), parts = {};
+    for (var i = 0; i < n; i++) parts[key + '__' + i] = str.substr(i * 90000, 90000);
+    if (n > 20) return;                               // ใหญ่เกิน — ไม่เก็บ
+    c.putAll(parts, ttl);
+    c.put(key, '__CHUNKS__' + n, ttl);                // ล้าง key หลัก = ล้างทั้งชุด
+  } catch(e) {}
+}
+function getBig_(c, key) {
+  var v = c.get(key);
+  if (!v || v.indexOf('__CHUNKS__') !== 0) return v;
+  var n = Number(v.substring(10)), keys = [];
+  for (var i = 0; i < n; i++) keys.push(key + '__' + i);
+  var got = c.getAll(keys), out = '';
+  for (i = 0; i < n; i++) { if (got[keys[i]] == null) return null; out += got[keys[i]]; }
+  return out;
+}
+
 /** [SPEED] cache คำตอบ GET — โหลดซ้ำตอบทันที ไม่เปิดชีทใหม่ */
 function respCache(key, ttlSec, builder) {
   var c = CacheService.getScriptCache();
-  var hit = c.get(key);
+  var hit = getBig_(c, key);
   if (hit) return ContentService.createTextOutput(hit).setMimeType(ContentService.MimeType.JSON);
   var out = builder();
   var s = JSON.stringify(out);
-  try { if (s.length < 95000) c.put(key, s, ttlSec); } catch(e) {}
+  putBig_(c, key, s, ttlSec);
   return ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.JSON);
 }
 function bustCache(keys) {
@@ -1222,6 +1243,13 @@ function getPortalData(p) {
   try {
     var key = (p.key || '').trim();
     if (!key) return json({ error: 'no key' });
+    // ลูกค้าเปิดหน้าค้างไว้หลายคน → ตอบจาก cache ทันทีโดยไม่ต้องเปิดชีทงาน
+    var pCache = CacheService.getScriptCache();
+    var knownId = pCache.get('pk_' + key);
+    if (knownId) {
+      var fast = getBig_(pCache, 'portal_' + knownId);
+      if (fast) return ContentService.createTextOutput(fast).setMimeType(ContentService.MimeType.JSON);
+    }
     var sh = getJobSheet();
     var rows = sh.getDataRange().getValues();
     var job = null;
@@ -1234,10 +1262,10 @@ function getPortalData(p) {
       }
     }
     if (!job) return json({ error: 'invalid key' });
+    try { pCache.put('pk_' + key, String(job.id), 600); } catch(e) {}
 
     // [SPEED] cache ผลลัพธ์ทั้งก้อน 2 นาที (ถูกล้างทันทีเมื่อมีรูปใหม่เข้า)
-    var pCache = CacheService.getScriptCache();
-    var pHit = pCache.get('portal_' + job.id);
+    var pHit = getBig_(pCache, 'portal_' + job.id);
     if (pHit) return ContentService.createTextOutput(pHit).setMimeType(ContentService.MimeType.JSON);
 
     // สถานะติดตั้งจาก _InstallLog (+ Photo Index)
@@ -1330,7 +1358,7 @@ function getPortalData(p) {
     spots.forEach(function(s){ delete s._hasIdx; });
     var payload = JSON.stringify({ name: job.name, media: job.media, dateStart: job.dateStart, dateEnd: job.dateEnd,
       total: spots.length, done: doneCount, spots: spots });
-    try { if (payload.length < 95000) pCache.put('portal_' + job.id, payload, 120); } catch(e) {}
+    putBig_(pCache, 'portal_' + job.id, payload, 120);
     return ContentService.createTextOutput(payload).setMimeType(ContentService.MimeType.JSON);
   } catch (err) { return json({ error: err.message }); }
 }
