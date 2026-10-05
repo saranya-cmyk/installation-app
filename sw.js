@@ -8,9 +8,10 @@ self.addEventListener('install', function(event) {
 self.addEventListener('activate', function(event) {
   event.waitUntil(
     caches.keys().then(function(names) {
-      return Promise.all(names.map(function(name) {
-        return caches.delete(name);
-      }));
+      // ลบเฉพาะแคชเก่าของแอปนี้ — ไม่ลบแคชโมเดล AI (transformers-cache) ที่โหลดมาแล้ว ~120 MB
+      return Promise.all(names.filter(function(name) {
+        return name.indexOf('planb-') === 0 && name !== CACHE_NAME;
+      }).map(function(name) { return caches.delete(name); }));
     })
   );
   self.clients.claim();
@@ -38,10 +39,13 @@ self.addEventListener('fetch', function(event) {
     return;
   }
 
+  // ไฟล์จากเว็บอื่น (CDN / โมเดล AI) — ไม่แคชซ้ำ ปล่อยให้เบราว์เซอร์จัดการเอง
+  if (new URL(url).origin !== self.location.origin) return;
+
   // Static assets (icons, manifest): network first, cache fallback
   event.respondWith(
     fetch(event.request).then(function(response) {
-      if (response.ok) {
+      if (response.ok && response.status === 200) {
         var clone = response.clone();
         caches.open(CACHE_NAME).then(function(cache) {
           cache.put(event.request, clone);
