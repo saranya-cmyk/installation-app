@@ -54,6 +54,8 @@ step('route ครบทุก action', () => {
 // 4) unit test backend (archive logic + cache)
 step('backend unit tests', () => { execSync('node ' + JSON.stringify(path.join(__dirname, 'backend.test.js')), { stdio: 'pipe' }); });
 
+step('กฎเทียบ Code ของ AI', () => { execSync('node ' + JSON.stringify(path.join(__dirname, 'judge.test.js')), { stdio: 'pipe' }); });
+
 // 5) smoke ทุกหน้า (jsdom)
 step('smoke ทุกหน้า', () => { execSync('node ' + JSON.stringify(path.join(__dirname, 'smoke.test.js')), { stdio: 'pipe' }); });
 
