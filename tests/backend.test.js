@@ -72,5 +72,34 @@ openNamedSS = (name) => name === '_InstallLog' ? { getActiveSheet: () => ({ getD
   : { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => [aiRows[0]] }), getRange: () => ({ getValue: () => 'x', setValue(){} }) }) };
 const pend = JSON.parse(aiPending({}).getContent()).pending;
 t('AI ตรวจรูปที่เพิ่งส่งก่อนรูปเก่าที่ค้าง', pend.length === 2 && pend[0].id === 'new1');
+
+// ── วันที่จากชีทเป็น Date object ต้องออกมาเป็น yyyy-MM-dd (เดิมกลายเป็น "Mon Oct 05..." / วันเลื่อน) ──
+const dObj = new Date(Date.UTC(2026, 9, 5, 5, 0, 0));
+const jobRowsD = [jobRows[0], ['D','งานD', JSON.stringify([{code:'Q1'}]), '', dObj, dObj, true, 'Bus','','','','']];
+getJobSheet = () => ({ getDataRange: () => ({ getValues: () => jobRowsD }) });
+openNamedSS = (name) => name === '_InstallLog' ? { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => [logRows[0], ['D','Q1','ช่าง', dObj, 2, '', '', '']] }) }) } : null;
+const jd = buildJobsList().jobs.find(j => j.id === 'D');
+t('วันที่เริ่ม/สิ้นสุดของงานเป็น yyyy-MM-dd', jd && jd.dateStart === '2026-10-05' && jd.dateEnd === '2026-10-05');
+const ild = buildInstallLog('D').log[0];
+t('วันที่ติดตั้งใน log เป็น yyyy-MM-dd', ild && ild.date === '2026-10-05');
+
+// ── บันทึก log: เพิ่มรูป = ยอดสะสม, ถ่ายใหม่ = นับใหม่, ดัชนีรูปเก็บรูปล่าสุด ──
+const ilRows = [['jobId','code','installer','date','count','folderUrl','productFolderUrl','imgIds'],
+  ['J','A1','ก','2026-10-01', 5, '', '', JSON.stringify(Array.from({length:30},(_,i)=>'o'+i))]];
+const ilSheet = { getDataRange: () => ({ getValues: () => ilRows }),
+  getRange: (r, c, nr, nc) => ({ getValue: () => ilRows[r-1][c-1],
+    setValues: (v) => { v[0].forEach((x, k) => { ilRows[r-1][c-1+k] = x; }); }, setValue: (x) => { ilRows[r-1][c-1] = x; } }),
+  appendRow: (row) => ilRows.push(row), getLastRow: () => ilRows.length };
+openNamedSS = () => ({ getActiveSheet: () => ilSheet });
+upsertInstallLog('J', 'ก', '2026-10-05', [{ code:'A1', count:3, imgIds:['n1','n2','n3'], replaced:false }]);
+const ids1 = JSON.parse(ilRows[1][7]);
+t('เพิ่มรูป: ยอดสะสม 5+3 = 8', ilRows[1][4] === 8);
+t('ดัชนีรูปเก็บรูปใหม่ล่าสุดไว้ (ไม่ตัดรูปใหม่ทิ้ง)', ids1.length === 30 && ids1[29] === 'n3');
+upsertInstallLog('J', 'ก', '2026-10-05', [{ code:'A1', count:4, imgIds:['r1','r2','r3','r4'], replaced:true }]);
+t('ถ่ายใหม่ทั้งหมด: นับใหม่ = 4', ilRows[1][4] === 4 && JSON.parse(ilRows[1][7]).length === 4);
+
+// ── แก้/ลบ Code ต้องระบุงาน (กันกระทบรูปของงานอื่น) ──
+t('แก้ Code โดยไม่ระบุงาน = ปฏิเสธ', JSON.parse(fixCode({ oldCode:'A1', newCode:'A2' }).getContent()).success === false);
+t('ลบรูปทั้ง Code โดยไม่ระบุงาน = ปฏิเสธ', JSON.parse(deleteCodeFiles({ code:'A1' }).getContent()).success === false);
 console.log(`\nผล: ${pass}/${pass+fail}`);
 process.exit(fail?1:0);
