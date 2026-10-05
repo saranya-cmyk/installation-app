@@ -82,7 +82,7 @@ body { background:var(--bg); color:var(--tx); font-family:var(--f); overflow:hid
     </div>
   </div>
   <div id="errBanner" style="display:none;background:#3a1b1b;border:1px solid #ff5c5c;color:#ff9d9d;
-    border-radius:10px;padding:10px 16px;margin-bottom:12px;font-size:13px;display:flex;
+    border-radius:10px;padding:10px 16px;margin-bottom:12px;font-size:13px;
     align-items:center;justify-content:space-between;gap:12px">
     <span id="errMsg">⚠️ โหลดข้อมูลไม่สำเร็จ</span>
     <button onclick="refresh()" style="background:#ff5c5c;color:#1a1a1a;border:none;border-radius:6px;
@@ -166,10 +166,11 @@ var mediaFilter = '__all__';
 var productFilter = '__all__';
 // นับจำนวนรูปจริง: imgs คือรูปจริงใน Drive (เชื่อถือได้) · count เป็นตัวเลขจดแยกที่อาจไม่ sync
 // ต้องเป็น global function เพราะถูกเรียกจากทั้ง refresh() และ renderAll()
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
 function realCount(o) {
   if (!o) return 0;
-  if (o.imgs && o.imgs.length) return o.imgs.length;
-  return Number(o.count) || 0;
+  // หลังบ้านส่งรูปตัวอย่างมาแค่ไม่กี่ใบ → ใช้จำนวนจริงจาก count เป็นหลัก
+  return Math.max(Number(o.count) || 0, (o.imgs || []).length);
 }
 var lastData = null;
 
@@ -313,14 +314,14 @@ function renderAll(jobs, log, newKeys) {
           html: '<div class="pulse-marker' + (isNew ? ' pulsing' : '') + '" style="width:16px;height:16px;background:' + color + ';border:2px solid #0d0f12;border-radius:50%"></div>' });
         m = L.marker([s.lat, s.lng], { icon: icon });
       }
-      m.bindTooltip(s.code + (isDone ? ' ✓' : ''), { direction:'top', offset:[0,-8] });
+      m.bindTooltip(esc(s.code) + (isDone ? ' ✓' : ''), { direction:'top', offset:[0,-8] });
       markerLayer.addLayer(m);
       bounds.push([s.lat, s.lng]);
 
       // รูปเพิ่งเข้าสดๆ → เด้งใหญ่ 12 วินาที
       if (isNew && thumbId) {
         var popIcon = L.divIcon({ className:'', iconSize:[260,220], iconAnchor:[130,210],
-          html: '<div class="pop-wrap"><img class="pop-img" src="https://drive.google.com/thumbnail?id=' + thumbId + '&sz=w600" alt=""><div class="pop-cap">📸 ' + s.code + ' ติดตั้งแล้ว</div></div>' });
+          html: '<div class="pop-wrap"><img class="pop-img" src="https://drive.google.com/thumbnail?id=' + thumbId + '&sz=w600" alt=""><div class="pop-cap">📸 ' + esc(s.code) + ' ติดตั้งแล้ว</div></div>' });
         var pm = L.marker([s.lat, s.lng], { icon: popIcon, zIndexOffset: 2000 });
         popLayer.addLayer(pm);
         setTimeout(function(){ try { popLayer.removeLayer(pm); } catch(e) {} }, 12000);
@@ -355,7 +356,7 @@ function renderAll(jobs, log, newKeys) {
       else if (x.days < 0) { lbl = 'เลยกำหนด ' + Math.abs(x.days) + ' วัน · ' + x.done + '/' + x.total; color = 'var(--red)'; }
       else if (x.days <= 1) { lbl = (x.days === 0 ? 'วันนี้' : 'เหลือ 1 วัน') + ' · ' + x.done + '/' + x.total; color = 'var(--amber)'; }
       else { lbl = 'เหลือ ' + x.days + ' วัน · ' + x.done + '/' + x.total; color = 'var(--green)'; }
-      return '<div><div class="dl-row"><span class="dl-name">' + x.name + (x.media ? ' · ' + x.media : '') + '</span>' +
+      return '<div><div class="dl-row"><span class="dl-name">' + esc(x.name) + (x.media ? ' · ' + esc(x.media) : '') + '</span>' +
         '<span class="dl-meta" style="color:' + color + '">' + lbl + '</span></div>' +
         '<div class="bar"><i style="width:' + pct + '%"></i></div></div>';
     }).join('');
@@ -373,7 +374,7 @@ function renderAll(jobs, log, newKeys) {
       var k = e.jobId + '|' + String(e.code).trim().toUpperCase();
       return '<div class="ph' + (newKeys[k] ? ' new' : '') + '">' +
         '<img src="https://drive.google.com/thumbnail?id=' + e.imgs[0] + '&sz=w400" loading="lazy" alt="">' +
-        '<div class="cap">' + e.code + (jobName[e.jobId] ? ' · ' + jobName[e.jobId] : '') + '</div></div>';
+        '<div class="cap">' + esc(e.code) + (jobName[e.jobId] ? ' · ' + esc(jobName[e.jobId]) : '') + '</div></div>';
     }).join('');
   }
 }
@@ -545,9 +546,16 @@ function aiqJudge(texts, expected, known){
   var T=texts.map(aiqCanon), ce=aiqCanon(expected);
   var others=(known||[]).map(function(k){ return {code:k, c:aiqCanon(k)}; })
     .filter(function(o){ return o.c.length>=4 && o.c!==ce && ce.indexOf(o.c)<0 && o.c.indexOf(ce)<0; });
-  var has=function(c){ return T.some(function(t){ return t.indexOf(c)>-1; }); };
+  // Code สั้นมาก (<4 ตัว) ต้องตรงทั้งบรรทัด กันเลขสั้นๆ ไปเจอในข้อความอื่น
+  var has=function(c){ return T.some(function(t){ return c.length<4 ? t===c : t.indexOf(c)>-1; }); };
   var near=function(c){ return T.some(function(t){ return aiqNear(t,c); }); };
-  if (ce && has(ce)) return { ocr:'match' };
+  // Code อื่นที่ "ครอบ" Code นี้ เช่น จุดนี้ DP70 แต่ป้ายจริงเขียน DP703 → ต้องนับว่าติดผิดป้าย ไม่ใช่ตรง
+  var longer=(known||[]).map(function(k){ return {code:k, c:aiqCanon(k)}; })
+    .filter(function(o){ return ce && o.c!==ce && o.c.indexOf(ce)>-1; });
+  if (ce && has(ce)) {
+    var sup = longer.find(function(o){ return has(o.c); });
+    return sup ? { ocr:'other', found:sup.code } : { ocr:'match' };
+  }
   var exactOther=others.find(function(o){ return has(o.c); });
   if (exactOther) return { ocr:'other', found:exactOther.code };
   var nearMe = ce.length>=5 && near(ce);
@@ -623,11 +631,15 @@ function aiRun() {
           var ids = b.map(function(x){ return x.id; });
           return fetch(SCRIPT_URL + '?action=aiThumbs&full=1&ids=' + ids.join(',')).then(function(r){ return r.json(); })
             .then(function(res) {
+              if (res.error) throw new Error('ดึงรูปไม่สำเร็จ: ' + res.error);   // หลังบ้านขัดข้องชั่วคราว → ไม่ข้ามรูป รอบหน้าตรวจใหม่
               var thumbs = res.thumbs || [], rows = [], got = {};
               return thumbs.reduce(function(q, t) {
                 return q.then(function() {
                   got[t.id] = true;
-                  return aiqClassify(pipe, t.data).then(function(c) {
+                  return aiqClassify(pipe, t.data).catch(function(e) {
+                    console.warn('อ่านรูปไม่ได้:', t.id, e); return null;
+                  }).then(function(c) {
+                    if (!c) { done++; rows.push({ fileId: t.id, result: 'skip', reason: 'อ่านไฟล์รูปไม่ได้' }); return; }
                     return aiqReadCode(t.data, codeOf[t.id], known).then(function(o) {
                       done++; aiqChip('🤖 AI ตรวจรูปใหม่ ' + done + '/' + pend.length);
                       var reasons = [];
@@ -644,7 +656,9 @@ function aiRun() {
                 });
               }, Promise.resolve()).then(function() {
                 ids.forEach(function(id){ if (!got[id]) { done++; rows.push({ fileId: id, result: 'skip' }); } }); // ดึงรูปไม่ได้ → ข้าม ไม่วนมาดึงซ้ำ
-                if (rows.length) return fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'aiSaveChecks', rows: rows }) });
+                if (rows.length) return fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'aiSaveChecks', rows: rows }) })
+                  .then(function(r){ return r.json(); })
+                  .then(function(j){ if (!j || !j.success) throw new Error('บันทึกผลตรวจไม่สำเร็จ'); });
               });
             });
         });
@@ -665,12 +679,12 @@ function aiqKnownCodes() {
   ((lastData && lastData.jobs) || []).forEach(function(j){ (j.spots || []).forEach(function(s){ if (s.code) out.push(String(s.code)); }); });
   return out;
 }
-// แถบสถานะบนจอ War Room — การตัดสินรูปที่ติดธงทำใน Snaphub
+// แถบสถานะบนจอ War Room — รูปที่ติดธงดูรายชื่อตามช่างได้ใน Snaphub
 function aiqRefreshChip() {
   if (_aiqBusy) return;
   var s = _aiqState.stats || {}, f = (_aiqState.flags || []).length;
   aiqChip('🤖 AI ตรวจรูปแล้ว ' + (s.checked || 0) + ' รูป · อ่าน Code ตรง ' + (s.codeMatch || 0) + ' จุด' +
-    (f ? ' · ⚠️ รอแอดมินตรวจใน Snaphub ' + f + ' รูป' : ' · ✓ ไม่มีรูปค้างตรวจ'), f > 0);
+    (f ? ' · 📝 บันทึกไว้แจ้งช่าง ' + f + ' รูป' : ' · ✓ ไม่มีรูปที่ต้องแจ้งช่าง'), f > 0);
 }
 // ตรวจอัตโนมัติ: เริ่มหลังข้อมูลงานโหลดแล้ว + ตรวจรอบใหม่ทุก 5 นาที (จอ War Room เปิดค้างไว้)
 (function aiqStart(tries) {
