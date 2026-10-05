@@ -21,8 +21,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: bot/.ai-cache
-          key: ai-models-v1-${{ github.run_id }}
-          restore-keys: ai-models-v1-
+          key: ai-models-v2-${{ hashFiles('bot/package.json') }}
+          restore-keys: ai-models-v
       - run: cd bot && npm install --no-audit --no-fund && npx playwright install --with-deps chromium
       - name: AI ตรวจรูปที่ยังไม่ได้ตรวจ
         run: cd bot && node ai-bot.js
