@@ -1,63 +1,1939 @@
-// รันเทสทั้งหมด: syntax ทุกไฟล์ + unit test backend + smoke test ทุกหน้า
-const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const ROOT = path.join(__dirname, '..');
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Snapsite</title>
+<link rel="manifest" href="installer-manifest.json?v=3">
+<meta name="theme-color" content="#0f0f0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0f0f0f;--s:#1a1a1a;--s2:#222;--b:#2a2a2a;--ac:#c8f542;--tx:#f0f0f0;--mu:#666;--ok:#4caf50;--warn:#ffa94d;--err:#ff5c5c;--r:12px;--f:'IBM Plex Sans Thai',sans-serif}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--tx);font-family:var(--f);min-height:100vh;max-width:480px;margin:0 auto}
+.screen{display:none;min-height:100vh;flex-direction:column}
+.screen.on{display:flex}
 
-let failed = 0;
-function step(name, fn) {
-  try { fn(); console.log('✅ ' + name); }
-  catch(e) { failed++; console.log('❌ ' + name + ' — ' + (e.message||e).toString().split('\n')[0]); }
+/* Top bar */
+.bar{background:var(--s);border-bottom:1px solid var(--b);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.bar-title{font-size:15px;font-weight:600;letter-spacing:-.3px}
+.name-chip{background:#1a2a00;border:1px solid var(--ac);border-radius:20px;padding:5px 12px;font-size:12px;color:var(--ac)}
+
+/* Body */
+.body{flex:1;padding:24px 20px;display:flex;flex-direction:column}
+.body.center{align-items:center;justify-content:center;text-align:center}
+
+/* S1 */
+.welcome-icon{font-size:64px;margin-bottom:20px}
+.big-title{font-size:24px;font-weight:700;margin-bottom:8px;letter-spacing:-.5px}
+.sub{font-size:14px;color:var(--mu);line-height:1.6;margin-bottom:32px}
+.big-input{width:100%;background:var(--s);border:1.5px solid var(--b);border-radius:var(--r);padding:16px;font-size:18px;color:var(--tx);font-family:var(--f);outline:none;text-align:center;margin-bottom:16px}
+.big-input:focus{border-color:var(--ac)}
+
+/* S2 */
+.section-title{font-size:13px;color:var(--mu);margin-bottom:16px;font-weight:500}
+.job-list{display:flex;flex-direction:column;gap:10px;margin-bottom:24px;flex:1}
+.job-item{background:var(--s);border:1.5px solid var(--b);border-radius:var(--r);padding:16px 18px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:12px;-webkit-user-select:none;user-select:none}
+.job-item:active{transform:scale(.98)}
+.job-item.sel{border-color:var(--ac);background:#162200}
+.job-dot{width:10px;height:10px;border-radius:50%;background:var(--b);border:1.5px solid var(--b);flex-shrink:0;transition:all .2s}
+.job-item.sel .job-dot{background:var(--ac);border-color:var(--ac)}
+.job-name{font-size:15px;font-weight:600;margin-bottom:3px}
+.job-detail{font-size:12px;color:var(--mu)}
+.no-jobs{text-align:center;padding:40px 20px;color:var(--mu);font-size:14px;line-height:1.7}
+
+/* S3 */
+.job-selected-bar{background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:14px 16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
+.jsb-name{font-size:14px;font-weight:600}
+.jsb-change{font-size:12px;color:var(--ac);cursor:pointer;padding:4px 0 4px 12px}
+.upload-zone{border:2px dashed var(--b);border-radius:16px;padding:48px 20px;text-align:center;cursor:pointer;position:relative;transition:all .2s;margin-bottom:20px;flex-shrink:0}
+.upload-zone input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+.upload-zone.has{border-color:var(--ac);background:#0d1a00}
+.uz-icon{font-size:52px;margin-bottom:14px}
+.uz-title{font-size:17px;font-weight:600;margin-bottom:6px}
+.uz-sub{font-size:13px;color:var(--mu)}
+.uz-count{font-size:32px;font-weight:700;color:var(--ac);margin-bottom:6px}
+.uz-hint{font-size:12px;color:var(--mu)}
+
+/* Verify screen */
+.verify-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.vcard{background:var(--s);border:1.5px solid var(--b);border-radius:var(--r);overflow:hidden}
+.vcard.ok{border-color:#1a3a1a}
+.vcard.warn{border-color:#3a2200}
+.vcard.err{border-color:#3a1010}
+.vcard-hdr{padding:12px 14px;display:flex;align-items:center;gap:10px}
+.vcode{font-size:13px;font-weight:600;color:var(--ac);font-family:monospace;min-width:56px}
+.vinfo{flex:1}
+.vprod{font-size:13px;font-weight:500}
+.vsub{font-size:11px;color:var(--mu);margin-top:1px}
+.vstatus{font-size:11px;padding:3px 9px;border-radius:20px;white-space:nowrap}
+.vs-ok{background:#0d2e0d;color:var(--ok)}
+.vs-warn{background:#2e1a00;color:var(--warn)}
+.vs-err{background:#2e0d0d;color:var(--err)}
+.vedit{padding:0 14px 12px;display:flex;gap:8px}
+.vedit input{flex:1;background:#1a1a1a;border:1px solid #3a2200;border-radius:8px;padding:8px 10px;font-size:13px;color:var(--tx);font-family:monospace;outline:none}
+.vedit input:focus{border-color:var(--ac)}
+.vedit-btn{background:var(--warn);color:#0f0f0f;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--f)}
+.verr-input{border-color:#3a1010!important}
+.verr-btn{background:var(--err)!important;color:#fff}
+
+/* Progress */
+.prog-wrap{margin-bottom:20px}
+.prog-label{display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:8px}
+.prog-bar{height:6px;background:var(--s2);border-radius:3px;overflow:hidden}
+.prog-fill{height:100%;background:var(--ac);border-radius:3px;transition:width .4s;width:0%}
+
+/* Success */
+.ok-icon{font-size:72px;margin-bottom:20px}
+.ok-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:28px;width:100%}
+.ok-stat{background:var(--s);border:1px solid var(--b);border-radius:var(--r);padding:16px;text-align:center}
+.ok-n{font-size:32px;font-weight:700;color:var(--ac)}
+.ok-l{font-size:12px;color:var(--mu);margin-top:4px}
+
+/* Buttons */
+.btn{width:100%;padding:16px;border-radius:var(--r);font-size:16px;font-weight:700;cursor:pointer;border:none;font-family:var(--f);letter-spacing:-.2px;transition:transform .1s;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn:active:not(:disabled){transform:scale(.97)}
+.btn-ac{background:var(--ac);color:#0f0f0f;margin-top:4px}
+.btn-ac:disabled{opacity:.3;cursor:not-allowed}
+.btn-ghost{background:transparent;border:1px solid var(--b);color:var(--mu);margin-top:10px}
+.btn-sm{padding:10px 16px;font-size:13px;width:auto;border-radius:8px}
+
+/* Spinner */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{width:18px;height:18px;border:2.5px solid rgba(15,15,15,.3);border-top-color:#0f0f0f;border-radius:50%;animation:spin .7s linear infinite}
+.preview-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:12px}
+.preview-thumb{aspect-ratio:1;border-radius:6px;overflow:hidden;background:var(--s2);cursor:pointer}
+.preview-thumb img{width:100%;height:100%;object-fit:cover}
+.preview-more{display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:var(--mu);background:var(--s2);aspect-ratio:1;border-radius:6px}
+.preview-count{font-size:12px;color:var(--mu);margin-bottom:8px;display:flex;justify-content:space-between}
+.clear-all-btn{font-size:11px;color:var(--err);cursor:pointer;background:transparent;border:none;font-family:var(--f)}
+.mode-tabs{display:flex;background:var(--s2);border-radius:var(--r);padding:3px;gap:3px;margin-bottom:16px}
+.mode-tab{flex:1;padding:10px;border:none;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--f);background:transparent;color:var(--mu);transition:all .2s}
+.mode-tab.on{background:var(--s);color:var(--ac);box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.code-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.code-item{background:var(--s);border:1.5px solid var(--b);border-radius:var(--r);padding:14px 16px;display:flex;align-items:flex-start;justify-content:space-between;cursor:pointer;transition:all .15s;gap:10px}
+.code-item:active{transform:scale(.98)}
+.code-item.has-photos{border-color:var(--ok);background:#0d1a0d}
+.code-item.uploading{border-color:var(--warn);background:#1a1200}
+.ci-left{display:flex;align-items:center;gap:10px}
+.ci-code{font-size:16px;font-weight:700;color:var(--ac);font-family:monospace}
+.ci-name{font-size:13px;color:var(--mu)}
+.ci-count{font-size:12px;padding:4px 12px;border-radius:20px;background:var(--s2);color:var(--mu)}
+.ci-count.done{background:rgba(76,175,80,.15);color:var(--ok)}
+.ci-addr{font-size:12px;color:#bbb;margin-top:4px;line-height:1.5}
+.problem-opt{background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--tx);cursor:pointer;text-align:left;font-family:var(--f)}
+.problem-opt:hover,.problem-opt.on{background:#2a1a00;border-color:var(--warn);color:var(--warn)}
+</style>
+</head>
+<body>
+
+<!-- LINE Browser Warning -->
+<div id="lineBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:999;background:#cc4400;color:#fff;padding:12px 16px;font-size:13px;font-family:var(--f);text-align:center;line-height:1.8">
+  ⚠️ เปิดใน LINE ถ่ายรูปไม่ได้ค่ะ<br>
+  <button onclick="openInBrowser()" style="margin-top:8px;padding:10px 24px;background:#fff;color:#cc4400;border:none;border-radius:20px;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--f)">🌐 เปิดใน Safari / Chrome</button>
+</div>
+
+<!-- S1: ชื่อ -->
+<div class="screen on" id="s1">
+  <div class="body center">
+    <div class="welcome-icon">👷</div>
+    <div style="font-size:26px;font-weight:800;letter-spacing:1px;color:var(--ac,#c8f542);margin-bottom:2px">Snapsite</div>
+    <div class="big-title">สวัสดีค่ะ</div>
+    <div class="sub">เลือกชื่อเล่นของคุณครั้งเดียว<br>ระบบจะจำไว้ให้ค่ะ</div>
+    <div id="nameList" style="display:none;flex-direction:column;gap:8px;width:100%;max-width:340px;max-height:46vh;overflow-y:auto;margin-bottom:10px"></div>
+    <div id="nameManualWrap">
+      <input class="big-input" id="nameInput" type="text" placeholder="ชื่อเล่น เช่น ต้น, เอ, ช่างแดง" autocomplete="off" autocorrect="off">
+      <button class="btn btn-ac" onclick="saveName()">เริ่มใช้งาน →</button>
+    </div>
+    <button id="nameToggle" onclick="toggleManualName()" style="display:none;background:none;border:none;color:#666;font-size:13px;margin-top:10px;cursor:pointer;font-family:var(--f);text-decoration:underline">ไม่มีชื่อของฉัน — พิมพ์เอง</button>
+  </div>
+</div>
+
+<!-- S2: เลือกงาน -->
+<div class="screen" id="s2">
+  <div class="bar">
+    <div class="bar-title">เลือกงานคืนนี้</div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="name-chip" id="nameChip">—</div>
+    </div>
+  </div>
+  <div class="body">
+    <div class="section-title">เลือกสื่อก่อน</div>
+    <div id="mediaChipsInstaller" style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px"></div>
+    <div class="section-title">งานในสื่อนี้ — กดเลือก 1 งาน</div>
+    <div class="job-list" id="jobListEl"></div>
+    <button class="btn btn-ac" id="pickJobBtn" onclick="goUpload()" disabled>เลือกงานนี้ →</button>
+  </div>
+</div>
+
+<!-- S3: โยนรูป -->
+<div class="screen" id="s3">
+  <div class="bar">
+    <div style="display:flex;align-items:center;gap:8px">
+      <button onclick="go('s2')" style="background:transparent;border:1px solid var(--b);color:var(--mu);font-size:12px;padding:5px 12px;border-radius:20px;cursor:pointer;font-family:var(--f)">ย้อนกลับ</button>
+      <div class="bar-title">เลือกรูปตาม Code</div>
+    </div>
+    <div class="name-chip" id="nameChip3">—</div>
+  </div>
+  <div class="body">
+    <div class="job-selected-bar">
+      <div>
+        <div style="font-size:11px;color:var(--mu);margin-bottom:2px">งานที่เลือก</div>
+        <div id="jsbMedia" style="font-size:16px;font-weight:700;color:#88aaff">—</div>
+        <div id="jsbName" style="font-size:16px;font-weight:700;color:var(--tx);margin-top:3px"></div>
+      </div>
+      <div class="jsb-change" onclick="go('s2')">เปลี่ยน</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:12px;color:var(--mu)">กดที่ Code เพื่อเลือกรูปของจุดนั้นค่ะ</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="sendAllCodesBtnTop" onclick="sendAllCodes()" style="display:none;padding:8px 16px;background:var(--ac);border:none;border-radius:8px;color:#0f0f0f;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--f)">📤 ส่ง</button>
+        <button onclick="openJobProblemModal()" style="padding:8px 14px;background:transparent;border:1px solid #553333;border-radius:8px;color:#ff8866;font-size:12px;cursor:pointer;font-family:var(--f);white-space:nowrap">⚠️ มีปัญหา</button>
+      </div>
+    </div>
+    <div style="position:relative;margin-bottom:12px">
+      <input type="text" id="codeSearch" placeholder="🔍 ค้นหา Code หรือที่อยู่..." oninput="filterCodeList(this.value)" autocomplete="off" style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:10px 14px;font-size:14px;color:#f0f0f0;font-family:var(--f);outline:none">
+    </div>
+    <div class="code-list" id="codeListEl"></div>
+    <div class="prog-wrap" id="progWrap" style="display:none">
+      <div class="prog-top"><span id="progTxt3">กำลังส่ง...</span><span id="progPct3">0%</span></div>
+      <div class="prog-bar"><div class="prog-fill" id="progFill3" style="width:0%"></div></div>
+    </div>
+    <button class="btn btn-ac" id="sendAllCodesBtn" onclick="sendAllCodes()" style="display:none;margin-top:16px">📤 ส่งทั้งหมด</button>
+    <button onclick="openJobProblemModal()" style="width:100%;margin-top:10px;padding:12px;background:transparent;border:1px solid #553333;border-radius:10px;color:#ff8866;font-size:13px;cursor:pointer;font-family:var(--f);display:block">⚠️ มีปัญหาหน้างาน ติดตั้งไม่ได้วันนี้</button>
+  </div>
+</div>
+
+<div class="screen" id="s4">
+  <div class="bar">
+    <div class="bar-title">ตรวจสอบก่อนส่ง</div>
+    <div style="font-size:12px;color:var(--mu)" id="verifyCount">0 จุด</div>
+  </div>
+  <div class="body" style="padding-top:16px">
+    <div style="font-size:13px;color:var(--mu);margin-bottom:12px">ระบบอ่าน Code แล้ว — ตรวจดูสักครู่</div>
+    <div class="verify-list" id="verifyList"></div>
+    <button class="btn btn-ac" id="confirmBtn" onclick="doUpload()">ยืนยันและส่ง 📤</button>
+    <button class="btn btn-ghost" onclick="go('s3')">← กลับแก้ไขรูป</button>
+  </div>
+</div>
+
+<!-- S5: Sending -->
+<div class="screen" id="s5">
+  <div class="body center">
+    <div style="font-size:48px;margin-bottom:24px">📡</div>
+    <div class="big-title" style="margin-bottom:12px">กำลังส่ง...</div>
+    <div style="width:100%;margin-bottom:16px">
+      <div class="prog-label"><span id="progTxt">เตรียมรูป...</span><span id="progPct">0%</span></div>
+      <div class="prog-bar"><div class="prog-fill" id="progFill"></div></div>
+    </div>
+    <div style="font-size:13px;color:var(--mu)">กรุณารอสักครู่ อย่าปิดหน้าจอนะคะ</div>
+  </div>
+</div>
+
+<!-- S6: สำเร็จ -->
+<div class="screen" id="s6">
+  <div class="body center">
+    <div class="ok-icon">✅</div>
+    <div class="big-title" style="margin-bottom:8px">ส่งสำเร็จ!</div>
+    <div class="sub" id="okSub" style="margin-bottom:24px">—</div>
+    <div class="ok-stats">
+      <div class="ok-stat"><div class="ok-n" id="okCodes">0</div><div class="ok-l">จุดติดตั้ง</div></div>
+      <div class="ok-stat"><div class="ok-n" id="okPhotos">0</div><div class="ok-l">รูปทั้งหมด</div></div>
+    </div>
+    <button class="btn btn-ac" onclick="newBatch()">ส่งงานใหม่ →</button>
+  </div>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwgA7ohAgzVS4C37dUQh0M3utU5l7Wb17GjURcSCkPXkAW-7XIyhgLbRq_iXl9mVtt0Sg/exec';
+
+// ── State ─────────────────────────────────────────────────────
+let installerName = localStorage.getItem('installerName') || '';
+var jobs = [];
+
+// Load jobs from server
+function loadJobsFromServer() {
+  // [SPEED] วาดจอจากข้อมูลล่าสุดในเครื่องทันที — ไม่ต้องรอเซิร์ฟเวอร์
+  var cached = JSON.parse(localStorage.getItem('jobs') || '[]');
+  if (cached.length) {
+    jobs = cached;
+    renderJobs();
+    if (typeof checkPendingQueueBanner === 'function') checkPendingQueueBanner();
+  }
+  fetch(SCRIPT_URL + '?action=getJobs')
+    .then(function(r){ return r.json(); })
+    .then(function(result){
+      if (result.jobs && result.jobs.length > 0) {
+        jobs = result.jobs;
+        // Also cache locally (เครื่องเต็ม → ข้าม ไม่ให้รายการงานค้างของเก่า)
+        try { localStorage.setItem('jobs', JSON.stringify(jobs)); } catch (e) {}
+      } else {
+        // Fallback to localStorage
+        jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
+      }
+      renderJobs();
+      if (typeof checkPendingQueueBanner === 'function') checkPendingQueueBanner();
+    })
+    .catch(function(){
+      jobs = JSON.parse(localStorage.getItem('jobs') || '[]');
+      renderJobs();
+      if (typeof checkPendingQueueBanner === 'function') checkPendingQueueBanner();
+    });
+}
+loadJobsFromServer();
+let selectedJob = null;
+let allFiles = [];
+let verifyGroups = []; // [{code, status:'ok'|'warn'|'err', product, address, files}]
+
+// ── Init ──────────────────────────────────────────────────────
+function init() {
+  if (installerName) {
+    setName(installerName);
+    go('s2');
+  } else {
+    loadInstallerList();
+  }
 }
 
-// 1) syntax JS ในทุกไฟล์ html + Code.gs
-['index.html','admin.html','portal.html','warroom.html'].forEach(f => {
-  step('syntax ' + f, () => {
-    const html = fs.readFileSync(path.join(ROOT, f), 'utf-8');
-    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]).filter(s => s.length > 50);
-    const tmp = path.join(__dirname, '.tmp-' + f + '.js');
-    fs.writeFileSync(tmp, scripts.join('\n;\n'));
-    execSync('node --check ' + JSON.stringify(tmp));
-    fs.unlinkSync(tmp);
+// ── S1: ชื่อ ──────────────────────────────────────────────────
+// โหลดรายชื่อช่างจากชีท — เลือกจิ้มได้เลย สะกดตรงกันทุกครั้ง
+function loadInstallerList() {
+  var listEl = document.getElementById('nameList');
+  function render(names) {
+    if (!names || !names.length) return; // ไม่มีรายชื่อ → ใช้ช่องพิมพ์ตามเดิม
+    listEl.innerHTML = '';
+    names.forEach(function(n) {
+      var b = document.createElement('button');
+      b.textContent = '👷 ' + n;
+      b.style.cssText = 'width:100%;padding:14px;background:#1c1c1c;border:1px solid #333;border-radius:12px;color:#f0f0f0;font-size:15px;font-weight:600;cursor:pointer;font-family:var(--f);text-align:left';
+      b.onclick = function() { applyName(n); };
+      listEl.appendChild(b);
+    });
+    listEl.style.display = 'flex';
+    document.getElementById('nameManualWrap').style.display = 'none';
+    document.getElementById('nameToggle').style.display = 'inline';
+  }
+  // แสดงจากแคชก่อน แล้วอัปเดตจากเซิร์ฟเวอร์
+  try { render(JSON.parse(localStorage.getItem('installerList') || '[]')); } catch(e) {}
+  fetch(SCRIPT_URL + '?action=getInstallers')
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      if (d.installers && d.installers.length) {
+        localStorage.setItem('installerList', JSON.stringify(d.installers));
+        render(d.installers);
+      }
+    })
+    .catch(function(){});
+}
+
+function toggleManualName() {
+  document.getElementById('nameList').style.display = 'none';
+  document.getElementById('nameManualWrap').style.display = 'block';
+  document.getElementById('nameToggle').style.display = 'none';
+  document.getElementById('nameInput').focus();
+}
+
+function applyName(v) {
+  installerName = v;
+  localStorage.setItem('installerName', v);
+  setName(v);
+  go('s2');
+}
+
+function saveName() {
+  const v = document.getElementById('nameInput').value.trim();
+  if (!v) { shake('nameInput'); return; }
+  installerName = v;
+  localStorage.setItem('installerName', v);
+  setName(v);
+  go('s2');
+}
+
+function setName(n) {
+  document.getElementById('nameChip').textContent = n;
+  document.getElementById('nameChip3').textContent = n;
+}
+
+// ── S2: เลือกงาน ──────────────────────────────────────────────
+
+
+var _installerMediaGroups = {};
+var _installerSelectedMedia = null;
+var serverSent = {};   // CODE -> { count, date, installer, imgs } — รูปที่ส่งไปแล้วจริงบนเซิร์ฟเวอร์
+var codeMode = {};     // CODE -> 'append' | 'replace' — โหมดที่ช่างเลือก
+var _sentLoaded = false;  // โหลดสถานะเสร็จหรือยัง — ห้ามให้ช่างเลือกรูปก่อนรู้ว่าจุดนี้มีรูปเดิมไหม
+var _sentJobId = null;
+
+// ดึงสถานะรูปที่ส่งไปแล้วของงานนี้ (จากเซิร์ฟเวอร์ ไม่ใช่ localStorage — รู้ครบทุกเครื่อง/ทุกช่าง)
+// นับจำนวนรูปที่แท้จริง: imgs คือรูปจริงใน Drive (เชื่อถือได้) · count เป็นตัวเลขจดแยกที่อาจไม่ sync
+// กันข้อความจาก Excel (ชื่องาน/ที่อยู่) ที่มี < & " ทำหน้าจอพังหรือแทรกสคริปต์
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+function realCount(o) {
+  if (!o) return 0;
+  // หลังบ้านส่งรูปตัวอย่างมาแค่ไม่กี่ใบ → ใช้จำนวนจริงจาก count เป็นหลัก
+  return Math.max(Number(o.count) || 0, (o.imgs || []).length);
+}
+var SENT_CACHE_KEY = 'sentCache_';
+function _sentCacheLoad(jobId) {
+  try {
+    var raw = localStorage.getItem(SENT_CACHE_KEY + jobId);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; } // เครื่อง/เบราว์เซอร์ไม่รองรับ localStorage → ไม่พัง แค่ไม่มี cache
+}
+function _sentCacheSave(jobId, data) {
+  try { localStorage.setItem(SENT_CACHE_KEY + jobId, JSON.stringify(data)); } catch (e) {} // เต็ม/ไม่รองรับ → ข้ามเงียบๆ ไม่กระทบการทำงาน
+}
+function loadSentState(jobId) {
+  if (!jobId) { _sentLoaded = true; return Promise.resolve(); }
+  if (_sentLoaded && _sentJobId === jobId) return Promise.resolve(); // โหลดแล้ว ไม่ต้องยิงซ้ำ
+
+  var cached = (_sentJobId === jobId) ? null : _sentCacheLoad(jobId); // งานเดิมที่เพิ่งใช้ในเซสชันนี้ ไม่ต้องอ่าน cache ซ้ำ
+  serverSent = cached || {};
+  _sentJobId = jobId;
+  // มี cache จากครั้งก่อน → ใช้ตอบสนองช่างได้ทันที ไม่ต้องรอ แล้วค่อยรีเฟรชเงียบๆ เบื้องหลัง
+  // ไม่มี cache (เข้างานนี้ครั้งแรก) → ต้องรอผลจริงก่อนเหมือนเดิม กันรูปหาย
+  _sentLoaded = !!cached;
+
+  // ส่ง jobId ไปให้เซิร์ฟเวอร์กรองเลย (เร็วขึ้นมาก โดยเฉพาะเมื่อมี log สะสมเยอะ)
+  // ไม่ต้องกรอง e.jobId ที่นี่อีกแล้ว เซิร์ฟเวอร์กรองมาให้ครบแล้ว
+  return fetch(SCRIPT_URL + '?action=getInstallLog&jobId=' + encodeURIComponent(jobId))
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      if (_sentJobId !== jobId) return;   // ช่างเปลี่ยนไปงานอื่นแล้ว — ไม่เอาผลของงานเก่ามาทับ
+      var fresh = {};
+      (d.log || []).forEach(function(e) {
+        fresh[String(e.code).trim().toUpperCase()] = {
+          count: Number(e.count) || 0,
+          date: e.date ? String(e.date).substring(0, 10) : '',
+          installer: e.installer || '',
+          imgs: e.imgs || []
+        };
+      });
+      serverSent = fresh;
+      _sentLoaded = true;
+      _sentCacheSave(jobId, fresh);
+      try { renderCodeList(); } catch(err) {}
+    })
+    .catch(function(){
+      // ดึงไม่ได้: มี cache ให้ใช้ต่อไปได้เลย (_sentLoaded เป็น true อยู่แล้วจากตอนต้น)
+      // ไม่มี cache เลย = ปล่อยผ่าน แต่ backend กันรูปหายให้อยู่แล้ว
+      _sentLoaded = true;
+    });
+}
+
+function renderJobs() {
+  const el = document.getElementById('jobListEl');
+  // งานที่ครบและเลยกำหนดแล้ว ไม่ต้องโชว์ให้ช่าง — แอปสะอาด เห็นแต่งานที่ต้องทำ
+  var activeJobs = jobs.filter(function(j){ return !j.archived; });
+  if (!activeJobs.length) {
+    el.innerHTML = `<div class="no-jobs">⏳ ยังไม่มีงาน<br><br>รอแอดมินอัปโหลด<br>ข้อมูลงานก่อนนะค่ะ</div>`;
+    return;
+  }
+
+  // Group jobs by media category
+  _installerMediaGroups = {};
+  activeJobs.forEach(function(j) {
+    var m = (j.media || '').trim() || '__nomedia__';
+    if (!_installerMediaGroups[m]) _installerMediaGroups[m] = [];
+    _installerMediaGroups[m].push(j);
   });
-});
-step('syntax Code.gs', () => {
-  const tmp = path.join(__dirname, '.tmp-code.js');
-  fs.copyFileSync(path.join(ROOT, 'Code.gs'), tmp);
-  execSync('node --check ' + JSON.stringify(tmp));
-  fs.unlinkSync(tmp);
-});
 
-// 2) ฟังก์ชันประกาศซ้ำ
-step('ไม่มีฟังก์ชันซ้ำ', () => {
-  for (const f of ['index.html','admin.html','portal.html','warroom.html','Code.gs']) {
-    const src = fs.readFileSync(path.join(ROOT, f), 'utf-8');
-    const names = [...src.matchAll(/(?:^|\n)(?:async )?function ([a-zA-Z0-9_]+)\s*\(/g)].map(m => m[1]);
-    const dup = names.filter((n,i) => names.indexOf(n) !== i);
-    if (dup.length) throw new Error(f + ': ' + [...new Set(dup)].join(','));
+  drawInstallerMediaChips();
+
+  // If a media was selected and still valid, show its jobs; else prompt to pick media
+  if (_installerSelectedMedia && _installerMediaGroups[_installerSelectedMedia]) {
+    drawInstallerJobs(_installerSelectedMedia);
+  } else {
+    _installerSelectedMedia = null;
+    document.getElementById('jobListEl').innerHTML = '<div class="no-jobs" style="padding:30px 20px">👆 เลือกสื่อด้านบนก่อนนะคะ</div>';
+    document.getElementById('pickJobBtn').disabled = true;
+  }
+}
+
+function drawInstallerMediaChips() {
+  var chipsEl = document.getElementById('mediaChipsInstaller');
+  if (!chipsEl) return;
+  var mediaKeys = Object.keys(_installerMediaGroups).sort(function(a,b){
+    if (a === '__nomedia__') return 1;
+    if (b === '__nomedia__') return -1;
+    return a.localeCompare(b);
+  });
+  chipsEl.innerHTML = mediaKeys.map(function(m) {
+    var count = _installerMediaGroups[m].length;
+    var label = m === '__nomedia__' ? '📋 อื่นๆ' : '📺 ' + esc(m);
+    var isActive = _installerSelectedMedia === m;
+    return '<button data-media="' + encodeURIComponent(m) + '" onclick="selectInstallerMedia(decodeURIComponent(this.getAttribute(\'data-media\')))" ' +
+      'style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-radius:12px;border:1px solid ' + (isActive ? '#c8f542' : '#2a2a2a') + ';' +
+      'background:' + (isActive ? '#1a2a0a' : '#1a1a1a') + ';color:' + (isActive ? '#c8f542' : '#f0f0f0') + ';' +
+      'cursor:pointer;font-size:15px;font-family:var(--f);font-weight:' + (isActive ? '600' : '400') + ';text-align:left">' +
+      '<span>' + label + '</span>' +
+      '<span style="opacity:.6;font-size:13px">' + count + ' งาน ' + (isActive ? '✓' : '›') + '</span></button>';
+  }).join('');
+}
+
+function selectInstallerMedia(media) {
+  _installerSelectedMedia = media;
+  // Clear job selection when switching media
+  if (selectedJob) {
+    var stillInMedia = (_installerMediaGroups[media] || []).some(function(j){ return j.id === selectedJob.id; });
+    if (!stillInMedia) { selectedJob = null; codePhotos = {}; }
+  }
+  drawInstallerMediaChips();
+  drawInstallerJobs(media);
+}
+
+function drawInstallerJobs(media) {
+  var el = document.getElementById('jobListEl');
+  var jobsInMedia = (_installerMediaGroups[media] || []).slice();
+
+  // เรียงงานที่ใกล้วันติดตั้งวันนี้ที่สุดขึ้นก่อน (งานไม่มีวันที่ไปท้ายสุด)
+  var todayMs = new Date(new Date().toDateString()).getTime();
+  function dayDiff(j) {
+    if (!j.dateStart) return Infinity;
+    var d = new Date(j.dateStart);
+    if (isNaN(d.getTime())) return Infinity;
+    return Math.abs(new Date(d.toDateString()).getTime() - todayMs);
+  }
+  jobsInMedia.sort(function(a, b) { return dayDiff(a) - dayDiff(b); });
+
+  function isToday(j) {
+    if (!j.dateStart) return false;
+    var s = new Date(j.dateStart), e = j.dateEnd ? new Date(j.dateEnd) : s;
+    var t = todayMs;
+    return t >= new Date(s.toDateString()).getTime() && t <= new Date(e.toDateString()).getTime();
+  }
+
+  function jobItemHtml(j) {
+    var today = isToday(j);
+    return '<div class="job-item" data-jobid="' + j.id + '" onclick="pickJob(this,\'' + j.id + '\')"' +
+      (today ? ' style="border:1.5px solid var(--ac)"' : '') + '>' +
+      '<div class="job-dot"></div>' +
+      '<div style="flex:1">' +
+        '<div class="job-name">' + esc(j.name) + '</div>' +
+        '<div class="job-detail">' + j.spots.length + ' จุด' + (j.dateStart ? ' · ติดตั้ง ' + formatInstallDate(j.dateStart, j.dateEnd) : '') + '</div>' +
+      '</div>' +
+      (today ? '<span style="background:#1a2a00;color:var(--ac);font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;flex-shrink:0">วันนี้</span>' : '') +
+    '</div>';
+  }
+
+  el.innerHTML = jobsInMedia.map(jobItemHtml).join('');
+
+  // Restore selection highlight if still valid
+  if (selectedJob) {
+    var still = jobsInMedia.find(function(j){ return j.id === selectedJob.id; });
+    if (still) {
+      selectedJob = still;
+      var selEl = el.querySelector('.job-item[data-jobid="' + still.id + '"]');
+      if (selEl) selEl.classList.add('sel');
+      document.getElementById('pickJobBtn').disabled = false;
+    } else {
+      document.getElementById('pickJobBtn').disabled = true;
+    }
+  } else {
+    document.getElementById('pickJobBtn').disabled = true;
+  }
+}
+
+function pickJob(el, id) {
+  document.querySelectorAll('.job-item').forEach(x => x.classList.remove('sel'));
+  el.classList.add('sel');
+  var newJob = jobs.find(j => j.id === id);
+  // Clear photos if switching to a different job
+  if (selectedJob && selectedJob.id !== id) {
+    codePhotos = {};
+    codeMode = {};
+  }
+  selectedJob = newJob;
+  loadSentState(id);
+  sessionStorage.setItem('selectedJobId', id);
+  document.getElementById('pickJobBtn').disabled = false;
+}
+
+function goUpload() {
+  if (!selectedJob) { alert('กรุณาเลือกงานก่อนค่ะ'); return; }
+  document.getElementById('jsbMedia').textContent = selectedJob.media ? '📺 ' + selectedJob.media : selectedJob.name;
+  var nameEl = document.getElementById('jsbName');
+  if (nameEl) nameEl.textContent = selectedJob.name || '';
+  var searchEl = document.getElementById('codeSearch');
+  if (searchEl) searchEl.value = '';
+  // Restore any queued photos from IndexedDB for this job
+  restoreQueueToApp(selectedJob.id).then(function(n) {
+    renderCodeList();
+    if (n > 0) showNetToast('📦 กู้คืนรูปค้าง ' + n + ' รูปจากเครื่องค่ะ', '#1b2a3a', '#4488ff');
+  });
+  renderCodeList();
+  go('s3');
+}
+
+// ── S3: โยนรูป ────────────────────────────────────────────────
+
+
+
+
+function clearFiles() {
+  allFiles = [];
+  var fi = document.getElementById('fileInput');
+  if (fi) fi.value = '';
+  var uzB = document.getElementById('uzBefore');
+  if (uzB) uzB.style.display = 'block';
+  var uzA = document.getElementById('uzAfter');
+  if (uzA) uzA.style.display = 'none';
+  var uz = document.getElementById('uploadZone');
+  if (uz) uz.classList.remove('has');
+  var sb = document.getElementById('sendBtn');
+  if (sb) sb.disabled = true;
+}
+
+function extractTs(n) { const m = n.match(/^(\d{10,13})/); return m ? +m[1] : null; }
+
+// ── S4: Verify (OCR client-side preview) ──────────────────────
+
+
+function buildClientGroups(files, spots) {
+  // Heuristic: if time gap > 60s between files, likely new group
+  // Mark first file of each group as potential code photo
+  const groups = [];
+  let currentGroup = null;
+  let lastTs = 0;
+
+  files.forEach((f, i) => {
+    const ts = extractTs(f.name) || f.lastModified || 0;
+    const gap = ts - lastTs;
+    const isNewGroup = i === 0 || gap > 60000; // 60s gap = new location
+
+    if (isNewGroup) {
+      if (currentGroup) groups.push(currentGroup);
+      currentGroup = { files: [f], firstTs: ts };
+    } else {
+      currentGroup.files.push(f);
+    }
+    lastTs = ts;
+  });
+  if (currentGroup) groups.push(currentGroup);
+
+  // Match to spots by index (server will do real OCR)
+  return groups.map((g, i) => {
+    const spot = spots[i] || null;
+    return {
+      code: spot ? spot.code : '???',
+      product: spot ? spot.product : 'รอ OCR',
+      address: spot ? spot.address : 'ระบบจะอ่าน Code จากรูปเสา',
+      status: spot ? 'ok' : 'err',
+      count: g.files.length,
+      files: g.files
+    };
+  });
+}
+
+function renderVerify() {
+  document.getElementById('verifyCount').textContent = verifyGroups.length + ' กลุ่ม';
+  const el = document.getElementById('verifyList');
+  el.innerHTML = verifyGroups.map((g, i) => `
+    <div class="vcard ${g.status}" id="vc${i}">
+      <div class="vcard-hdr">
+        <div class="vcode">${g.code}</div>
+        <div class="vinfo">
+          <div class="vprod">${g.product}</div>
+          <div class="vsub">${g.count} รูป · ${g.address}</div>
+        </div>
+        <div class="vstatus vs-${g.status}">${g.status==='ok'?'✓ โอเค':g.status==='warn'?'⚠ ตรวจ':'? รอ OCR'}</div>
+      </div>
+      ${g.status !== 'ok' ? `
+      <div class="vedit">
+        <input class="${g.status==='err'?'verr-input':''}" placeholder="แก้ Code ถ้าผิด..." value="${g.code==='???'?'':g.code}" id="vi${i}" autocomplete="off" autocorrect="off" autocapitalize="characters">
+        <button class="vedit-btn ${g.status==='err'?'verr-btn':''}" onclick="fixCode(${i})">แก้</button>
+      </div>` : ''}
+    </div>`).join('');
+}
+
+function fixCode(i) {
+  const input = document.getElementById('vi' + i);
+  const v = input.value.trim().toUpperCase();
+  if (!v) return;
+  verifyGroups[i].code = v;
+  verifyGroups[i].status = 'ok';
+  const spot = selectedJob.spots.find(s => s.code === v);
+  verifyGroups[i].product = spot ? spot.product : 'แก้ไขแล้ว';
+  verifyGroups[i].address = spot ? spot.address : '';
+  renderVerify();
+}
+
+// ── Upload ────────────────────────────────────────────────────
+// Image compression
+async function compressImage(file, maxKB) {
+  // [FIX-HEIC] วาดเป็น JPEG + ถ้ายังใหญ่เกิน ย่อซ้ำอีกรอบ — การันตีไฟล์ไม่บวม
+  function toJpeg(source, sw, sh) {
+    var maxW = 1200, maxH = 1200;
+    var w = sw, h = sh;
+    if (w > maxW) { h = Math.round(h*maxW/w); w = maxW; }
+    if (h > maxH) { w = Math.round(w*maxH/h); h = maxH; }
+    var canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(source, 0, 0, w, h);
+    var data = canvas.toDataURL('image/jpeg', 0.75);
+    if (data.length > maxKB * 1024 * 1.37) data = canvas.toDataURL('image/jpeg', 0.55);
+    if (data.length > maxKB * 1024 * 2.2) {
+      // ยังใหญ่มาก (รูปรายละเอียดสูง) — ย่อขนาดลงอีก 30%
+      var c2 = document.createElement('canvas');
+      c2.width = Math.round(w * 0.7); c2.height = Math.round(h * 0.7);
+      c2.getContext('2d').drawImage(canvas, 0, 0, c2.width, c2.height);
+      data = c2.toDataURL('image/jpeg', 0.5);
+    }
+    if (!data || data.length < 100) throw new Error('empty-canvas');
+    return data.split(',')[1];
+  }
+  // ทางที่ 1: Image element (รองรับ JPEG/PNG ทุกเครื่อง)
+  try {
+    return await new Promise(function(resolve, reject) {
+      var img = new Image();
+      var url = URL.createObjectURL(file);
+      img.onload = function() {
+        try { var d = toJpeg(img, img.naturalWidth || img.width, img.naturalHeight || img.height); URL.revokeObjectURL(url); resolve(d); }
+        catch(e) { URL.revokeObjectURL(url); reject(e); }
+      };
+      img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('img-decode')); };
+      img.src = url;
+    });
+  } catch(e) {}
+  // ทางที่ 2: createImageBitmap (อ่านไฟล์ HEIC/แปลกๆ ได้ในหลายเครื่อง)
+  if (window.createImageBitmap) {
+    try {
+      var bmp = await createImageBitmap(file);
+      var d2 = toJpeg(bmp, bmp.width, bmp.height);
+      if (bmp.close) bmp.close();
+      return d2;
+    } catch(e) {}
+  }
+  // ย่อไม่ได้จริงๆ → โยน error ให้ผู้เรียกใช้ fallback ส่งไฟล์ดิบ
+  // (ระบบแบ่ง batch ตามขนาดจะกันไม่ให้ payload ระเบิดเอง)
+  throw new Error('cannot-compress');
+}
+
+async function uploadWithRetry(payload, retries) {
+  retries = retries || 3;
+  for (var attempt = 1; attempt <= retries; attempt++) {
+    try {
+      var res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    } catch(err) {
+      if (attempt === retries) throw err;
+      await new Promise(function(r){ setTimeout(r, attempt * 2000); });
+    }
+  }
+}
+
+async function doUpload() {
+  // Legacy flow disabled - the code-grouped batch sender (sendAllCodes) is the only safe upload path.
+  alert('หน้านี้ไม่ใช้งานแล้วค่ะ กรุณาส่งรูปผ่านหน้า "ส่งทั้งหมด" ปกติ');
+  go('s3');
+}
+
+function toB64(f) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(f);
+  });
+}
+
+function setProgress(p, t) {
+  document.getElementById('progFill').style.width = Math.round(p) + '%';
+  document.getElementById('progPct').textContent = Math.round(p) + '%';
+  document.getElementById('progTxt').textContent = t;
+}
+
+function showSuccess(result, total, jobUsed) {
+  var theJob = jobUsed || selectedJob;
+  var fromServer = (result.codes || []).length;
+  var fromSession = Object.keys(codePhotos || {}).filter(function(k){
+    return codePhotos[k] && codePhotos[k].length > 0;
+  }).length;
+  var codeCount = fromServer || fromSession;
+
+  document.getElementById('okCodes').textContent = codeCount;
+  document.getElementById('okPhotos').textContent = total;
+
+  // Show drive confirmation
+  var codes = result.codes || [];
+  var hasFolder = codes.some(function(c){ return c.folderUrl; });
+  var subText = 'งาน: ' + (theJob ? theJob.name : '');
+  if (hasFolder) {
+    subText += '\n✅ รูปเข้า Drive แล้วค่ะ';
+  }
+  document.getElementById('okSub').textContent = subText;
+
+  // Save codeLog
+  if (result.codes && result.codes.length && theJob) {
+    var jobId = theJob.id;
+    var codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+    if (!codeLog[jobId]) codeLog[jobId] = {};
+    result.codes.forEach(function(c) {
+      codeLog[jobId][c.code] = {
+        status: 'sent', count: c.count || 0,
+        method: c.method || 'forced',
+        folderUrl: c.folderUrl || '',
+        afterFolderUrl: c.afterFolderUrl || c.folderUrl || '',
+        productFolderUrl: c.productFolderUrl || '',
+        installedAt: new Date().toLocaleString('th-TH')
+      };
+    });
+    localStorage.setItem('codeLog', JSON.stringify(codeLog));
+  }
+
+  codePhotos = {};
+  go('s6');
+}
+
+function newBatch() {
+  clearFiles();
+  go('s2');
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function go(id) {
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('on'); });
+  document.getElementById(id).classList.add('on');
+  if (id === 's2') renderJobs();
+  if (id === 's3') {
+    if (!window._keepPhotos) codePhotos = {};
+    window._keepPhotos = false;
+    document.getElementById('nameChip3').textContent = installerName || '—';
+    document.getElementById('jsbMedia').textContent = selectedJob ? (selectedJob.media ? '📺 ' + selectedJob.media : selectedJob.name) : '—';
+    var _nel = document.getElementById('jsbName'); if (_nel) _nel.textContent = selectedJob ? (selectedJob.name || '') : '';
+    renderCodeList();
+  }
+}
+
+function shake(id) {
+  const el = document.getElementById(id);
+  el.style.borderColor = 'var(--err)';
+  setTimeout(() => el.style.borderColor = '', 1500);
+}
+
+// ── Load jobs from admin (polling localStorage) ───────────────
+function syncJobs() {
+  const stored = JSON.parse(localStorage.getItem('jobs') || '[]');
+  if (stored.length !== jobs.length) {
+    jobs = stored;
+    if (document.getElementById('s2').classList.contains('on')) renderJobs();
+  }
+}
+
+// Register service worker for PWA
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').then(function(reg) {
+    reg.update(); // เช็คเวอร์ชันใหม่ทันทีทุกครั้งที่เปิดแอป ไม่รอให้เบราว์เซอร์ตรวจเอง
+  }).catch(function(){});
+  // มี Service Worker เวอร์ชันใหม่เข้าควบคุมหน้าเมื่อไหร่ รีเฟรชอัตโนมัติ 1 ครั้งทันที
+  // (กันไม่ให้ต้องปิดแอปเปิดใหม่เอง — สำคัญมากตอนสาธิตสด)
+  var _swRefreshed = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function() {
+    if (_swRefreshed) return;
+    _swRefreshed = true;
+    window.location.reload();
+  });
+}
+
+// Warn before closing if unsent photos exist
+window.addEventListener('beforeunload', function(e) {
+  var hasUnsent = Object.keys(codePhotos || {}).some(function(k){ return codePhotos[k] && codePhotos[k].length > 0; });
+  if (hasUnsent) {
+    e.preventDefault();
+    e.returnValue = 'มีรูปที่ยังไม่ได้ส่ง';
+    return e.returnValue;
   }
 });
+setInterval(syncJobs, 3000);
 
-// 3) ทุก action ฝั่งหน้าเว็บมี route ฝั่ง backend
-step('route ครบทุก action', () => {
-  const backend = fs.readFileSync(path.join(ROOT, 'Code.gs'), 'utf-8');
-  const routes = new Set([...backend.matchAll(/action === '([a-zA-Z]+)'/g)].map(m => m[1]));
-  const used = new Set();
-  for (const f of ['index.html','admin.html','portal.html','warroom.html']) {
-    const src = fs.readFileSync(path.join(ROOT, f), 'utf-8');
-    [...src.matchAll(/action[=:]\s*'([a-zA-Z]+)'/g), ...src.matchAll(/\?action=([a-zA-Z]+)/g)].forEach(m => used.add(m[1]));
+init();
+</script>
+
+<!-- Problem Modal -->
+<div id="problemModalBg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:199;align-items:flex-end;padding:16px">
+  <div style="background:#1a1a1a;border-radius:16px;padding:20px;width:100%;max-width:560px;margin:0 auto">
+    <div style="font-size:14px;font-weight:600;color:#ff8866;margin-bottom:4px">⚠️ แจ้งปัญหาหน้างาน</div>
+    <div style="font-size:12px;color:#666;margin-bottom:16px">งาน: <span id="problemJobName" style="color:#c8f542"></span></div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+      <button onclick="selectProblem(this,'🌧️ สภาพอากาศไม่เอื้ออำนวย ฝนตก/พายุ')" class="problem-opt">🌧️ สภาพอากาศไม่เอื้ออำนวย</button>
+      <button onclick="selectProblem(this,'🚧 มีการก่อสร้าง / ถนนปิด')" class="problem-opt">🚧 มีการก่อสร้าง / ถนนปิด</button>
+      <button onclick="selectProblem(this,'🚗 รถติดมาก / เข้าพื้นที่ไม่ได้')" class="problem-opt">🚗 รถติดมาก / เข้าพื้นที่ไม่ได้</button>
+      <button onclick="selectProblem(this,'🛠️ อุปกรณ์เสีย / ขาดวัสดุ')" class="problem-opt">🛠️ อุปกรณ์เสีย / ขาดวัสดุ</button>
+      <button onclick="selectProblem(this,'other')" class="problem-opt">📝 อื่นๆ (พิมพ์เอง)</button>
+    </div>
+    <textarea id="problemNote" placeholder="รายละเอียดเพิ่มเติม..." style="display:none;width:100%;background:#222;border:1px solid #333;border-radius:8px;padding:10px;font-size:13px;color:#f0f0f0;font-family:var(--f);resize:none;height:80px;margin-bottom:10px;outline:none"></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button onclick="confirmProblem()" style="flex:1;padding:12px;background:#cc3300;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--f)">⚠️ แจ้งแอดมิน</button>
+      <button onclick="closeProblemModal()" style="flex:1;padding:12px;background:transparent;border:1px solid #333;border-radius:8px;color:#666;font-size:13px;cursor:pointer;font-family:var(--f)">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function formatInstallDate(start, end) {
+  if (!start) return '';
+  var s = new Date(start);
+  var months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  if (!end) return s.getDate() + ' ' + months[s.getMonth()];
+  var e = new Date(end);
+  if (s.getMonth()===e.getMonth()) return s.getDate() + '-' + e.getDate() + ' ' + months[e.getMonth()] + ' ' + (e.getFullYear()+543);
+  return s.getDate() + ' ' + months[s.getMonth()] + ' — ' + e.getDate() + ' ' + months[e.getMonth()] + ' ' + (e.getFullYear()+543);
+}
+
+// Refresh jobs every 30s
+setInterval(function(){
+  loadJobsFromServer();
+}, 30000);
+
+// ── Mode switching ──────────────────────────────────────────────
+var currentMode = 0;
+var codePhotos = {}; // { code: [File, ...] }
+
+function switchMode(m) {
+  currentMode = m;
+  // Clear previous selections when switching mode
+  codePhotos = {};
+  codeMode = {};
+  document.getElementById('modeTab0').classList.toggle('on', m===0);
+  document.getElementById('modeTab1').classList.toggle('on', m===1);
+  document.getElementById('mode0').style.display = m===0 ? 'block' : 'none';
+  document.getElementById('mode1').style.display = m===1 ? 'block' : 'none';
+  if (m===1) renderCodeList();
+}
+
+function filterCodeList(query) {
+  var q = query.toLowerCase().trim();
+  var items = document.querySelectorAll('#codeListEl .code-item');
+  items.forEach(function(item) {
+    var text = item.textContent.toLowerCase();
+    item.style.display = (!q || text.indexOf(q) > -1) ? '' : 'none';
+  });
+}
+
+function renderCodeList() {
+  var job = selectedJob;
+  if (!job) return;
+  var el = document.getElementById('codeListEl');
+  codePhotos = codePhotos || {};
+  el.innerHTML = '';
+  job.spots.forEach(function(s) {
+    var photos = codePhotos[s.code] || [];
+    var div = document.createElement('div');
+    var savedLog2 = JSON.parse(localStorage.getItem('codeLog') || '{}');
+    var jobLog2 = savedLog2[selectedJob ? selectedJob.id : ''] || {};
+    var isSent = jobLog2[s.code] && jobLog2[s.code].status === 'sent';
+    div.className = 'code-item' + (photos.length ? ' has-photos' : isSent ? ' uploading' : '');
+    div.id = 'ci_' + s.code;
+    var addr = s.address && (s.address || '').length > 3 ? s.address : (s.product || '—');
+    // Check if this code was already sent (from localStorage codeLog)
+    var savedLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+    var jobLog = savedLog[selectedJob ? selectedJob.id : ''] || {};
+    var srv = serverSent[String(s.code).trim().toUpperCase()];
+    var alreadySent = !!(srv && srv.count > 0) || (jobLog[s.code] && jobLog[s.code].status === 'sent');
+    var sentCount = srv ? realCount(srv) : (jobLog[s.code] ? realCount(jobLog[s.code]) : 0);
+    var mode = codeMode[s.code];
+
+    div.innerHTML =
+      '<div class="ci-left" style="flex:1;min-width:0">' +
+        '<div>' +
+          '<div class="ci-code">' + esc(s.code) + (alreadySent ? ' ✓' : '') + '</div>' +
+          '<div class="ci-addr" style="white-space:normal;word-break:break-word">' + esc(addr) + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">' +
+        '<div class="ci-count' + (photos.length ? ' done' : alreadySent ? ' done' : '') + '">' +
+          (photos.length
+             ? (mode === 'append' ? '➕ เพิ่ม ' + photos.length + ' รูป'
+                : mode === 'replace' ? '↻ แทนที่ ' + photos.length + ' รูป'
+                : '✓ ' + photos.length + ' รูป')
+             : alreadySent ? '✓ ส่งแล้ว ' + sentCount + ' รูป' : 'กดเลือก') +
+        '</div>' +
+      '</div>';
+    div.onclick = function() { openCodePicker(s.code); };
+    el.appendChild(div);
+  });
+
+  // Show send button if any code has photos - and re-enable them
+  var hasAny = Object.keys(codePhotos).some(function(k){ return codePhotos[k] && codePhotos[k].length > 0; });
+  var sendBtn = document.getElementById('sendAllCodesBtn');
+  if (sendBtn) {
+    sendBtn.style.display = hasAny ? 'flex' : 'none';
+    sendBtn.disabled = false;
+    sendBtn.textContent = '📤 ส่งทั้งหมด';
   }
-  const missing = [...used].filter(a => !routes.has(a));
-  if (missing.length) throw new Error('ขาด route: ' + missing.join(','));
+  var topBtn = document.getElementById('sendAllCodesBtnTop');
+  if (topBtn) {
+    topBtn.style.display = hasAny ? 'inline-block' : 'none';
+    topBtn.disabled = false;
+  }
+}
+
+// ── IndexedDB Offline Photo Queue ─────────────────────────────
+// รูปถูกเก็บลงเครื่องถาวรทันทีที่เลือก - ปิดแอป/เน็ตหลุด รูปไม่หาย
+var photoDB = null;
+
+function openPhotoDB() {
+  return new Promise(function(resolve, reject) {
+    if (photoDB) return resolve(photoDB);
+    var req = indexedDB.open('planb-photos', 1);
+    req.onupgradeneeded = function(e) {
+      var db = e.target.result;
+      if (!db.objectStoreNames.contains('photos')) {
+        var store = db.createObjectStore('photos', { keyPath: 'id', autoIncrement: true });
+        store.createIndex('jobCode', ['jobId', 'code']);
+        store.createIndex('jobId', 'jobId');
+      }
+    };
+    req.onsuccess = function(e) { photoDB = e.target.result; resolve(photoDB); };
+    req.onerror = function() { reject(req.error); };
+  });
+}
+
+function savePhotoToQueue(jobId, code, file) {
+  return openPhotoDB().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction('photos', 'readwrite');
+      tx.objectStore('photos').add({
+        jobId: jobId, code: code, blob: file,
+        name: file.name, type: file.type, lastModified: file.lastModified,
+        savedAt: Date.now()
+      });
+      tx.oncomplete = function(){ resolve(true); };
+      tx.onerror = function(){ resolve(false); };
+      tx.onabort = function(){ resolve(false); };     // เครื่องเต็ม → แจ้งช่าง ไม่เงียบ
+    });
+  }).then(function(ok) {
+    if (ok === false && !window._warnedFull) {
+      window._warnedFull = true;
+      alert('⚠️ พื้นที่ในเครื่องเต็ม เก็บรูปสำรองไม่ได้\nรูปยังอยู่บนจอ กรุณากดส่งก่อนปิดแอปนะคะ');
+    }
+    return ok;
+  }).catch(function(){ return false; });
+}
+
+function loadQueueForJob(jobId) {
+  return openPhotoDB().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction('photos', 'readonly');
+      var req = tx.objectStore('photos').index('jobId').getAll(jobId);
+      req.onsuccess = function() { resolve(req.result || []); };
+      req.onerror = function() { resolve([]); };
+    });
+  }).catch(function(){ return []; });
+}
+
+function getAllQueued() {
+  return openPhotoDB().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction('photos', 'readonly');
+      var req = tx.objectStore('photos').getAll();
+      req.onsuccess = function() { resolve(req.result || []); };
+      req.onerror = function() { resolve([]); };
+    });
+  }).catch(function(){ return []; });
+}
+
+function clearQueueForCode(jobId, code) {
+  return openPhotoDB().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction('photos', 'readwrite');
+      var req = tx.objectStore('photos').index('jobCode').openCursor(IDBKeyRange.only([jobId, code]));
+      req.onsuccess = function(e) {
+        var cursor = e.target.result;
+        if (cursor) { cursor.delete(); cursor.continue(); }
+      };
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+  }).catch(function(){});
+}
+
+function restoreQueueToApp(jobId) {
+  // Restore queued photos into codePhotos (merge, no duplicates by name+size)
+  return loadQueueForJob(jobId).then(function(records) {
+    if (!records.length) return 0;
+    var restored = 0;
+    records.forEach(function(rec) {
+      if (!codePhotos[rec.code]) codePhotos[rec.code] = [];
+      var exists = codePhotos[rec.code].some(function(f) {
+        return f.name === rec.name && f.lastModified === rec.lastModified;
+      });
+      if (!exists) {
+        try {
+          var file = new File([rec.blob], rec.name, { type: rec.type, lastModified: rec.lastModified });
+          codePhotos[rec.code].push(file);
+          restored++;
+        } catch(e) {}
+      }
+    });
+    return restored;
+  });
+}
+
+function openInBrowser() {
+  // LINE in-app browser: openExternalBrowser param forces external browser
+  var url = location.href.split('?')[0] + '?openExternalBrowser=1';
+  location.href = url;
+}
+
+function clearAllQueue() {
+  return openPhotoDB().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction('photos', 'readwrite');
+      tx.objectStore('photos').clear();
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+  }).catch(function(){});
+}
+
+function checkPendingQueueBanner() {
+  // Don't show while actively sending (avoids flash of "ค้าง" during upload)
+  if (window._sending) return;
+  // On app open: if queued photos exist, show recovery banner in job list
+  getAllQueued().then(function(records) {
+    if (window._sending) return;
+    var old = document.getElementById('queueBanner');
+    if (old) old.remove();
+    if (!records.length) return;
+
+    // Auto-purge orphan entries: jobId no longer exists (job deleted/recreated)
+    // These can never be sent so they'd show "ค้าง" forever - clean them silently
+    var validJobIds = jobs.map(function(j){ return j.id; });
+    var OLD = Date.now() - 14 * 86400000;   // ลบเฉพาะรูปค้างของงานที่หายไปนานเกิน 14 วัน
+    var orphans = records.filter(function(r){ return validJobIds.indexOf(r.jobId) === -1 && (r.savedAt || 0) < OLD; });
+    if (orphans.length && jobs.length > 0) {
+      orphans.forEach(function(r) {
+        clearQueueForCode(r.jobId, r.code);
+      });
+      records = records.filter(function(r){ return orphans.indexOf(r) === -1; });
+      if (!records.length) return;
+    }
+
+    var byJob = {};
+    records.forEach(function(r) {
+      if (!byJob[r.jobId]) byJob[r.jobId] = 0;
+      byJob[r.jobId]++;
+    });
+    var jobIds = Object.keys(byJob);
+    var banner = document.createElement('div');
+    banner.id = 'queueBanner';
+    banner.style.cssText = 'background:#2a2200;border:1px solid #ffa94d;border-radius:12px;padding:12px 14px;margin-bottom:12px;cursor:pointer';
+    var jobNames = jobIds.map(function(jid) {
+      var j = jobs.find(function(x){ return x.id === jid; });
+      return (j ? j.name : 'งานเก่า') + ' (' + byJob[jid] + ' รูป)';
+    }).join(', ');
+    banner.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
+      '<div style="flex:1">' +
+        '<div style="font-size:13px;font-weight:600;color:#ffa94d">📦 มีรูปค้างที่ยังไม่ได้ส่ง</div>' +
+        '<div style="font-size:11px;color:#ccc;margin-top:4px">' + jobNames + '</div>' +
+        '<div style="font-size:11px;color:#888;margin-top:4px">แตะเพื่อเปิดงานและส่งต่อ →</div>' +
+      '</div>' +
+      '<button id="queueBannerClear" style="background:transparent;border:1px solid #555;color:#888;border-radius:8px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:var(--f);margin-left:8px;flex-shrink:0">🗑 ล้าง</button>' +
+    '</div>';
+    // Clear button - deletes stale queue after confirmation
+    setTimeout(function() {
+      var clearBtn = document.getElementById('queueBannerClear');
+      if (clearBtn) {
+        clearBtn.onclick = function(e) {
+          e.stopPropagation();
+          if (confirm('ลบรูปค้างทั้งหมดออกจากแอป?\n\n⚠️ ทำเฉพาะเมื่อแน่ใจว่ารูปพวกนี้ส่งไปแล้ว หรือไม่ใช้แล้วเท่านั้นค่ะ')) {
+            clearAllQueue().then(function() {
+              banner.remove();
+            });
+          }
+        };
+      }
+    }, 100);
+    banner.onclick = function() {
+      var jid = jobIds[0];
+      var j = jobs.find(function(x){ return x.id === jid; });
+      if (!j) { alert('ไม่พบงานนี้แล้ว — อาจถูกลบไป'); return; }
+      selectedJob = j;
+      loadSentState(jid); // ⭐ ห้ามลืม ไม่งั้นเข้าหน้าอัปโหลดโดยไม่รู้ว่าจุดไหนมีรูปเดิม
+      restoreQueueToApp(jid).then(function() {
+        goUpload();
+      });
+    };
+    var jobList = document.getElementById('jobListEl');
+    if (jobList && jobList.parentNode) jobList.parentNode.insertBefore(banner, jobList);
+  });
+}
+
+// Online/offline awareness
+window.addEventListener('online', function() {
+  showNetToast('🟢 กลับมาออนไลน์แล้ว — ส่งรูปได้เลยค่ะ', '#1b3a1b', '#4caf50');
+});
+window.addEventListener('offline', function() {
+  showNetToast('🔴 ออฟไลน์ — รูปถูกเก็บในเครื่องปลอดภัย จะส่งได้เมื่อมีเน็ตค่ะ', '#3a1b1b', '#ff5c5c');
 });
 
-// 4) unit test backend (archive logic + cache)
-step('backend unit tests', () => { execSync('node ' + JSON.stringify(path.join(__dirname, 'backend.test.js')), { stdio: 'pipe' }); });
+function showNetToast(msg, bg, border) {
+  var old = document.getElementById('netToast');
+  if (old) old.remove();
+  var t = document.createElement('div');
+  t.id = 'netToast';
+  t.style.cssText = 'position:fixed;top:12px;left:12px;right:12px;z-index:999;background:' + bg + ';border:1px solid ' + border + ';border-radius:12px;padding:12px 14px;font-size:13px;color:#f0f0f0;text-align:center;font-family:var(--f)';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(function(){ if (t.parentNode) t.remove(); }, 4000);
+}
 
-step('กฎเทียบ Code ของ AI', () => { execSync('node ' + JSON.stringify(path.join(__dirname, 'judge.test.js')), { stdio: 'pipe' }); });
+// Hidden file input for per-code picking
+var pickingCode = null;
+function openCodePicker(code) {
+  // ยังโหลดสถานะรูปเดิมไม่เสร็จ → รอก่อน ห้ามให้เลือกรูป (ไม่งั้นไม่รู้ว่าต้องถามโหมดไหม)
+  var _jid = _sentJobId || (selectedJob && selectedJob.id);
+  if (!_sentLoaded && _jid) {
+    // ในเครื่องไม่มีร่องรอยว่าจุดนี้เคยส่งรูป → เปิดกล้อง/คลังรูปได้ทันที ไม่ต้องรอเช็ค
+    // (เช็คต่อเบื้องหลัง — ถ้าเจอว่ามีรูปเดิมจริง ระบบตั้งเป็น "เพิ่มรูป" ให้เอง รูปเดิมไม่ถูกลบ)
+    var _lj = {}; try { _lj = (JSON.parse(localStorage.getItem('codeLog') || '{}')[_jid]) || {}; } catch (e) {}
+    if (!(_lj[code] && _lj[code].status === 'sent')) {
+      loadSentState(_jid).then(function() {
+        var sv = serverSent[String(code).trim().toUpperCase()];
+        if (sv && realCount(sv) > 0 && !codeMode[code]) {
+          codeMode[code] = 'append';
+          try { renderCodeList(); } catch (e) {}
+          if ((codePhotos[code] || []).length) alert('ℹ️ จุด ' + code + ' เคยส่งรูปไว้แล้ว ' + realCount(sv) + ' รูป\nรูปที่เลือกตอนนี้จะ "เพิ่มต่อ" จากของเดิม รูปเดิมไม่หายค่ะ');
+        }
+      }).catch(function(){});
+      openSourcePicker(code);
+      return;
+    }
+    var w = document.createElement('div');
+    w.id = 'sentWait';
+    w.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99;display:flex;align-items:center;justify-content:center';
+    w.innerHTML = '<div style="background:#1a1a1a;border-radius:14px;padding:22px 28px;font-size:14px;color:#c8f542;font-family:var(--f)">⏳ กำลังเช็ครูปเดิม...</div>';
+    document.body.appendChild(w);
+    loadSentState(_jid).then(function() {
+      var el = document.getElementById('sentWait');
+      if (el) el.remove();
+      openCodePicker(code);
+    });
+    return;
+  }
+  // จุดนี้เคยส่งรูปแล้ว และช่างยังไม่ได้เลือกโหมด → ถามก่อน กันรูปเก่าหายโดยไม่ตั้งใจ
+  var sent = serverSent[String(code).trim().toUpperCase()];
+  if (sent && realCount(sent) > 0 && !codeMode[code] && !(codePhotos[code] || []).length) {
+    openModeChooser(code, sent);
+    return;
+  }
+  openSourcePicker(code);
+}
 
-// 5) smoke ทุกหน้า (jsdom)
-step('smoke ทุกหน้า', () => { execSync('node ' + JSON.stringify(path.join(__dirname, 'smoke.test.js')), { stdio: 'pipe' }); });
+// ถาม: เพิ่มรูป (เก็บของเดิม) หรือ ถ่ายใหม่ทั้งหมด (ลบของเดิม)
+function openModeChooser(code, sent) {
+  var ex = document.getElementById('modeModal');
+  if (ex) ex.remove();
+  var thumbs = (sent.imgs || []).slice(0, 2).map(function(id) {
+    return '<img src="https://drive.google.com/thumbnail?id=' + id + '&sz=w200" ' +
+      'style="width:66px;height:50px;object-fit:cover;border-radius:6px;border:1px solid #333" alt="">';
+  }).join('');
+  var whenTxt = sent.date ? sent.date.split('-').reverse().join('/') : '';
+  var m = document.createElement('div');
+  m.id = 'modeModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99;display:flex;align-items:flex-end;padding:16px';
+  m.innerHTML =
+    '<div style="background:#1a1a1a;border-radius:16px;padding:20px;width:100%;max-width:560px;margin:0 auto">' +
+      '<div style="font-size:15px;font-weight:700;color:#c8f542;margin-bottom:3px">' + code + ' — ส่งรูปไปแล้ว</div>' +
+      '<div style="font-size:12px;color:#888;margin-bottom:12px">' + realCount(sent) + ' รูป' +
+        (whenTxt ? ' · ' + whenTxt : '') + (sent.installer ? ' · โดย ' + esc(sent.installer) : '') + '</div>' +
+      (thumbs ? '<div style="display:flex;gap:6px;margin-bottom:16px">' + thumbs + '</div>' : '') +
+      '<button onclick="chooseMode(\'' + code + '\',\'append\')" style="width:100%;padding:15px;background:#1a2a00;border:1px solid #c8f542;border-radius:12px;color:#c8f542;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--f);margin-bottom:10px">' +
+        '➕ เพิ่มรูป<div style="font-size:10px;color:#8a9a5a;font-weight:400;margin-top:2px">รูปเดิมยังอยู่ครบ</div></button>' +
+      '<button onclick="chooseMode(\'' + code + '\',\'replace\')" style="width:100%;padding:15px;background:#2a1a1a;border:1px solid #663333;border-radius:12px;color:#ff9977;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--f);margin-bottom:10px">' +
+        '↻ ถ่ายใหม่ทั้งหมด<div style="font-size:10px;color:#996655;font-weight:400;margin-top:2px">ลบรูปเดิม ' + realCount(sent) + ' รูปทิ้ง</div></button>' +
+      '<button onclick="openPhotoManager(\'' + code + '\')" style="width:100%;padding:12px;background:transparent;border:1px solid #333;border-radius:12px;color:#8a8a8a;font-size:13px;cursor:pointer;font-family:var(--f);margin-bottom:10px">🗑 ลบบางรูป (เลือกใบที่ไม่เอา)</button>' +
+      '<button onclick="document.getElementById(\'modeModal\').remove()" style="width:100%;padding:12px;background:transparent;border:1px solid #333;border-radius:12px;color:#666;font-size:13px;cursor:pointer;font-family:var(--f)">ยกเลิก</button>' +
+    '</div>';
+  document.body.appendChild(m);
+}
 
-console.log(failed ? `\n❌ พัง ${failed} รายการ` : '\n🎉 ผ่านทั้งหมด');
-process.exit(failed ? 1 : 0);
+// ═══ ลบรูปทีละใบ — เลือกใบที่ไม่เอา เก็บใบที่ดี ═══
+var _pmSelected = {};
+function openPhotoManager(code) {
+  var mm = document.getElementById('modeModal');
+  if (mm) mm.remove();
+  _pmSelected = {};
+  var m = document.createElement('div');
+  m.id = 'pmModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99;display:flex;flex-direction:column;padding:14px';
+  m.innerHTML =
+    '<div style="background:#1a1a1a;border-radius:16px;padding:16px;flex:1;display:flex;flex-direction:column;max-width:560px;width:100%;margin:0 auto;overflow:hidden">' +
+      '<div style="font-size:15px;font-weight:700;color:#c8f542;margin-bottom:2px">' + code + ' — เลือกรูปที่จะลบ</div>' +
+      '<div style="font-size:11px;color:#888;margin-bottom:10px">แตะรูปเพื่อเลือก · รูปที่ลบจะย้ายไปถังขยะ Google Drive (กู้คืนได้ 30 วัน)</div>' +
+      '<div id="pmGrid" style="flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-content:start">' +
+        '<div style="grid-column:1/-1;text-align:center;color:#888;padding:30px 0">⏳ กำลังโหลดรูป...</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;margin-top:12px">' +
+        '<button id="pmDelBtn" onclick="pmDelete(\'' + code + '\')" disabled style="flex:1;padding:14px;background:#2a1a1a;border:1px solid #663333;border-radius:12px;color:#ff9977;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--f);opacity:.4">🗑 ลบที่เลือก</button>' +
+        '<button onclick="document.getElementById(\'pmModal\').remove()" style="flex:1;padding:14px;background:transparent;border:1px solid #333;border-radius:12px;color:#888;font-size:14px;cursor:pointer;font-family:var(--f)">ปิด</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(m);
+  fetch(SCRIPT_URL + '?action=getPhotos&code=' + encodeURIComponent(code))
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      var grid = document.getElementById('pmGrid');
+      if (!grid) return;
+      var ph = (d.photos || []).filter(function(p){ return p.id; });
+      if (!ph.length) { grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#888;padding:30px 0">ไม่พบรูปของจุดนี้</div>'; return; }
+      grid.innerHTML = ph.map(function(p) {
+        return '<div onclick="pmToggle(this,\'' + p.id + '\')" data-pid="' + p.id + '" ' +
+          'style="position:relative;border-radius:10px;overflow:hidden;border:2px solid #333;cursor:pointer;aspect-ratio:4/3">' +
+          '<img src="' + p.thumbnail + '" style="width:100%;height:100%;object-fit:cover" loading="lazy" alt="">' +
+          '<div class="pm-check" style="position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.55);border:1.5px solid #888;display:flex;align-items:center;justify-content:center;font-size:13px;color:transparent">✓</div>' +
+          '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);font-size:9px;color:#ccc;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(p.name) + '</div>' +
+        '</div>';
+      }).join('');
+    })
+    .catch(function() {
+      var grid = document.getElementById('pmGrid');
+      if (grid) grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#c66;padding:30px 0">โหลดรูปไม่สำเร็จ — ลองใหม่อีกครั้งค่ะ</div>';
+    });
+}
+
+function pmToggle(el, id) {
+  if (_pmSelected[id]) { delete _pmSelected[id]; }
+  else { _pmSelected[id] = true; }
+  var on = !!_pmSelected[id];
+  el.style.borderColor = on ? '#ff9977' : '#333';
+  var chk = el.querySelector('.pm-check');
+  if (chk) { chk.style.color = on ? '#fff' : 'transparent'; chk.style.background = on ? '#c0392b' : 'rgba(0,0,0,.55)'; chk.style.borderColor = on ? '#c0392b' : '#888'; }
+  var n = Object.keys(_pmSelected).length;
+  var btn = document.getElementById('pmDelBtn');
+  if (btn) {
+    btn.disabled = n === 0;
+    btn.style.opacity = n === 0 ? '.4' : '1';
+    btn.textContent = n === 0 ? '🗑 ลบที่เลือก' : '🗑 ลบ ' + n + ' รูป';
+  }
+}
+
+function pmDelete(code) {
+  var ids = Object.keys(_pmSelected);
+  if (!ids.length) return;
+  if (!confirm('ลบ ' + ids.length + ' รูปของ ' + code + '?\n\nรูปจะย้ายไปถังขยะ Google Drive (กู้คืนได้ภายใน 30 วัน)')) return;
+  var btn = document.getElementById('pmDelBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ กำลังลบ...'; }
+  fetch(SCRIPT_URL, { method:'POST', body: JSON.stringify({
+    action:'deletePhotos', code:code, jobId: selectedJob ? selectedJob.id : '', fileIds: ids
+  })})
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      var pm = document.getElementById('pmModal');
+      if (pm) pm.remove();
+      if (d.success && d.deleted > 0) {
+        alert('✅ ลบแล้ว ' + d.deleted + ' รูป' + (d.remaining !== null && d.remaining !== undefined ? '\nเหลือ ' + d.remaining + ' รูปในจุดนี้' : ''));
+        // โหลดสถานะใหม่ให้ตัวเลขบนจอตรงกับความจริง
+        _sentLoaded = false; _sentJobId = null;
+        if (selectedJob) loadSentState(selectedJob.id);
+      } else {
+        alert('⚠️ ลบไม่สำเร็จ' + (d.error ? ': ' + d.error : ' — ลองใหม่อีกครั้งค่ะ'));
+      }
+    })
+    .catch(function() {
+      var pm = document.getElementById('pmModal');
+      if (pm) pm.remove();
+      alert('⚠️ ลบไม่สำเร็จ — เช็คสัญญาณเน็ตแล้วลองใหม่ค่ะ');
+    });
+}
+
+function chooseMode(code, mode) {
+  codeMode[code] = mode;
+  var m = document.getElementById('modeModal');
+  if (m) m.remove();
+  openSourcePicker(code);
+}
+
+function openSourcePicker(code) {
+  pickingCode = code;
+  // Show choice: camera or gallery
+  var existing = document.getElementById('photoSourceModal');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'photoSourceModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99;display:flex;align-items:flex-end;padding:16px';
+  modal.innerHTML =
+    '<div style="background:#1a1a1a;border-radius:16px;padding:20px;width:100%;max-width:560px;margin:0 auto">' +
+      '<div style="font-size:14px;font-weight:600;color:#c8f542;margin-bottom:4px">' + code + '</div>' +
+      '<div style="font-size:12px;color:#666;margin-bottom:16px">เลือกรูปจากไหนครับ</div>' +
+      '<div style="display:flex;gap:10px;margin-bottom:10px">' +
+        '<button onclick="pickFromSource(\'' + code + '\',\'camera\')" style="flex:1;padding:16px;background:#0f2156;border:1px solid #1665c1;border-radius:12px;color:#fff;font-size:14px;cursor:pointer;font-family:var(--f)">📷 ถ่ายรูป<div style="font-size:9px;color:#88aadd;margin-top:2px">รูปถูกเก็บในแอปอัตโนมัติ</div></button>' +
+        '<button onclick="pickFromSource(\'' + code + '\',\'gallery\')" style="flex:1;padding:16px;background:#222;border:1px solid #333;border-radius:12px;color:#fff;font-size:14px;cursor:pointer;font-family:var(--f)">🖼️ Gallery</button>' +
+      '</div>' +
+      '<button onclick="document.getElementById(\'photoSourceModal\').remove()" style="width:100%;padding:12px;background:transparent;border:1px solid #333;border-radius:12px;color:#666;font-size:13px;cursor:pointer;font-family:var(--f)">ยกเลิก</button>' +
+    '</div>';
+  document.body.appendChild(modal);
+}
+
+function pickFromSource(code, source) {
+  pickingCode = code;
+  var existing = document.getElementById('photoSourceModal');
+  if (existing) existing.remove();
+
+  if (source === 'camera') {
+    // Try in-app continuous camera first (multi-shot without leaving)
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      openLiveCamera(code);
+      return;
+    }
+    // Fallback: system camera (one shot per open)
+    openFileInput(code, true);
+    return;
+  }
+  openFileInput(code, false);
+}
+
+function openFileInput(code, isCamera) {
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.style.display = 'none';
+  input.accept = 'image/*';
+  if (isCamera) {
+    input.setAttribute('capture', 'environment');
+    input.multiple = false;
+  } else {
+    input.multiple = true;
+  }
+  input.onchange = function() {
+    if (!input.files.length) return;
+    if (!codePhotos[pickingCode]) codePhotos[pickingCode] = [];
+    var newFiles = Array.from(input.files);
+    codePhotos[pickingCode] = codePhotos[pickingCode].concat(newFiles);
+    if (selectedJob) {
+      newFiles.forEach(function(f) { savePhotoToQueue(selectedJob.id, pickingCode, f); });
+    }
+    input.remove();
+    renderCodeList();
+    showCodePreview(pickingCode);
+  };
+  document.body.appendChild(input);
+  setTimeout(function(){ input.click(); }, 100);
+}
+
+// ── In-app continuous camera - ถ่ายหลายรูปติดกันไม่ต้องออก ──
+var _camStream = null;
+var _camShotCount = 0;
+var _camShotSeq = 0;
+
+function openLiveCamera(code) {
+  _camShotCount = 0;
+  var overlay = document.createElement('div');
+  overlay.id = 'liveCamOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:#000;z-index:9999;display:flex;flex-direction:column';
+  overlay.innerHTML =
+    '<div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,.6);position:absolute;top:0;left:0;right:0;z-index:2">' +
+      '<div style="color:#c8f542;font-weight:600;font-family:var(--f);font-size:14px">📍 ' + code + '</div>' +
+      '<div id="camCount" style="color:#fff;font-family:var(--f);font-size:13px">0 รูป</div>' +
+    '</div>' +
+    '<video id="camVideo" autoplay playsinline style="flex:1;width:100%;object-fit:cover"></video>' +
+    '<div style="padding:20px;display:flex;justify-content:space-around;align-items:center;background:rgba(0,0,0,.7);position:absolute;bottom:0;left:0;right:0">' +
+      '<button onclick="closeLiveCamera(false)" style="background:transparent;border:1px solid #666;color:#ccc;border-radius:24px;padding:12px 20px;font-size:14px;font-family:var(--f);cursor:pointer">ยกเลิก</button>' +
+      '<button id="camShutter" onclick="captureLiveShot()" style="width:72px;height:72px;border-radius:50%;background:#fff;border:5px solid #c8f542;cursor:pointer;font-size:24px">📷</button>' +
+      '<button onclick="closeLiveCamera(true)" style="background:#c8f542;border:none;color:#000;border-radius:24px;padding:12px 20px;font-size:14px;font-weight:600;font-family:var(--f);cursor:pointer">✓ เสร็จ</button>' +
+    '</div>' +
+    '';
+  document.body.appendChild(overlay);
+
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+    audio: false
+  }).then(function(stream) {
+    _camStream = stream;
+    document.getElementById('camVideo').srcObject = stream;
+  }).catch(function(err) {
+    // Camera blocked/unavailable - fallback to system camera
+    overlay.remove();
+    openFileInput(code, true);
+  });
+}
+
+function captureLiveShot() {
+  var video = document.getElementById('camVideo');
+  if (!video || !video.videoWidth) return;
+  // Fresh canvas per shot - rapid taps never overwrite a pending encode
+  var canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  canvas.toBlob(function(blob) {
+    if (!blob) return;
+    _camShotSeq = (_camShotSeq || 0) + 1;
+    var file = new File([blob], pickingCode + '_' + Date.now() + '_' + _camShotSeq + '.jpg', { type: 'image/jpeg', lastModified: Date.now() });
+    if (!codePhotos[pickingCode]) codePhotos[pickingCode] = [];
+    codePhotos[pickingCode].push(file);
+    if (selectedJob) savePhotoToQueue(selectedJob.id, pickingCode, file);
+    _camShotCount++;
+    var cnt = document.getElementById('camCount');
+    if (cnt) cnt.textContent = _camShotCount + ' รูป';
+    // Flash effect
+    var video2 = document.getElementById('camVideo');
+    if (video2) {
+      video2.style.opacity = '0.3';
+      setTimeout(function(){ video2.style.opacity = '1'; }, 120);
+    }
+  }, 'image/jpeg', 0.92);
+}
+
+function closeLiveCamera(done) {
+  if (_camStream) {
+    _camStream.getTracks().forEach(function(t){ t.stop(); });
+    _camStream = null;
+  }
+  var overlay = document.getElementById('liveCamOverlay');
+  if (overlay) overlay.remove();
+  renderCodeList();
+  if (done && _camShotCount > 0) {
+    showCodePreview(pickingCode);
+  }
+}
+
+
+
+var problemCode = null;
+var problemReason = null;
+
+function openJobProblemModal() {
+  problemCode = selectedJob ? selectedJob.id : null;
+  problemReason = null;
+  document.getElementById('problemJobName').textContent = selectedJob ? selectedJob.name : '';
+  document.getElementById('problemNote').style.display = 'none';
+  document.getElementById('problemNote').value = '';
+  document.querySelectorAll('.problem-opt').forEach(function(b){ b.classList.remove('on'); });
+  document.getElementById('problemModalBg').style.display = 'flex';
+}
+
+
+
+function closeProblemModal() {
+  document.getElementById('problemModalBg').style.display = 'none';
+  problemCode = null; problemReason = null;
+}
+
+function selectProblem(btn, reason) {
+  document.querySelectorAll('.problem-opt').forEach(function(b){ b.classList.remove('on'); });
+  btn.classList.add('on');
+  problemReason = reason;
+  document.getElementById('problemNote').style.display = reason === 'other' ? 'block' : 'none';
+}
+
+function confirmProblem() {
+  if (!problemReason) { alert('กรุณาเลือกสาเหตุค่ะ'); return; }
+  var note = document.getElementById('problemNote').value.trim();
+  var reason = problemReason === 'other' ? (note || 'อื่นๆ') : problemReason;
+
+  // Save problem to localStorage
+  var problemLog = JSON.parse(localStorage.getItem('problemLog') || '{}');
+  var jobId = selectedJob ? selectedJob.id : '';
+  if (!problemLog[jobId]) problemLog[jobId] = {};
+  problemLog[jobId][problemCode] = {
+    status: 'problem',
+    reason: reason,
+    reportedAt: new Date().toLocaleString('th-TH'),
+    installer: installerName
+  };
+  localStorage.setItem('problemLog', JSON.stringify(problemLog));
+
+  // Send to server — แจ้งว่าส่งถึงแอดมินแล้ว ก็ต่อเมื่อเซิร์ฟเวอร์ตอบรับจริง
+  closeProblemModal();
+  fetch(SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'reportProblem',
+      jobId: selectedJob ? selectedJob.id : '',
+      jobName: selectedJob ? selectedJob.name : '',
+      code: 'JOB_LEVEL',
+      reason: reason,
+      installer: installerName,
+      timestamp: new Date().toISOString()
+    })
+  }).then(function(r){ return r.json(); }).then(function(d) {
+    if (!d || !d.success) throw new Error((d && d.error) || 'ส่งไม่สำเร็จ');
+    alert('แจ้งแอดมินแล้วค่ะ — แอดมินจะรับทราบและแจ้งลูกค้าต่อค่ะ 🙏');
+  }).catch(function() {
+    alert('⚠️ ส่งแจ้งปัญหาไม่สำเร็จ (เน็ตหลุด?)\nกรุณาลองแจ้งอีกครั้ง หรือโทรแจ้งแอดมินค่ะ');
+  });
+}
+
+function closeCodePreview() {
+  var el = document.getElementById('codePreviewModal');
+  if (el) el.remove();
+}
+
+function showCodePreview(code) {
+  var files = codePhotos[code] || [];
+  if (!files.length) return;
+  renderCodePreviewModal(code);
+}
+
+function renderCodePreviewModal(code) {
+  var files = codePhotos[code] || [];
+  var existing = document.getElementById('codePreviewModal');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'codePreviewModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:99;display:flex;flex-direction:column;padding:16px';
+
+  var header = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
+    '<div style="font-size:15px;font-weight:600;color:#c8f542">' + code + ' — ' + files.length + ' รูปค่ะ</div>' +
+    '<button onclick="closeCodePreview()" style="background:transparent;border:1px solid #444;color:#888;padding:6px 14px;border-radius:20px;cursor:pointer;font-size:12px;font-family:var(--f)">ปิด ✕</button>' +
+    '</div>' +
+    '<div style="font-size:11px;color:#666;margin-bottom:12px">กดที่รูปเพื่อลบออกค่ะ</div>';
+
+  modal.innerHTML = header;
+  var gridEl = document.createElement('div');
+  gridEl.id = 'previewGrid_' + code;
+  gridEl.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:6px;overflow-y:auto;flex:1';
+  files.forEach(function(f, i) {
+    var url = URL.createObjectURL(f);
+    var thumb = document.createElement('div');
+    thumb.style.cssText = 'aspect-ratio:1;border-radius:8px;overflow:hidden;background:#222;position:relative;cursor:pointer';
+    thumb.innerHTML = '<img src="' + url + '" style="width:100%;height:100%;object-fit:cover" loading="lazy">' +
+      '<div style="position:absolute;top:4px;right:4px;background:rgba(200,0,0,.85);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:bold">✕</div>';
+    (function(fi) { thumb.onclick = function() { deletePhotoFromPreview(code, fi); }; })(i);
+    gridEl.appendChild(thumb);
+  });
+  modal.appendChild(gridEl);
+  document.body.appendChild(modal);
+}
+
+function deletePhotoFromPreview(code, idx) {
+  var removed = codePhotos[code][idx];
+  codePhotos[code].splice(idx, 1);
+  // Also remove from IndexedDB so recovery banner stays accurate
+  if (selectedJob && removed) {
+    removePhotoFromQueue(selectedJob.id, code, removed.name, removed.lastModified);
+  }
+  if (codePhotos[code].length === 0) {
+    delete codePhotos[code];
+    closeCodePreview();
+    renderCodeList();
+    return;
+  }
+  renderCodePreviewModal(code);
+  renderCodeList();
+}
+
+function removePhotoFromQueue(jobId, code, name, lastModified) {
+  return openPhotoDB().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction('photos', 'readwrite');
+      var req = tx.objectStore('photos').index('jobCode').openCursor(IDBKeyRange.only([jobId, code]));
+      req.onsuccess = function(e) {
+        var cursor = e.target.result;
+        if (cursor) {
+          if (cursor.value.name === name && cursor.value.lastModified === lastModified) {
+            cursor.delete();
+          }
+          cursor.continue();
+        }
+      };
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+  }).catch(function(){});
+}
+
+async function sendAllCodes() {
+  // Offline check - photos are safe in IndexedDB
+  if (!navigator.onLine) {
+    alert('📴 ยังไม่มีสัญญาณอินเทอร์เน็ตค่ะ\n\nรูปทั้งหมดถูกเก็บไว้ในเครื่องแล้ว ปลอดภัย ไม่หาย\nเมื่อมีเน็ตแล้วกดส่งอีกครั้งได้เลยค่ะ');
+    return;
+  }
+  // Validate job selection first
+  if (!selectedJob || !selectedJob.id) {
+    alert('กรุณาเลือกงานก่อนค่ะ');
+    return;
+  }
+  // Snapshot the job NOW - so background sync can't change it mid-send
+  var sendJob = JSON.parse(JSON.stringify(selectedJob));
+
+  // Validate codes belong to this job
+  var jobCodes = sendJob.spots.map(function(s){ return s.code; });
+  var codes = Object.keys(codePhotos).filter(function(k){ return codePhotos[k] && codePhotos[k].length > 0; });
+  var wrongCodes = codes.filter(function(c){ return jobCodes.indexOf(c) === -1; });
+  if (wrongCodes.length > 0) {
+    if (!confirm('⚠️ Code เหล่านี้ไม่อยู่ในงาน "' + sendJob.name + '":\n' + wrongCodes.join(', ') + '\n\nยังต้องการส่งต่อไหมคะ?')) {
+      return;
+    }
+  }
+  if (!codes.length) {
+    alert('ยังไม่มีรูปที่เลือกไว้ค่ะ');
+    return;
+  }
+
+  var unreadableFiles = 0; // รูปที่เครื่องอ่านไม่ได้เลย (ไฟล์เสีย)
+
+  window._sending = true;
+  var btn = document.getElementById('sendAllCodesBtn');
+  var btnTop = document.getElementById('sendAllCodesBtnTop');
+  if (btn) { btn.disabled = true; btn.textContent = 'กำลังส่ง...'; }
+  if (btnTop) { btnTop.disabled = true; }
+  go('s5');
+  var total = codes.reduce(function(s,k){ return s + codePhotos[k].length; }, 0);
+  var done = 0;
+  var allResults = [];
+  var allFileData = [];
+  function stripSrc(f) { return { name: f.name, type: f.type, lastModified: f.lastModified, data: f.data, _forceCode: f._forceCode }; }
+  // รวมผลของ Code เดียวกันที่ถูกแบ่งส่งหลายก้อน — นับรูปที่เข้าจริงรวมทุกก้อน
+  function mergeResult(c) {
+    var ex = allResults.find(function(r){ return r.code === c.code; });
+    if (!ex) { allResults.push(Object.assign({}, c, { count: c.count || 0 })); return; }
+    ex.count = (ex.count || 0) + (c.count || 0);
+    ex.failed = (ex.failed || 0) + (c.failed || 0);
+    ex.imgIds = (ex.imgIds || []).concat(c.imgIds || []);
+    if (c.folderUrl) ex.folderUrl = c.folderUrl;
+  }
+
+  // Step 1: Compress all files from all codes
+  for (var ci = 0; ci < codes.length; ci++) {
+    var code = codes[ci];
+    var files = codePhotos[code];
+    for (var fi = 0; fi < files.length; fi++) {
+      done++;
+      setProgress(done/total*40, 'เตรียมรูป ' + done + '/' + total + ' ค่ะ');
+      try {
+        var b64 = await compressImage(files[fi], 800);
+        allFileData.push({ name: files[fi].name, type: 'image/jpeg', lastModified: files[fi].lastModified, data: b64, _forceCode: code, _src: files[fi] });
+      } catch(e) {
+        try {
+          var plain = await toB64(files[fi]);
+          allFileData.push({ name: files[fi].name, type: files[fi].type, lastModified: files[fi].lastModified, data: plain, _forceCode: code, _src: files[fi] });
+        } catch(e2) {
+          unreadableFiles++; // ไฟล์เสียจริงๆ — ข้าม ไม่ทำให้การส่งทั้งหมดล่ม
+        }
+      }
+    }
+  }
+
+  // Step 2: Send in batches — [FIX-SIZE] คุมขนาดข้อมูลจริงต่อ batch ไม่ใช่แค่จำนวนไฟล์
+  // (backend v2 มีระบบ session: code ที่ถูกแบ่งข้าม batch จะนับเลขรูปต่อเนื่อง ไม่ลบของ batch ก่อนหน้า)
+  // [FIX-COUNT] จดจำนวนรูปที่ "ส่งจริง" ของแต่ละจุด (นับจากรูปที่เตรียมสำเร็จ) ไว้ตรวจสอบตอนจบ
+  var expectedCounts = {};
+  allFileData.forEach(function(f){
+    if (!f._forceCode) return;
+    expectedCounts[f._forceCode] = (expectedCounts[f._forceCode] || 0) + 1;
+  });
+  if (unreadableFiles > 0) {
+    alert('⚠️ มีรูป ' + unreadableFiles + ' รูปที่ไฟล์เสีย อ่านไม่ได้ จะข้ามรูปเหล่านั้น\nแนะนำถ่ายใหม่แล้วส่งเพิ่มภายหลังค่ะ');
+  }
+
+  var MAX_BATCH_BYTES = 5500000; // ~5.5MB base64 ต่อ batch — ปลอดภัยบนเน็ตมือถือ + ไม่ชนลิมิต Apps Script
+  var MAX_BATCH_FILES = 8;
+  var batchList = [];
+  (function buildBatches() {
+    var current = [], curBytes = 0;
+    function flush() { if (current.length) { batchList.push(current); current = []; curBytes = 0; } }
+    for (var bc = 0; bc < codes.length; bc++) {
+      var codeFiles = allFileData.filter(function(f){ return f._forceCode === codes[bc]; });
+      if (!codeFiles.length) continue;
+      var codeBytes = codeFiles.reduce(function(s,f){ return s + (f.data ? f.data.length : 0); }, 0);
+      if (codeBytes <= MAX_BATCH_BYTES && codeFiles.length <= MAX_BATCH_FILES) {
+        // จุดนี้ใส่ batch เดียวได้ — พยายามเก็บทั้งจุดไว้ด้วยกัน
+        if (current.length && (curBytes + codeBytes > MAX_BATCH_BYTES || current.length + codeFiles.length > MAX_BATCH_FILES)) flush();
+        current = current.concat(codeFiles);
+        curBytes += codeBytes;
+      } else {
+        // จุดใหญ่มาก (รูปเยอะ/ไฟล์ใหญ่) — แบ่งข้าม batch ได้อย่างปลอดภัย
+        flush();
+        for (var cf = 0; cf < codeFiles.length; cf++) {
+          var fb = codeFiles[cf].data ? codeFiles[cf].data.length : 0;
+          if (current.length && (curBytes + fb > MAX_BATCH_BYTES || current.length >= MAX_BATCH_FILES)) flush();
+          current.push(codeFiles[cf]);
+          curBytes += fb;
+        }
+        flush();
+      }
+    }
+    flush();
+  })();
+  var batches = batchList.length;
+  var failedBatches = [];
+  // ID ประจำ "รอบส่งนี้" — ใช้ตัวเดียวกันทุกครั้งที่พยายามส่ง batch เดิมซ้ำ (ทั้ง retry ภายในและรอบ 2)
+  // กันกรณีเน็ตหลุดตอนรอผลลัพธ์ (อัปโหลดจริงสำเร็จแล้ว) แต่แอปเข้าใจผิดว่าพังแล้วส่งซ้ำ
+  var _runId = 'r' + Date.now() + Math.random().toString(36).slice(2, 8);
+
+  // ส่งก้อนที่ b แล้วรวมผลลัพธ์ — แยกเป็นฟังก์ชัน เรียกได้ทั้งแบบเดี่ยวและพร้อมกัน
+  var doneBatchCount = 0;
+  function sendOneBatch(b) {
+    var batch = batchList[b];
+    return uploadWithRetry({
+      action: 'uploadBatch',
+      installer: installerName,
+      jobId: sendJob.id,
+      jobName: sendJob.name,
+      media: sendJob.media || '',
+      spots: sendJob.spots,
+      batchIndex: b,
+      totalBatches: batches,
+      modes: codeMode,
+      files: batch.map(stripSrc),
+      requestId: _runId + '_b' + b,
+      sessionToken: _runId,          // ทุกก้อนรอบนี้ใช้รอบเดียวกัน — ก้อนแรกที่ส่งซ้ำทีหลังจะไม่ลบรูปของก้อนอื่น
+      timestamp: new Date().toISOString()
+    }, 3).then(function(result) {
+      if (result && result.codes && result.codes.length) {
+        result.codes.forEach(mergeResult);
+      } else {
+        failedBatches.push(b);
+      }
+    }).catch(function(err) {
+      console.error('Batch failed:', err.message);
+      failedBatches.push(b);
+    }).then(function() {
+      doneBatchCount++;
+      var pct = 40 + Math.round(doneBatchCount/batches*40);
+      setProgress(pct, 'กำลังส่ง ' + doneBatchCount + '/' + batches + '...');
+    });
+  }
+
+  // ก้อนแรก (batch 0) ต้องส่งเดี่ยวๆ ก่อน — มันสร้าง session ที่ก้อนถัดไปต้องอ่านต่อ
+  // ส่งพร้อมกันตั้งแต่แรกอาจชนกัน (ก้อนหลังหา session ไม่เจอ)
+  if (batches > 0) await sendOneBatch(0);
+
+  // ก้อนที่เหลือส่งพร้อมกันได้ (ทุกก้อนแค่ "ต่อท้าย" session ที่มีอยู่แล้ว ไม่ชนกัน)
+  // จำกัดไม่เกิน 3 พร้อมกัน กันเน็ตมือถือ/เซิร์ฟเวอร์รับไม่ไหว
+  var CONCURRENCY = 3;
+  var remaining = [];
+  for (var b = 1; b < batches; b++) remaining.push(b);
+  while (remaining.length) {
+    var chunk = remaining.splice(0, CONCURRENCY);
+    await Promise.all(chunk.map(sendOneBatch));
+  }
+
+  // Step 3: Retry failed batches once more (extra safety)
+  if (failedBatches.length > 0) {
+    setProgress(82, 'ส่งซ้ำรอบที่ 2... (' + failedBatches.length + ' ชุด)');
+    var stillFailed = [];
+    for (var rb = 0; rb < failedBatches.length; rb++) {
+      var bIdx = failedBatches[rb];
+      var rBatch = batchList[bIdx];
+      try {
+        var rResult = await uploadWithRetry({
+          action: 'uploadBatch',
+          installer: installerName,
+          jobId: sendJob.id,
+          jobName: sendJob.name,
+          media: sendJob.media || '',
+          spots: sendJob.spots,
+          batchIndex: bIdx,
+          totalBatches: batches,
+          modes: codeMode,
+          files: rBatch.map(stripSrc),
+          requestId: _runId + '_b' + bIdx,
+          sessionToken: _runId,          // ทุกก้อนรอบนี้ใช้รอบเดียวกัน — ก้อนแรกที่ส่งซ้ำทีหลังจะไม่ลบรูปของก้อนอื่น
+          timestamp: new Date().toISOString()
+        }, 3);
+        if (rResult && rResult.codes && rResult.codes.length) {
+          rResult.codes.forEach(mergeResult);
+        } else {
+          stillFailed.push(bIdx);
+        }
+      } catch(err) {
+        stillFailed.push(bIdx);
+      }
+    }
+    failedBatches = stillFailed;
+  }
+
+  // Step 4: VERIFY — [FIX-COUNT] ตรวจทั้ง "จุดครบ" และ "จำนวนรูปครบ" ของทุกจุด
+  setProgress(92, 'ตรวจสอบความถูกต้อง...');
+  var missingCodes = [];   // จุดที่ต้องส่งซ้ำ (ไม่เข้า หรือรูปขาด)
+  var shortDetails = [];   // รายละเอียดจุดที่รูปขาด
+  codes.forEach(function(c) {
+    var r = null;
+    for (var ri = 0; ri < allResults.length; ri++) {
+      if (allResults[ri].code === c) { r = allResults[ri]; break; }
+    }
+    var got = r ? (r.count || 0) : 0; // รวมรูปที่เข้าจริงจากทุกก้อนของจุดนี้
+    if (!r || !r.folderUrl) {
+      missingCodes.push(c);
+    } else if (got < expectedCounts[c]) {
+      missingCodes.push(c);
+      shortDetails.push(c + ' (เข้า ' + got + '/' + expectedCounts[c] + ' รูป)');
+    }
+  });
+
+  if (missingCodes.length > 0 || failedBatches.length > 0) {
+    // PARTIAL FAILURE - keep photos of failed codes, show retry screen
+    var okCodes = codes.filter(function(c){ return missingCodes.indexOf(c) === -1; });
+    // Remove successful codes from codePhotos AND IndexedDB - keep only failed ones
+    // Await clears so recovery banner reflects true state (only failed codes remain)
+    await Promise.all(okCodes.map(function(c){
+      delete codePhotos[c];
+      return clearQueueForCode(sendJob.id, c);
+    }));
+    // จุดที่ส่งเข้าแล้วบางส่วน: เก็บไว้ส่งซ้ำ "เฉพาะรูปในก้อนที่พัง" — กันรูปที่เข้าแล้วถูกส่งซ้ำจนซ้ำในระบบ
+    var failedFiles = {};
+    failedBatches.forEach(function(bi){ (batchList[bi] || []).forEach(function(f){ if (f._src) failedFiles[f._forceCode] = (failedFiles[f._forceCode] || []).concat([f._src]); }); });
+    for (var mi = 0; mi < missingCodes.length; mi++) {
+      var mc = missingCodes[mi];
+      var gotAny = allResults.some(function(r){ return r.code === mc && (r.count || 0) > 0; });
+      var rest = failedFiles[mc] || [];
+      if (gotAny && rest.length && rest.length < (codePhotos[mc] || []).length) {
+        codePhotos[mc] = rest;
+        codeMode[mc] = 'append';     // รอบหน้า "เพิ่มต่อ" จากรูปที่เข้าแล้ว (ถ้าเคยเลือกถ่ายใหม่ — รอบแรกลบของเก่าไปแล้ว ห้ามลบซ้ำ)
+        await clearQueueForCode(sendJob.id, mc);
+        for (var ri2 = 0; ri2 < rest.length; ri2++) await savePhotoToQueue(sendJob.id, mc, rest[ri2]);
+      }
+    }
+
+    setProgress(100, '⚠️ ส่งได้บางส่วน');
+    setTimeout(function(){
+      // Save what succeeded to codeLog
+      if (allResults.length) saveCodeLogResults(allResults, sendJob);
+      var shortMsg = shortDetails.length ? '\n\n📉 จุดที่รูปเข้าไม่ครบ:\n' + shortDetails.join('\n') : '';
+      alert('⚠️ ส่งสำเร็จ ' + okCodes.length + ' จุด\n\n❌ ต้องส่งซ้ำ ' + missingCodes.length + ' จุด:\n' + missingCodes.join(', ') + shortMsg + '\n\nรูปที่ยังไม่เข้าระบบยังอยู่ในแอป ไม่หาย (รูปที่เข้าแล้วไม่ต้องส่งซ้ำ)\nกด "ส่งทั้งหมด" อีกครั้งเพื่อส่งซ้ำค่ะ');
+      window._keepPhotos = true;   // รูปของจุดที่ต้องส่งซ้ำยังต้องอยู่บนจอ
+      go('s3');
+      renderCodeList();
+      var btn2 = document.getElementById('sendAllCodesBtn');
+      if (btn2) { btn2.disabled = false; btn2.textContent = '📤 ส่งทั้งหมด'; }
+      var btnTop2 = document.getElementById('sendAllCodesBtnTop');
+      if (btnTop2) btnTop2.disabled = false;
+    }, 400);
+    window._sending = false;
+    return;
+  }
+
+  // ALL CONFIRMED - clear IndexedDB completely BEFORE showing success (await so banner won't show stale "ค้าง")
+  setProgress(98, 'บันทึกผล...');
+  await Promise.all(codes.map(function(c){ return clearQueueForCode(sendJob.id, c); }));
+  // Remove any visible banner immediately
+  var vb = document.getElementById('queueBanner');
+  if (vb) vb.remove();
+  window._sending = false;
+  setProgress(100, 'สำเร็จค่ะ! ✓');
+  setTimeout(function(){ showSuccess({ codes: allResults }, total, sendJob); }, 400);
+}
+
+function saveCodeLogResults(resultCodes, theJob) {
+  if (!resultCodes || !resultCodes.length || !theJob) return;
+  var jobId = theJob.id;
+  var cLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
+  if (!cLog[jobId]) cLog[jobId] = {};
+  resultCodes.forEach(function(c) {
+    cLog[jobId][c.code] = {
+      status: 'sent', count: c.count || 0,
+      method: c.method || 'forced',
+      folderUrl: c.folderUrl || '',
+      afterFolderUrl: c.afterFolderUrl || c.folderUrl || '',
+      productFolderUrl: c.productFolderUrl || '',
+      installedAt: new Date().toLocaleString('th-TH')
+    };
+  });
+  localStorage.setItem('codeLog', JSON.stringify(cLog));
+}
+
+</script>
+
+<div id="verBadge" style="position:fixed;bottom:6px;left:10px;font-size:10px;color:#4a5a2a;z-index:5;font-family:monospace;pointer-events:none">v21.7-FIX</div>
+</body>
+</html>
