@@ -175,7 +175,7 @@ function pollUpdate() {
     })
     .catch(function(){});
 }
-setInterval(pollUpdate, 25000);
+setInterval(function(){ if (!document.hidden) pollUpdate(); }, 45000);   // ไม่ดึงตอนพับจอ/สลับแท็บ — ประหยัดโควต้าเมื่อลูกค้าเปิดค้างหลายคน
 // สลับกลับมาที่แท็บนี้ → เช็คทันที (ไม่ต้องรอรอบ)
 document.addEventListener('visibilitychange', function(){ if (!document.hidden) pollUpdate(); });
 
