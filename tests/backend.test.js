@@ -1,7 +1,7 @@
 const fs = require('fs');
 let src = fs.readFileSync(require('path').join(__dirname,'..','Code.gs'), 'utf-8');
 const cacheStore = {};
-global.CacheService = { getScriptCache: () => ({ get: k => cacheStore[k]||null, put:(k,v)=>{cacheStore[k]=v;}, remove:k=>{delete cacheStore[k];}, removeAll:ks=>ks.forEach(k=>delete cacheStore[k]) }) };
+global.CacheService = { getScriptCache: () => ({ get: k => cacheStore[k]||null, put:(k,v)=>{cacheStore[k]=v;}, remove:k=>{delete cacheStore[k];}, removeAll:ks=>ks.forEach(k=>delete cacheStore[k]), putAll:(o)=>Object.assign(cacheStore,o), getAll:(ks)=>{const o={};ks.forEach(k=>{if(k in cacheStore)o[k]=cacheStore[k];});return o;} }) };
 global.ContentService = { createTextOutput: s => ({ _s:s, setMimeType(){return this;}, getContent(){return this._s;} }), MimeType:{JSON:'json'} };
 const today = new Date();
 global.Utilities = { formatDate: (d) => d.toISOString().substring(0,10), base64Decode:s=>s, newBlob:()=>({}), sleep:()=>{} };
@@ -101,5 +101,13 @@ t('ถ่ายใหม่ทั้งหมด: นับใหม่ = 4', il
 // ── แก้/ลบ Code ต้องระบุงาน (กันกระทบรูปของงานอื่น) ──
 t('แก้ Code โดยไม่ระบุงาน = ปฏิเสธ', JSON.parse(fixCode({ oldCode:'A1', newCode:'A2' }).getContent()).success === false);
 t('ลบรูปทั้ง Code โดยไม่ระบุงาน = ปฏิเสธ', JSON.parse(deleteCodeFiles({ code:'A1' }).getContent()).success === false);
+
+// ── cache ขนาดใหญ่ (งานหลายร้อยจุด) เก็บแบบแบ่งก้อนได้ และล้างได้ด้วย key เดียว ──
+const big = 'x'.repeat(250000);
+const cc = CacheService.getScriptCache();
+putBig_(cc, 'portal_BIG', big, 120);
+t('cache ใหญ่ 250KB เก็บแล้วอ่านกลับได้ครบ', getBig_(cc, 'portal_BIG') === big);
+bustCache(['portal_BIG']);
+t('ล้าง cache ใหญ่ด้วย key หลักได้', getBig_(cc, 'portal_BIG') === null);
 console.log(`\nผล: ${pass}/${pass+fail}`);
 process.exit(fail?1:0);
