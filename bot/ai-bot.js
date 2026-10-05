@@ -29,6 +29,7 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
     headless: true,
     executablePath: process.env.CHROME_PATH || undefined,   // ปกติไม่ต้องตั้ง (ใช้ Chromium ของ Playwright)
     viewport: { width: 1280, height: 900 },            // ขนาดคอมพิวเตอร์ → Snaphub เปิดโหมดตรวจอัตโนมัติ
+    serviceWorkers: 'block',                           // กัน service worker ส่งคำขอเลี่ยงตัวกลางด้านล่าง
   });
   // เบราว์เซอร์บนเครื่อง GitHub เรียก Apps Script ตรงๆ ไม่ผ่าน (Failed to fetch)
   // → ให้หุ่นยนต์เป็นคนเรียก Apps Script แทนเบราว์เซอร์ แล้วส่งคำตอบกลับเข้าหน้า Snaphub (ข้อมูลเหมือนเดิมทุกอย่าง)
@@ -68,7 +69,8 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
   // ยอดตั้งต้นก่อนเริ่มตรวจ (ไว้คำนวณว่ารอบนี้ตรวจไปกี่รูป)
   const snap = () => page.evaluate(async () => {
     try { await aiqFetchState(); } catch (e) {}
-    return { stats: _aiqState.stats || {}, pending: (_aiqState.pending || []).length, flags: (_aiqState.flags || []).length };
+    const st = _aiqState.stats || {};
+    return { stats: st, pending: st.pending != null ? st.pending : (_aiqState.pending || []).length, flags: (_aiqState.flags || []).length };
   });
   const before = await snap().catch(() => ({ stats: {} }));
   log(`เริ่ม: ตรวจแล้ว ${before.stats.checked || 0} รูป · รอตรวจ ${before.pending || 0}${before.pending >= 200 ? '+' : ''} รูป`);
@@ -79,26 +81,35 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
   }, 120000);
 
   let last = null, timedOut = false;
+  let stuck = 0, LAST_CHECKED = before.stats.checked;
   for (let round = 1; round <= MAX_ROUNDS && left() > 60000; round++) {
+    let timer;
     const r = await Promise.race([
       page.evaluate(async () => {
         const sleep = ms => new Promise(res => setTimeout(res, ms));
         while (_aiqBusy) await sleep(1000);            // Snaphub อาจเริ่มตรวจเองไปแล้ว รอให้จบก่อน
+        window._aiqLastErr = '';
         await aiRun();
         while (_aiqBusy) await sleep(1000);
         const chip = document.getElementById('aiqChip');
+        const st = _aiqState.stats || {};
         return {
-          stats: _aiqState.stats || {}, pending: (_aiqState.pending || []).length,
-          flags: (_aiqState.flags || []).length, chip: chip ? chip.textContent : '',
+          stats: st, pending: st.pending != null ? st.pending : (_aiqState.pending || []).length,
+          flags: (_aiqState.flags || []).length, chip: chip ? chip.textContent : '', err: window._aiqLastErr || '',
         };
       }),
-      new Promise(res => setTimeout(() => res({ timeout: true }), Math.max(left(), 1000))),
+      new Promise(res => { timer = setTimeout(() => res({ timeout: true }), Math.max(left(), 1000)); }),
     ]);
+    clearTimeout(timer);                                 // ไม่ให้ตัวจับเวลาค้าง → งานหมดแล้วจบรอบได้ทันที
     if (r.timeout) { timedOut = true; log('⏱ ครบเวลารอบนี้ — รูปที่เหลือจะตรวจต่อรอบหน้า (ผลที่ตรวจแล้วบันทึกไว้หมดแล้ว)'); break; }
     last = r;
     log(`รอบ ${round}: ตรวจแล้วรวม ${r.stats.checked || 0} รูป · รอตรวจ ${r.pending} รูป · ติดธง (บันทึกไว้แจ้งช่าง) ${r.flags} รูป`);
-    if (/ใช้งาน AI ไม่ได้/.test(r.chip)) { clearInterval(tick); log('❌', r.chip); await ctx.close().catch(() => {}); fail(r.chip); }
+    if (r.err || /ใช้งาน AI ไม่ได้/.test(r.chip)) { clearInterval(tick); log('❌', r.err || r.chip); await ctx.close().catch(() => {}); fail(r.err || r.chip); }
     if (!r.pending) break;
+    // รอบนี้ตรวจไม่เพิ่มเลยทั้งที่ยังมีรูปค้าง → หยุดเสียเวลา แล้วแจ้งเป็นสีแดง
+    if (r.stats.checked === LAST_CHECKED) stuck++; else stuck = 0;
+    LAST_CHECKED = r.stats.checked;
+    if (stuck >= 2) { clearInterval(tick); await ctx.close().catch(() => {}); fail('AI ตรวจไม่คืบหน้า 2 รอบติดกัน ทั้งที่ยังค้างตรวจ ' + r.pending + ' รูป'); }
   }
   clearInterval(tick);
   if (timedOut || !last) {
@@ -117,4 +128,5 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
     }
   }
   await ctx.close();
+  process.exit(0);
 })().catch(e => { log('❌ หุ่นยนต์ตรวจรูปล้มเหลว:', e && e.stack || e); fail(e && e.message || e); });
