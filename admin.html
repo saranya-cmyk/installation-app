@@ -702,7 +702,7 @@ function smartProduct(raw) {
 function smartCode(raw, codeRe, plateRe) {
   var orig = String(raw == null ? '' : raw).trim();
   if (!orig) return '';
-  var up = orig.toUpperCase();
+  var up = orig.toUpperCase().replace(/^([A-Z]{1,4})\s+([0-9]{2,5})\b/, '$1$2');   // "DP 703" → "DP703" ให้ตรงกับที่ช่างเลือก
   // ทางลัด: เซลล์สะอาดอยู่แล้ว = ใช้เลย ไม่ต้องเสี่ยงแตะ
   if (codeRe.test(up) || plateRe.test(orig)) return up;
   // มีของแถมปนมา → ดึงเฉพาะรหัสป้าย (เช่น "DP703 (สาทร)" → "DP703")
@@ -747,8 +747,10 @@ function autoDetectAndBuild() {
   // "วันเริ่มแคมเปญ" ไม่ใช่ชื่อสินค้า จึงเลื่อนไปท้ายสุดเป็นตัวสำรองกรณีไม่มีคอลัมน์อื่นเลย (เช่นไฟล์รถเมล์บางแบบ)
   productCol = findByName(['สินค้า','ชื่อสินค้า','product','brand','แบรนด์','แคมเปญ','campaign','ลูกค้า','โฆษณา','ad.on','adsone']);
   addrCol    = findByName(['location','ที่อยู่','สถานที่','address','เส้นทาง','route','จุดติดตั้ง','พื้นที่']);
-  latCol     = findByName(['co_y','latitude','lat']);
-  lngCol     = findByName(['co_x','longitude','lng','lon']);
+  // lat/lon ต้องเป็นคำโดดๆ — กัน "License Plate" (มีคำว่า lat ข้างใน) ถูกเลือกเป็นคอลัมน์พิกัด
+  var findWord = function(re){ return excelCols.find(function(col){ return re.test(String(col)); }) || null; };
+  latCol     = findByName(['co_y','latitude']) || findWord(/(^|[^a-z])lat([^a-z]|$)/i);
+  lngCol     = findByName(['co_x','longitude']) || findWord(/(^|[^a-z])(lng|lon|long)([^a-z]|$)/i);
   mediaCol   = findByName(['media type','ประเภทโฆษณา','media','สื่อ','ประเภทสื่อ']);
 
   // Bus-specific: build address from สาย + อู่ + หมายเลขรถ if no address col
@@ -816,7 +818,7 @@ function rebuildPendingSpots() {
   var isBusFile = st.isBusFile, busLine = st.busLine, busGarage = st.busGarage, busNum = st.busNum;
   var codePattern = st.codePattern, platePattern = st.platePattern;
 
-  var seen = {};
+  var seen = {}, seenCode = {};
   pendingSpots = rawExcelData.filter(function(r){
     if (!codeCol) return false;
     var v = String(r[codeCol]||'').trim();
@@ -844,6 +846,10 @@ function rebuildPendingSpots() {
       lng:     lngCol     ? parseFloat(r[lngCol])  || null   : null,
       media:   mediaCol   ? String(r[mediaCol]||'').trim()   : '',
     };
+  }).filter(function(sp){            // กันจุดซ้ำหลังทำความสะอาดรหัส เช่น "DP703 (สาทร)" กับ "DP703"
+    var k = String(sp.code || '').toUpperCase();
+    if (!k || seenCode[k]) return false;
+    seenCode[k] = true; return true;
   });
 }
 
@@ -998,8 +1004,8 @@ function parseAnyDate(v) {
   if (!v) return null;
   var s = String(v).trim();
   // Excel serial number
-  if (/^[0-9]{5}$/.test(s)) {
-    var d0 = new Date((parseInt(s) - 25569) * 86400 * 1000);
+  if (/^[0-9]{5}(\.[0-9]+)?$/.test(s)) {   // มีเวลาติดมาด้วย เช่น 45000.5
+    var d0 = new Date((Math.floor(Number(s)) - 25569) * 86400 * 1000);
     if (!isNaN(d0.getTime())) return d0.toISOString().substring(0,10);
   }
   // dd/mm/yyyy or dd-mm-yyyy (Thai year supported)
@@ -1106,7 +1112,13 @@ function createJob() {
   save();
   // Save to server so installers can see it
   fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'saveJob', job: job }) })
-    .catch(function(e){ console.error('Save job failed:', e); });
+    .then(function(r){ return r.json(); })
+    .then(function(res){ if (!res || !res.success) throw new Error((res && res.error) || 'ไม่ทราบสาเหตุ'); })
+    .catch(function(e){
+      console.error('Save job failed:', e);
+      alert('⚠️ บันทึกงาน "' + name + '" ขึ้นระบบไม่สำเร็จ — ช่างจะยังไม่เห็นงานนี้\n' + (e && e.message || '') +
+        '\n\nถ้างานมีจุดเยอะมาก (หลายร้อยจุด) ลองแบ่งเป็นหลายงาน แล้วสร้างใหม่ค่ะ');
+    });
 
   document.getElementById('jobNameInput').value = '';
   document.getElementById('jobMediaInput').value = '';
@@ -1132,7 +1144,7 @@ function renderOneJobCard(j) {
     var wrong = sent.filter(function(c){ return !j.spots.find(function(s){ return s.code === c; }); }).length;
     var pct = Math.round(done / (j.spots.length || 1) * 100);
     return '<div class="jcard">' +
-      '<div class="jcard-top"><div class="jcard-name">' + j.name + '</div><div class="jcard-date">' + j.created + '</div></div>' +
+      '<div class="jcard-top"><div class="jcard-name">' + esc(j.name) + '</div><div class="jcard-date">' + esc(j.created) + '</div></div>' +
       '<div class="jcard-prog-label"><span>' + pct + '%</span><span>' + done + ' / ' + j.spots.length + ' จุด</span></div>' +
       '<div class="jcard-prog-bar"><div class="jcard-prog-fill" style="width:' + pct + '%"></div></div>' +
       '<div class="jcard-stats">' +
@@ -1403,7 +1415,7 @@ function drawJobChips(media) {
     var isActive = currentJob === j.id;
     return '<button class="jchip' + (isActive ? ' on' : '') + '" data-jobid="' + j.id + '" ' +
       'onclick="pickDashJob(this.getAttribute(\'data-jobid\'))">' +
-      '<div class="jn">' + j.name + '</div>' +
+      '<div class="jn">' + esc(j.name) + '</div>' +
       '<div class="jbar"><i style="width:' + pct + '%"></i></div>' +
       '<div class="jm">' + pct + '% · ' + done + '/' + j.spots.length + ' จุด</div>' +
       '</button>';
@@ -1430,6 +1442,7 @@ function renderDash(directId) {
   c.style.display = 'block';
   document.getElementById('dashFilter').style.display = 'flex';
   var job = jobs.find(function(j){ return j.id === id; });
+  if (!job) { _selectedDashJob = ''; c.style.display = 'none'; return; }   // งานถูกลบไปแล้ว — ไม่ให้แดชบอร์ดค้าง
   var log = codeLog[id] || {};
   var planCodes = job.spots.map(function(s){ return s.code; });
   var sentCodes = Object.keys(log).filter(function(k){ return log[k].status === 'sent'; });
@@ -1523,15 +1536,15 @@ function renderDash(directId) {
     var hasProblem = jobProblems[s.code] && jobProblems[s.code].status === 'problem';
     var badgeCls = hasProblem ? 'sb-warn' : s.status === 'done' ? 'sb-done' : s.status === 'warn' ? 'sb-warn' : 'sb-pending';
     var badgeTxt = hasProblem ? '⚠️ ' + (jobProblems[s.code].reason || 'มีปัญหา').substring(0,15) : s.status === 'done' ? '✓ Installed' : s.status === 'warn' ? '⚠ Off-plan' : 'Pending';
-    var copyBtn = s.status === 'done' ? '<button class="spot-link-btn" onclick="copySpot(\'' + id + '\',\'' + s.code + '\',this)">📋</button>' : '';
+    var copyBtn = s.status === 'done' ? '<button class="spot-link-btn" onclick="event.stopPropagation();copySpot(' + qa(id) + ',' + qa(s.code) + ',this)">📋</button>' : '';
     // All codes are clickable - system will check Drive directly
     var borderStyle = dayColor ? 'border-left:3px solid ' + dayColor + ';' : '';
-    var spotClick = 'onclick="openPhotoModal(' + JSON.stringify(id) + ',' + JSON.stringify(s.code) + ',' + JSON.stringify(s.product) + ')" style="cursor:pointer;' + borderStyle + '"';
+    var spotClick = 'onclick="openPhotoModal(' + qa(id) + ',' + qa(s.code) + ',' + qa(s.product) + ')" style="cursor:pointer;' + borderStyle + '"';
     return '<div class="spot ' + s.status + '" ' + spotClick + '>' +
       '<div class="sdot ' + (s.status === 'done' ? 'done' : s.status === 'warn' ? 'warn' : '') + '"></div>' +
-      '<div class="scode">' + s.code + '</div>' +
-      '<div class="sinfo"><div class="sname">' + s.product + '</div><div class="saddr">' + (s.installedAt ? s.installedAt + ' · ' : '') + (s.address || '').substring(0,30) + (s.count ? ' · ' + s.count + ' รูป' : '') + '</div></div>' +
-      '<div class="spot-copy">' + copyBtn + (s.status==='warn' ? '<button class="spot-link-btn" style="border-color:var(--warn);color:var(--warn)" onclick="openFixModal(' + JSON.stringify(id) + ',' + JSON.stringify(s.code) + ')">✏️ Fix</button>' : '') + '<div class="sbadge ' + badgeCls + '">' + badgeTxt + '</div></div>' +
+      '<div class="scode">' + esc(s.code) + '</div>' +
+      '<div class="sinfo"><div class="sname">' + esc(s.product) + '</div><div class="saddr">' + esc(s.installedAt ? s.installedAt + ' · ' : '') + esc((s.address || '').substring(0,30)) + (s.count ? ' · ' + s.count + ' รูป' : '') + '</div></div>' +
+      '<div class="spot-copy">' + copyBtn + (s.status==='warn' ? '<button class="spot-link-btn" style="border-color:var(--warn);color:var(--warn)" onclick="event.stopPropagation();openFixModal(' + qa(id) + ',' + qa(s.code) + ')">✏️ Fix</button>' : '') + '<div class="sbadge ' + badgeCls + '">' + esc(badgeTxt) + '</div></div>' +
     '</div>';
   }).join('');
   spotsContainer.appendChild(spotsList);
@@ -1957,6 +1970,7 @@ function confirmDeleteFiles() {
     method: 'POST',
     body: JSON.stringify({
       action: 'deleteCodeFiles',
+      jobId: jobId,
       jobName: job.name,
       code: code
     })
@@ -2148,6 +2162,7 @@ function closeFixModal() {
 
 function confirmFix() {
   var newCode = document.getElementById('fixNewCode').value.trim().toUpperCase();
+  var oldForMsg = fixOldCode;
   if (!newCode) { alert('กรุณาใส่ Code ที่ถูกต้อง'); return; }
   if (!fixJobId || !fixOldCode) return;
 
@@ -2177,7 +2192,7 @@ function confirmFix() {
     })
   }).then(function(r){ return r.json(); }).then(function(result){
     if (result.success) {
-      alert('ย้ายรูปจาก ' + fixOldCode + ' → ' + newCode + ' เรียบร้อยแล้ว');
+      alert('ย้ายรูปจาก ' + oldForMsg + ' → ' + newCode + ' เรียบร้อยแล้ว' + (result.note ? '\n' + result.note : ''));
     } else {
       alert('อัปเดต log แล้ว แต่ย้ายไฟล์ใน Drive ไม่สำเร็จ: ' + (result.error||''));
     }
@@ -2268,16 +2283,22 @@ function jobNameById(jid) {
   return '';
 }
 
+var _pollBusy = false;
 function checkNewPhotos() {
+  if (_pollBusy) return;             // รอบก่อนยังไม่เสร็จ (Apps Script ช้า) — ไม่ยิงซ้อน
+  _pollBusy = true;
+  setTimeout(function(){ _pollBusy = false; }, 60000);   // กันค้างถาวรถ้ารอบก่อนไม่จบ
   Promise.all([
     fetch(SCRIPT_URL + '?action=getJobs').then(function(r){ return r.json(); }),
     fetch(SCRIPT_URL + '?action=getInstallLog').then(function(r){ return r.json(); }),
     fetch(SCRIPT_URL + '?action=getProblemLog').then(function(r){ return r.json(); })
   ]).then(function(results) {
-    // Jobs
+    // Jobs — งานที่เพิ่งสร้างแต่ยังไม่ขึ้นเซิร์ฟเวอร์ (ภายใน 2 นาที) ไม่ลบทิ้งจากจอ
     if (results[0].jobs) {
-      jobs = results[0].jobs;
-      localStorage.setItem('jobs', JSON.stringify(jobs));
+      var srvIds = {}; results[0].jobs.forEach(function(j){ srvIds[j.id] = 1; });
+      var fresh = (jobs || []).filter(function(j){ return !srvIds[j.id] && /^j_\d+$/.test(j.id) && Date.now() - Number(j.id.slice(2)) < 120000; });
+      jobs = fresh.concat(results[0].jobs);
+      try { localStorage.setItem('jobs', JSON.stringify(jobs)); } catch (e) {}
     }
     // Rebuild codeLog from server
     var newCodeLog = {};
@@ -2289,7 +2310,8 @@ function checkNewPhotos() {
           status: 'sent', count: entry.count || 0,
           folderUrl: entry.folderUrl || '',
           productFolderUrl: entry.productFolderUrl || '',
-          installedAt: entry.date || ''
+          installedAt: entry.date || '',
+          imgs: entry.imgs || []          // ให้ PDF ดึงรูปตรงงานนี้ ไม่ต้องไล่หาทั้ง Drive
         };
       });
     }
@@ -2352,7 +2374,7 @@ function checkNewPhotos() {
   }).catch(function() {
     codeLog = JSON.parse(localStorage.getItem('codeLog') || '{}');
     renderJobCards();
-  });
+  }).then(function(){ _pollBusy = false; });
 }
 checkNewPhotos();
 setInterval(checkNewPhotos, 30000);
@@ -2423,7 +2445,7 @@ var AIQ_LABELS = [   // min = ความมั่นใจขั้นต่�
   { en: 'a very dark photo taken at night with lights off', th: 'รูปมืด / อาจไฟป้ายดับ', min: 0.45, kind: 'dark' },
   { en: 'a tilted, crooked photo taken at a steep angle', th: 'ถ่ายเอียงมาก / ป้ายอาจติดไม่ตรง', min: 0.80, kind: 'tilt' } // เอียงเล็กน้อยรับได้ เตือนเฉพาะ AI มั่นใจ ≥80%
 ];
-var AIQ_AUTO = window.innerWidth >= 900 && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent); // มือถือไม่ตรวจเอง กันโหลด 100 MB ผ่านเน็ตมือถือ
+var AIQ_AUTO = window.innerWidth >= 900 && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) && !(navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)); // มือถือไม่ตรวจเอง กันโหลด 100 MB ผ่านเน็ตมือถือ
 var _aiqPipe = null, _aiqBusy = false, _aiqState = { pending: [], flags: [], stats: {} }, _aiqJob = null, _aiqThumbCache = {};
 
 function aiqChip(text, warn) {
@@ -2532,6 +2554,10 @@ function aiqCropLine(G, bx){
 }
 
 // ตรรกะเทียบ Code — ตัวเดียวกับที่จะใส่ใน admin.html
+// กันข้อความจาก Excel/ชื่อช่าง ที่มี < & " ' ทำหน้าจอพังหรือแทรกสคริปต์
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+// ใส่ค่าใน onclick="..." ได้ปลอดภัย (JSON มี " ซึ่งเดิมทำให้คลิกไม่ได้)
+function qa(v){ return esc(JSON.stringify(v == null ? '' : v)); }
 function aiqCanon(s){
   return String(s||'').toUpperCase().replace(/[\s\-_.,:;·\/\\|'"`~()\[\]{}]/g,'')
     .replace(/O/g,'0').replace(/[IL|]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2').replace(/G/g,'6').replace(/Q/g,'0');
@@ -2554,9 +2580,16 @@ function aiqJudge(texts, expected, known){
   var T=texts.map(aiqCanon), ce=aiqCanon(expected);
   var others=(known||[]).map(function(k){ return {code:k, c:aiqCanon(k)}; })
     .filter(function(o){ return o.c.length>=4 && o.c!==ce && ce.indexOf(o.c)<0 && o.c.indexOf(ce)<0; });
-  var has=function(c){ return T.some(function(t){ return t.indexOf(c)>-1; }); };
+  // Code สั้นมาก (<4 ตัว) ต้องตรงทั้งบรรทัด กันเลขสั้นๆ ไปเจอในข้อความอื่น
+  var has=function(c){ return T.some(function(t){ return c.length<4 ? t===c : t.indexOf(c)>-1; }); };
   var near=function(c){ return T.some(function(t){ return aiqNear(t,c); }); };
-  if (ce && has(ce)) return { ocr:'match' };
+  // Code อื่นที่ "ครอบ" Code นี้ เช่น จุดนี้ DP70 แต่ป้ายจริงเขียน DP703 → ต้องนับว่าติดผิดป้าย ไม่ใช่ตรง
+  var longer=(known||[]).map(function(k){ return {code:k, c:aiqCanon(k)}; })
+    .filter(function(o){ return ce && o.c!==ce && o.c.indexOf(ce)>-1; });
+  if (ce && has(ce)) {
+    var sup = longer.find(function(o){ return has(o.c); });
+    return sup ? { ocr:'other', found:sup.code } : { ocr:'match' };
+  }
   var exactOther=others.find(function(o){ return has(o.c); });
   if (exactOther) return { ocr:'other', found:exactOther.code };
   var nearMe = ce.length>=5 && near(ce);
@@ -2638,11 +2671,15 @@ function aiRun() {
           var ids = b.map(function(x){ return x.id; });
           return fetch(SCRIPT_URL + '?action=aiThumbs&full=1&ids=' + ids.join(',')).then(function(r){ return r.json(); })
             .then(function(res) {
+              if (res.error) throw new Error('ดึงรูปไม่สำเร็จ: ' + res.error);   // ระบบหลังบ้านขัดข้องชั่วคราว → ไม่ข้ามรูป รอบหน้าตรวจใหม่
               var thumbs = res.thumbs || [], rows = [], got = {};
               return thumbs.reduce(function(q, t) {
                 return q.then(function() {
                   got[t.id] = true;
-                  return aiqClassify(pipe, t.data).then(function(c) {
+                  return aiqClassify(pipe, t.data).catch(function(e) {
+                    console.warn('อ่านรูปไม่ได้:', t.id, e); return null;       // รูปเสีย/ไฟล์แปลก → ข้ามรูปนี้ ไม่ให้ค้างทั้งรอบ
+                  }).then(function(c) {
+                    if (!c) { done++; rows.push({ fileId: t.id, result: 'skip', reason: 'อ่านไฟล์รูปไม่ได้' }); return; }
                     return aiqReadCode(t.data, codeOf[t.id], known).then(function(o) {
                       done++; aiqChip('🤖 AI ตรวจรูปใหม่ ' + done + '/' + pend.length);
                       var reasons = [];
@@ -2659,7 +2696,9 @@ function aiRun() {
                 });
               }, Promise.resolve()).then(function() {
                 ids.forEach(function(id){ if (!got[id]) { done++; rows.push({ fileId: id, result: 'skip' }); } }); // ดึงรูปไม่ได้ → ข้าม ไม่วนมาดึงซ้ำ
-                if (rows.length) return fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'aiSaveChecks', rows: rows }) });
+                if (rows.length) return fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'aiSaveChecks', rows: rows }) })
+                  .then(function(r){ return r.json(); })
+                  .then(function(j){ if (!j || !j.success) throw new Error('บันทึกผลตรวจไม่สำเร็จ: ' + ((j && j.error) || 'ไม่ทราบสาเหตุ')); });
               });
             });
         });
@@ -2667,6 +2706,7 @@ function aiRun() {
     }).then(aiqFetchState);
   }).catch(function(err) {
     console.warn('AI ตรวจรูปไม่สำเร็จ:', err);
+    window._aiqLastErr = String(err && err.message || err);
     aiqChip('🤖 ใช้งาน AI ไม่ได้ — ตรวจว่าเครือข่ายอนุญาต cdn.jsdelivr.net / huggingface.co', true);
     setTimeout(aiqRefreshChip, 8000);
   }).then(function() {
@@ -2696,8 +2736,8 @@ function aiqRenderReview() {
     var jn = (jobs.find(function(j){ return j.id === f.jobId; }) || {}).name || '';
     return '<div class="aiqItem" id="aiqi_' + f.id + '"><a href="https://drive.google.com/file/d/' + f.id + '/view" target="_blank">' +
       '<img id="aiqimg_' + f.id + '" src="' + (_aiqThumbCache[f.id] || '') + '"></a><div>' +
-      '<b>' + f.code + '</b> <span style="color:#777;font-size:11px">' + jn + ' · ช่าง: ' + (f.installer || 'ไม่ระบุ') + '</span><br>' +
-      '<span class="aiqTag">⚠️ ' + f.reason + (f.reason.indexOf('ติดผิดป้าย') > -1 ? '' : ' · มั่นใจ ' + Math.round(f.score * 100) + '%') + '</span>' +
+      '<b>' + esc(f.code) + '</b> <span style="color:#777;font-size:11px">' + esc(jn) + ' · ช่าง: ' + esc(f.installer || 'ไม่ระบุ') + '</span><br>' +
+      '<span class="aiqTag">⚠️ ' + esc(f.reason) + (f.reason.indexOf('ติดผิดป้าย') > -1 ? '' : ' · มั่นใจ ' + Math.round(f.score * 100) + '%') + '</span>' +
       '</div></div>';
   }).join('');
   var need = list.filter(function(f){ return !_aiqThumbCache[f.id]; }).map(function(f){ return f.id; });
