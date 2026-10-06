@@ -1203,7 +1203,7 @@ function renderOneJobCard(j) {
         '<button class="copy-btn btn-ghost h-edit" onclick="editJobDates(\'' + j.id + '\')">📅 แก้ไข</button>' +
         '<button class="copy-btn btn-ghost h-pdf" onclick="createPDF(\'' + j.id + '\',this)">📄 PDF</button>' +
         (getJobFolderUrl(j.id) ? '<a class="copy-btn btn-ghost h-drive" href="' + getJobFolderUrl(j.id) + '" target="_blank">📁 Drive</a>' : '') +
-        '<button class="copy-btn btn-ghost h-copy" onclick="aiCheckJob(\'' + j.id + '\',this)">🤖 ตรวจรูป AI</button>' +
+        '<button class="copy-btn btn-ghost h-copy" onclick="aiCheckJob(\'' + j.id + '\',this)">🤖 ผลตรวจ AI</button>' +
         '<button class="copy-btn btn-hero" data-jobid="' + j.id + '" onclick="copyPortalLink(this)">🔗 ลูกค้า</button>' +
         '<button class="copy-btn btn-ghost h-line" data-jobid="' + j.id + '" onclick="sharePortalToLine(this)">💬 ส่งลิงก์</button>' +
       '</div>' +
@@ -2493,15 +2493,16 @@ function aiqChip(text, warn) {
 }
 function aiqRefreshChip() {
   if (_aiqBusy) return;
-  var f = (_aiqState.flags || []).length, p = (_aiqState.pending || []).length;
-  if (f) aiqChip('📝 AI บันทึกรูปที่ควรแจ้งช่าง ' + f + ' รูป — แตะดูรายการ', true);
-  else if (p && !AIQ_AUTO) aiqChip('🤖 มีรูปใหม่ ' + p + ' รูป — แตะให้ AI ตรวจ');
+  var st = _aiqState.stats || {};
+  var f = (_aiqState.flags || []).length, p = st.pending != null ? st.pending : (_aiqState.pending || []).length;
+  // ไม่มีปุ่มให้คนกดตรวจ — หุ่นยนต์ AI ตรวจให้เองตามรอบ แอดมินแค่ดูผล
+  if (f) aiqChip('📝 AI บันทึกรูปที่ควรแจ้งช่าง ' + f + ' รูป' + (p ? ' · รอ AI ตรวจอีก ' + p + ' รูป' : '') + ' — แตะดูรายการ', true);
+  else if (p) aiqChip('🤖 รูปใหม่ ' + p + ' รูป — AI จะตรวจให้อัตโนมัติ');
   else aiqChip('');
 }
 function aiqChipClick() {
   if (_aiqBusy) return;
-  if ((_aiqState.flags || []).length) aiqOpenReview(null);
-  else aiRun().then(function(){ aiqOpenReview(null); });
+  aiqOpenReview(null);                 // แค่เปิดดูผล — การตรวจเป็นหน้าที่หุ่นยนต์ AI
 }
 function aiqCloseBox() { document.getElementById('aiqOverlay').classList.remove('open'); _aiqJob = null; }
 
@@ -2809,8 +2810,8 @@ function aiqDecide(id, decision) {
 // ปุ่มในการ์ดงาน: ตรวจรูปใหม่ที่ค้างอยู่ แล้วเปิดผลของงานนั้น
 function aiCheckJob(jobId) {
   aiqOpenReview(jobId);
-  aiRun();
-  if (_aiqBusy) aiqRenderReview();
+  if (AIQ_AUTO) { aiRun(); if (_aiqBusy) aiqRenderReview(); }   // คอมฯ ช่วยตรวจได้ · iPad/มือถือแค่ดูผลที่หุ่นยนต์ตรวจไว้
+  else aiqFetchState().then(function(){ aiqRenderReview(); aiqRefreshChip(); }).catch(function(){});
 }
 // ตรวจอัตโนมัติ: เปิด Snaphub แล้วเริ่มเอง + ตรวจรอบใหม่ทุก 10 นาทีถ้ายังเปิดค้างไว้ (เฉพาะคอมพิวเตอร์)
 setTimeout(function() {
