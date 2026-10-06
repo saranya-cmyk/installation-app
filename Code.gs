@@ -44,7 +44,21 @@ function _resolveFolderId() {
 function _resolveAdminEmail() {
   var e = String(_props.getProperty('ADMIN_EMAIL') || '').trim();
   if (e) return e;
-  try { return Session.getEffectiveUser().getEmail(); } catch (err) { return ''; }
+  // ตอนช่าง/ลูกค้าเรียกผ่านเว็บ Google มักไม่บอกอีเมลเจ้าของ (ได้ค่าว่าง) → ต้องเก็บไว้ใน Script Properties
+  try { e = Session.getEffectiveUser().getEmail() || Session.getActiveUser().getEmail() || ''; } catch (err) { e = ''; }
+  if (e) { try { _props.setProperty('ADMIN_EMAIL', e); } catch (err) {} }   // เจอครั้งเดียว จำไว้ใช้ตลอด
+  return e;
+}
+// ▶ ตั้งอีเมลแอดมิน: ใน Apps Script เลือกฟังก์ชัน setupAdminEmail แล้วกด Run (ครั้งเดียวพอ)
+//   ระบบจะจำอีเมลของบัญชีที่กด Run ไว้ส่งแจ้งเตือนทุกฉบับ · อยากใช้อีเมลอื่น ให้แก้ค่า ADMIN_EMAIL ใน Project Settings → Script properties
+function setupAdminEmail() {
+  var e = '';
+  try { e = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || ''; } catch (err) {}
+  if (!e) throw new Error('หาอีเมลบัญชีนี้ไม่เจอ — ใส่เองที่ Project Settings → Script properties: ADMIN_EMAIL');
+  _props.setProperty('ADMIN_EMAIL', e);
+  MailApp.sendEmail(e, '[Snap] ทดสอบอีเมลแจ้งเตือน', 'ตั้งค่าเรียบร้อย — ต่อจากนี้ระบบจะส่งอีเมลแจ้งรูปเข้า/งานครบมาที่ ' + e);
+  Logger.log('✅ ตั้ง ADMIN_EMAIL = ' + e + ' และส่งอีเมลทดสอบแล้ว');
+  return e;
 }
 var CONFIG = {
   DRIVE_FOLDER_ID: _resolveFolderId(),
