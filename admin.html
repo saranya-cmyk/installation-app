@@ -1152,6 +1152,28 @@ function createJob() {
   alert('สร้างงาน "' + name + '" แล้ว — ช่างจะเห็นงานนี้ทันที');
 }
 
+// บรรทัดสถานะ AI บนการ์ดงาน — หุ่นยนต์ตรวจให้อัตโนมัติ แอดมินไม่ต้องกดอะไร (กดดูรายการรูปที่บันทึกแจ้งช่างได้)
+function aiJobLine(jobId) {
+  var by = (typeof _aiqState !== 'undefined' && _aiqState.byJob) || null;
+  if (!by) return '';
+  var a = by[jobId];
+  if (!a || (!a.checked && !a.pending)) return '';
+  var t = '', col = '#8fd14f', bg = '#142009', bd = '#2f4a12';
+  if (a.pending) {
+    t = '🤖 AI ตรวจแล้ว ' + a.checked + ' รูป · ⏳ รอตรวจอีก ' + a.pending + ' รูป (หุ่นยนต์ตรวจให้เองทุก 30 นาที)';
+    col = '#9fb4d8'; bg = '#111a2a'; bd = '#2a3a55';
+  } else {
+    t = '🤖 AI ตรวจครบทุกรูปแล้ว (' + a.checked + ' รูป)';
+  }
+  if (a.flagged) { t += ' · ⚠️ บันทึกแจ้งช่าง ' + a.flagged + ' รูป'; if (!a.pending) { col = '#ffc46b'; bg = '#2a1d06'; bd = '#5a3f10'; } }
+  else if (!a.pending) t += ' · ✓ ไม่มีรูปต้องแจ้งช่าง';
+  var last = a.last ? String(a.last).slice(5, 16).replace(/^(\d\d)-(\d\d) /, '$2/$1 ') : '';
+  return '<div onclick="aiqOpenReview(\'' + jobId + '\')" title="กดดูรายละเอียดผลตรวจ AI ของงานนี้" ' +
+    'style="cursor:pointer;margin-top:8px;padding:7px 10px;border-radius:8px;font-size:12px;line-height:1.5;' +
+    'background:' + bg + ';border:1px solid ' + bd + ';color:' + col + '">' + esc(t) +
+    (last ? '<span style="color:#6b7280;font-size:10px"> · ตรวจล่าสุด ' + esc(last) + '</span>' : '') + '</div>';
+}
+
 function renderOneJobCard(j) {
     var log = codeLog[j.id] || {};
     var sent = Object.keys(log).filter(function(k){ return log[k].status === 'sent'; });
@@ -1167,6 +1189,7 @@ function renderOneJobCard(j) {
         '<div class="jcs"><div class="jcs-dot" style="background:var(--mu)"></div>Pending ' + (j.spots.length - done) + '</div>' +
         (wrong ? '<div class="jcs"><div class="jcs-dot" style="background:var(--warn)"></div>Off-plan ' + wrong + '</div>' : '') +
       '</div>' +
+      aiJobLine(j.id) +
       (function(){
         var pLog = JSON.parse(localStorage.getItem('problemLog') || '{}');
         var problems = pLog[j.id] || [];
@@ -2667,7 +2690,14 @@ function aiqKnownCodes() {
 
 function aiqFetchState() {
   return fetch(SCRIPT_URL + '?action=aiPending').then(function(r){ return r.json(); })
-    .then(function(d) { if (!d.error) _aiqState = d; return _aiqState; });
+    .then(function(d) {
+      if (!d.error) {
+        var changed = JSON.stringify(d.byJob || {}) !== JSON.stringify(_aiqState.byJob || {});
+        _aiqState = d;
+        if (changed && typeof renderJobCards === 'function') { try { renderJobCards(); } catch (e) {} }  // อัปเดตบรรทัด AI บนการ์ดงาน
+      }
+      return _aiqState;
+    });
 }
 
 // ตรวจรูปที่ยังไม่เคยตรวจทั้งหมด แล้วบันทึกผลลงชีท
@@ -2785,7 +2815,11 @@ function aiCheckJob(jobId) {
 // ตรวจอัตโนมัติ: เปิด Snaphub แล้วเริ่มเอง + ตรวจรอบใหม่ทุก 10 นาทีถ้ายังเปิดค้างไว้ (เฉพาะคอมพิวเตอร์)
 setTimeout(function() {
   if (AIQ_AUTO) { aiRun(); setInterval(aiRun, 10 * 60 * 1000); }
-  else aiqFetchState().then(aiqRefreshChip).catch(function(){});
+  else {
+    // iPad/มือถือ ไม่รัน AI เอง แต่ดึงผลที่หุ่นยนต์ตรวจไว้มาโชว์บนการ์ดงานทุก 5 นาที
+    var pull = function(){ if (!document.hidden) aiqFetchState().then(aiqRefreshChip).catch(function(){}); };
+    pull(); setInterval(pull, 5 * 60 * 1000);
+  }
 }, 5000);
 </script>
 
