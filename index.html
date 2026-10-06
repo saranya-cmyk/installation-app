@@ -1843,6 +1843,7 @@ async function sendAllCodes() {
     failedBatches = stillFailed;
   }
 
+
   // Step 4: VERIFY — [FIX-COUNT] ตรวจทั้ง "จุดครบ" และ "จำนวนรูปครบ" ของทุกจุด
   setProgress(92, 'ตรวจสอบความถูกต้อง...');
   var missingCodes = [];   // จุดที่ต้องส่งซ้ำ (ไม่เข้า หรือรูปขาด)
