@@ -754,14 +754,17 @@ function _aiLogSheet() {
 function aiPending(p) {
   try {
     var index = _aiPhotoIndex();
-    var rows = _aiLogSheet().getDataRange().getValues();
-    var checked = {}, flags = [], nFlag = 0, nDecided = 0, codeOk = {};
+    var sheet = _aiLogSheet();
+    var rows = sheet.getDataRange().getValues();
+    var checked = {}, flags = [], nFlag = 0, nDecided = 0, codeOk = {}, nChecked = 0;
     // สรุปต่องาน ไว้โชว์บนการ์ดงานใน Snaphub: ตรวจแล้วกี่รูป · ติดธงกี่รูป · รอตรวจกี่รูป · ตรวจล่าสุดเมื่อไร
     var byJob = {};
     var bj = function(id) { return byJob[id] || (byJob[id] = { checked: 0, flagged: 0, pending: 0, last: '' }); };
     for (var i = 1; i < rows.length; i++) {
       var fid = String(rows[i][3]);
       checked[fid] = true;
+      if (rows[i][4] === 'base') continue;      // รูปเก่าก่อนเริ่มใช้ AI — ไม่ตรวจ ไม่นับ
+      nChecked++;
       if (index[fid]) {
         var b = bj(index[fid].jobId), at = rows[i][0];
         at = (at instanceof Date) ? Utilities.formatDate(at, 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss') : String(at || '');
@@ -779,11 +782,19 @@ function aiPending(p) {
     }
     // รูปใหม่ก่อนเสมอ — รูปที่ช่างเพิ่งส่งไม่ต้องรอคิวรูปเก่าที่ค้างอยู่
     var allIds = Object.keys(index).filter(function(id){ return !checked[id]; });
+    // ตรวจเฉพาะรูปที่เข้ามาใหม่: ครั้งแรกที่ใช้โค้ดนี้ รูปเก่าที่ค้างอยู่ทั้งหมดถูกบันทึกเป็น "ก่อนเริ่มใช้ AI" แล้วข้ามไป
+    if (allIds.length && !_props.getProperty('AI_BASELINE')) {
+      var stamp = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss');
+      var base = allIds.map(function(id){ return [stamp, index[id].jobId, index[id].code, id, 'base', 'รูปก่อนเริ่มใช้ AI ตรวจ — ไม่ตรวจย้อนหลัง', 0, '', '', '']; });
+      sheet.getRange(sheet.getLastRow() + 1, 1, base.length, AI_LOG_HEADER.length).setValues(base);
+      allIds = [];
+    }
+    try { if (!_props.getProperty('AI_BASELINE')) _props.setProperty('AI_BASELINE', new Date().toISOString()); } catch (e) {}
     allIds.forEach(function(id){ bj(index[id].jobId).pending++; });
     var ids = allIds.slice().reverse().slice(0, 200);
     var pending = ids.map(function(id){ return { jobId: index[id].jobId, code: index[id].code, id: id }; });
     return json({ pending: pending, flags: flags,
-      stats: { checked: rows.length - 1, flagged: nFlag, decided: nDecided, codeMatch: Object.keys(codeOk).length, pending: allIds.length }, byJob: byJob });
+      stats: { checked: nChecked, flagged: nFlag, decided: nDecided, codeMatch: Object.keys(codeOk).length, pending: allIds.length }, byJob: byJob });
   } catch (err) { return json({ pending: [], flags: [], error: err.message }); }
 }
 
