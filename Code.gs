@@ -61,6 +61,7 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
     if (body.action === 'uploadBatch')     return uploadBatch(body);
+    if (body.action === 'uploadDone')      return uploadDone(body);
     if (body.action === 'saveJob')         return withLock(function(){ return saveJobFn(body.job); });
     if (body.action === 'deleteJob')       return withLock(function(){ return deleteJobFn(body.jobId); });
     if (body.action === 'fixCode')         return withLock(function(){ return fixCode(body); });
@@ -90,6 +91,7 @@ function doGet(e) {
   if (p.action === 'approveSend')    return approveSend(p);
   if (p.action === 'portalLink')     return getPortalLink(p);
   if (p.action === 'portalData')     return getPortalData(p);
+  if (p.action === 'mailStatus')     return mailStatus();
   return ContentService.createTextOutput('OK');
 }
 
@@ -534,29 +536,17 @@ function uploadBatch(body) {
 
   try { logSheet(installer, jobName, new Date().toISOString(), uploadedCodes, unmatched.length); } catch(e) {}
 
-  // [P8] สะสมผลทุก batch → ส่งอีเมลสรุปครบฉบับเดียวตอน batch สุดท้าย
-  try {
-    var aggKey = 'agg_' + jobId + '_' + sessionToken;
-    var agg = {};
-    withLock2(function() {      // หลายก้อนเขียนพร้อมกัน → รวมผลภายใต้ lock ไม่ให้ทับกัน
-      var aggRaw = cache.get(aggKey);
-      if (aggRaw) { try { agg = JSON.parse(aggRaw); } catch(e) { agg = {}; } }
-      uploadedCodes.forEach(function(c){
-        var prev = agg[c.code];
-        agg[c.code] = { code:c.code, product:c.product, address:c.address,
-          count:(prev ? prev.count : 0) + (c.count || 0), failed:(prev ? prev.failed : 0) + (c.failed || 0), folderUrl:c.folderUrl };
-      });
-      cache.put(aggKey, JSON.stringify(agg), SESSION_TTL_SEC);
-      return true;
-    });
-    if (isLastBatch) {
-      var allCodes = Object.keys(agg).map(function(k){ return agg[k]; });
-      allCodes.sort(function(a,b){ return a.code < b.code ? -1 : 1; });
-      try { sendEmail(installer, jobName, allCodes, unmatched.length, monthFolderUrl, jobMedia, failedTotal); }
-      catch(e) { Logger.log('Email: '+e.message); }
-      cache.remove(aggKey);
-    }
-  } catch(e) { Logger.log('agg: '+e.message); }
+  // [P8] ส่งอีเมลแจ้งแอดมินทันทีที่รูปเข้า — ไม่รอก้อนอื่น (ส่งหลายก้อน = ได้อีเมลตามจำนวนก้อน)
+  if (uploadedCodes.length || unmatched.length) {
+    var mailCodes = uploadedCodes.map(function(c){ return { code:c.code, product:c.product, address:c.address,
+      count:c.count || 0, failed:c.failed || 0, folderUrl:c.folderUrl }; });
+    mailCodes.sort(function(a,b){ return a.code < b.code ? -1 : 1; });
+    var jobLabel = jobName + (totalBatches > 1 ? ' (ชุดที่ ' + (batchIndex + 1) + '/' + totalBatches + ')' : '');
+    try {
+      sendEmail(installer, jobLabel, mailCodes, unmatched.length, monthFolderUrl, jobMedia, failedTotal);
+      try { _props.deleteProperty('lastMailError'); _props.setProperty('lastMailOk', new Date().toISOString()); } catch(e) {}
+    } catch(e) { Logger.log('Email: '+e.message); _noteMailError(e.message); }
+  }
 
   // 🎉 เช็คว่างานครบ 100% หรือยัง — ถ้าครบ ส่งอีเมลให้แอดมินกดยืนยันส่งเซล
   if (isLastBatch && jobId) {
@@ -569,6 +559,19 @@ function uploadBatch(body) {
     try { dedupCache.put('req_' + requestId, JSON.stringify(_result), 600); } catch(e) {} // เก็บ 10 นาที พอคลุมช่วง retry
   }
   return json(_result);
+}
+
+// ── อีเมลส่งรูป ──
+function _noteMailError(msg) {
+  try { _props.setProperty('lastMailError', Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd HH:mm') + ' — ' + String(msg).slice(0, 300)); } catch(e) {}
+}
+// แอปรุ่นที่แคชไว้อาจยังเรียกอยู่ — อีเมลส่งไปแล้วตอนรูปเข้า จึงไม่ต้องทำอะไร
+function uploadDone(body) { return json({ success:true, mailed:false }); }
+// เปิด ?action=mailStatus เพื่อดูว่าอีเมลยังส่งได้ไหม (โควต้าเหลือ / ข้อผิดพลาดล่าสุด)
+function mailStatus() {
+  var q = -1; try { q = MailApp.getRemainingDailyQuota(); } catch(e) {}
+  return json({ adminEmail: CONFIG.ADMIN_EMAIL ? CONFIG.ADMIN_EMAIL.replace(/^(.{2}).*(@.*)$/, '$1***$2') : '(ไม่มี)',
+    quotaLeftToday: q, lastMailOk: _props.getProperty('lastMailOk') || '', lastMailError: _props.getProperty('lastMailError') || '' });
 }
 
 /** lock สั้นๆ แบบคืนค่า (ใช้ภายใน) */
@@ -753,9 +756,19 @@ function aiPending(p) {
     var index = _aiPhotoIndex();
     var rows = _aiLogSheet().getDataRange().getValues();
     var checked = {}, flags = [], nFlag = 0, nDecided = 0, codeOk = {};
+    // สรุปต่องาน ไว้โชว์บนการ์ดงานใน Snaphub: ตรวจแล้วกี่รูป · ติดธงกี่รูป · รอตรวจกี่รูป · ตรวจล่าสุดเมื่อไร
+    var byJob = {};
+    var bj = function(id) { return byJob[id] || (byJob[id] = { checked: 0, flagged: 0, pending: 0, last: '' }); };
     for (var i = 1; i < rows.length; i++) {
       var fid = String(rows[i][3]);
       checked[fid] = true;
+      if (index[fid]) {
+        var b = bj(index[fid].jobId), at = rows[i][0];
+        at = (at instanceof Date) ? Utilities.formatDate(at, 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss') : String(at || '');
+        b.checked++;
+        if (rows[i][4] === 'flag' && !rows[i][7]) b.flagged++;
+        if (at > b.last) b.last = at;
+      }
       if (rows[i][9] === 'match') codeOk[rows[i][1] + '|' + rows[i][2]] = true;
       if (rows[i][4] === 'flag') {
         nFlag++;
@@ -766,10 +779,11 @@ function aiPending(p) {
     }
     // รูปใหม่ก่อนเสมอ — รูปที่ช่างเพิ่งส่งไม่ต้องรอคิวรูปเก่าที่ค้างอยู่
     var allIds = Object.keys(index).filter(function(id){ return !checked[id]; });
+    allIds.forEach(function(id){ bj(index[id].jobId).pending++; });
     var ids = allIds.slice().reverse().slice(0, 200);
     var pending = ids.map(function(id){ return { jobId: index[id].jobId, code: index[id].code, id: id }; });
     return json({ pending: pending, flags: flags,
-      stats: { checked: rows.length - 1, flagged: nFlag, decided: nDecided, codeMatch: Object.keys(codeOk).length, pending: allIds.length } });
+      stats: { checked: rows.length - 1, flagged: nFlag, decided: nDecided, codeMatch: Object.keys(codeOk).length, pending: allIds.length }, byJob: byJob });
   } catch (err) { return json({ pending: [], flags: [], error: err.message }); }
 }
 
