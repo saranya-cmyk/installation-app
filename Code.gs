@@ -1979,7 +1979,7 @@ function _sendDailyAdminEmail(jr, total, reportedCount, pending, carried) {
       '<div style="color:#888;font-size:12px;margin-bottom:14px;word-break:break-word">' + codeList + '</div>' +
       _aiJobSummaryHtml(jobId, pending) +
       '<div style="background:#f7f7f7;border-radius:10px;padding:12px;font-size:13px;color:#666;margin-bottom:18px">' +
-        'กดปุ่มด้านล่าง → <b style="color:#111">ใส่/แก้อีเมลเซลและ CC</b> → กดยืนยัน ระบบจะส่ง PDF รูปของจุดรอบนี้ + ลิงก์เรียลไทม์ให้ทันที' +
+        'กดปุ่มด้านล่าง → <b style="color:#111">ใส่/แก้อีเมลเซลและ CC</b> → กดยืนยัน ระบบจะส่ง PDF รูปของจุดรอบนี้ให้ทันที' +
         (salesEmail ? '<br>อีเมลเซลที่ใช้ครั้งก่อน: <b style="color:#111">' + esc_(salesEmail) + '</b>' : '') +
       '</div>' +
       '<a href="' + confirmUrl + '" style="background:#2e7d32;color:#fff;padding:16px 32px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">✅ ใส่อีเมลเซล แล้วส่งรูปรอบนี้</a>' +
@@ -1994,6 +1994,69 @@ function _sendDailyAdminEmail(jr, total, reportedCount, pending, carried) {
 
 
 /** แอดมินกดปุ่มยืนยันจากอีเมล → สร้าง PDF → ส่งเซล + ลิงก์ Portal → ปิดจ็อบ */
+// โลโก้ Plan B สำหรับอีเมล: วางไฟล์ชื่อ planb-logo.png (หรือ .jpg) ไว้ในโฟลเดอร์หลักของแอปใน Drive
+// ระบบแนบเป็นรูปในตัวอีเมล (ไม่ต้องกดโหลดรูป) · ไม่มีไฟล์ = ใช้ตัวอักษร "Plan B" แทน
+function _planbLogoBlob_() {
+  try {
+    var folder = DriveApp.getFolderById(CONFIG.DRIVE_FOLDER_ID);
+    var names = ['planb-logo.png', 'planb-logo.jpg', 'planb-logo.jpeg'];
+    for (var i = 0; i < names.length; i++) {
+      var it = folder.getFilesByName(names[i]);
+      if (it.hasNext()) return it.next().getBlob().setName('planb-logo');
+    }
+  } catch (e) {}
+  return null;
+}
+
+// 🎨 สีน้ำเงิน CI ของ Plan B ที่ใช้ในอีเมลถึงเซล — แก้รหัสสีตรงนี้ให้ตรงคู่มือ CI ได้เลย
+var PLANB_BLUE = '#1f6fd6';
+
+// การ์ดอีเมลถึงเซล (ธีมดำแบบแอป Snaphub) — ใช้ตาราง + สไตล์ในบรรทัด ให้แสดงได้ทั้ง Outlook / Gmail / มือถือ
+function _salesCardHtml_(d) {
+  var F = "font-family:'Sarabun','Leelawadee UI','Segoe UI',Tahoma,Arial,sans-serif;";
+  var ac = PLANB_BLUE;  // สีน้ำเงินตาม CI Plan B ทั้งงานครบและอัปเดตรายวัน
+  var fmt = function(v) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || '')); return m ? (Number(m[3]) + '/' + Number(m[2]) + '/' + (Number(m[1]) + 543)) : ''; };
+  var period = (d.dateStart || d.dateEnd) ? (fmt(d.dateStart) + (d.dateEnd ? ' – ' + fmt(d.dateEnd) : '')) : '';
+  var pct = d.total ? Math.min(100, Math.round(d.cum / d.total * 100)) : 0;
+  var stat = function(n, label, color, last) {
+    return '<td align="center" width="33%" style="padding:16px 4px;' + (last ? '' : 'border-right:1px solid #262626;') + F + '">' +
+      '<div style="font-size:26px;font-weight:bold;color:' + color + ';line-height:1.15">' + n + '</div>' +
+      '<div style="font-size:12px;color:#8a8a8a;margin-top:4px">' + label + '</div></td>';
+  };
+  var list = (d.codes || []).slice(0, 60).map(function(c) {
+    return '<span style="display:inline-block;background:#1d1d1d;border:1px solid #2e2e2e;border-radius:6px;padding:3px 8px;margin:0 4px 6px 0;font-size:12px;color:#cfcfcf;font-family:Consolas,Menlo,monospace">' + esc_(c) + '</span>';
+  }).join('') + ((d.codes || []).length > 60 ? '<span style="font-size:12px;color:#8a8a8a">และอีก ' + (d.codes.length - 60) + ' จุด</span>' : '');
+  var brand = d.logo
+    ? '<img src="cid:planblogo" alt="Plan B" height="30" style="height:30px;display:block;border:0">'
+    : '<span style="font-size:17px;font-weight:bold;color:#ffffff">Plan <span style="color:' + PLANB_BLUE + '">B</span></span>';
+  return '' +
+  '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0b0b0b" style="background:#0b0b0b"><tr><td align="center" style="padding:30px 12px">' +
+  '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="#151515" style="max-width:600px;width:100%;background:#151515;border:1px solid #262626;border-radius:16px">' +
+    '<tr><td style="padding:26px 28px 0;' + F + '">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' +
+        '<td valign="middle">' + brand + '</td>' +
+        (d.media ? '<td align="right" valign="middle" style="' + F + 'font-size:12px;color:#8a8a8a">' + esc_(d.media) + '</td>' : '') +
+      '</tr></table>' +
+      '<div style="margin-top:20px;font-size:13px;color:' + ac + ';font-weight:bold">● ' + (d.isDone ? 'งานติดตั้งเสร็จสมบูรณ์' : 'อัปเดตงานติดตั้ง') + '</div>' +
+      '<div style="font-size:26px;font-weight:bold;color:#ffffff;margin-top:6px;line-height:1.3">' + esc_(d.jobName) + '</div>' +
+      (period ? '<div style="font-size:13px;color:#8a8a8a;margin-top:4px">ระยะเวลาติดตั้ง ' + period + '</div>' : '') +
+    '</td></tr>' +
+    '<tr><td style="padding:20px 28px 0">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#1d1d1d" style="background:#1d1d1d;border-radius:12px"><tr>' +
+        stat(d.nNow, 'จุดที่ส่งรอบนี้', '#ffffff') +
+        stat(d.cum + '<span style="font-size:15px;color:#777">/' + d.total + '</span>', 'สะสมทั้งงาน (' + pct + '%)', ac) +
+        stat(d.photos, 'รูปใน PDF', '#ffffff', true) +
+      '</tr></table></td></tr>' +
+    (list ? '<tr><td style="padding:20px 28px 0;' + F + '"><div style="font-size:13px;font-weight:bold;color:#e6e6e6;margin-bottom:8px">จุดที่ติดตั้งรอบนี้</div>' + list + '</td></tr>' : '') +
+    (d.noSales ? '<tr><td style="padding:14px 28px 0;' + F + '"><div style="background:#3a1414;color:#ff8a80;font-size:13px;padding:10px 12px;border-radius:8px">⚠️ ไม่ได้ระบุอีเมลเซล — กรุณาส่งต่อให้เซลผู้ดูแลเองค่ะ</div></td></tr>' : '') +
+    '<tr><td style="padding:22px 28px 10px">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" bgcolor="' + ac + '" style="background:' + ac + ';border-radius:10px">' +
+        '<a href="' + esc_(d.pdfUrl || '') + '" style="display:block;padding:15px;' + F + 'font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none">ดาวน์โหลด PDF รูปติดตั้ง</a>' +
+      '</td></tr></table></td></tr>' +
+    '<tr><td align="center" style="padding:8px 28px 24px;' + F + 'font-size:11px;color:#6b6b6b">ส่งจากระบบจัดการภาพติดตั้ง Snap · Plan B Media</td></tr>' +
+  '</table></td></tr></table>';
+}
+
 // แยกรายการอีเมลจากช่องกรอก (คั่นด้วย , ; เว้นวรรค หรือขึ้นบรรทัดใหม่)
 function _emailList_(v) {
   var ok = [], bad = [];
@@ -2025,7 +2088,7 @@ function _approveFormPage(jobId, k, jobName, media, nNew, nReported, nTotal, err
       '<label style="font-weight:bold;font-size:14px">CC</label>' +
       '<input name="cc" type="text" value="' + esc_(ccVal) + '" placeholder="ไม่ใส่ก็ได้" style="' + inp + ';margin:6px 0 6px">' +
       '<div style="color:#888;font-size:12px;margin-bottom:18px">หลายคนคั่นด้วย , · ถ้าไม่ใส่อีเมลเซล ระบบจะส่งเข้าอีเมลแอดมินเพื่อส่งต่อเอง · ระบบจำอีเมลไว้ใช้รอบหน้า</div>' +
-      '<button id="sb" type="submit" style="width:100%;background:#2e7d32;color:#fff;border:none;padding:16px;border-radius:10px;font-size:16px;font-weight:bold;font-family:inherit;cursor:pointer">✅ ยืนยัน — ส่ง PDF + ลิงก์เรียลไทม์</button>' +
+      '<button id="sb" type="submit" style="width:100%;background:#2e7d32;color:#fff;border:none;padding:16px;border-radius:10px;font-size:16px;font-weight:bold;font-family:inherit;cursor:pointer">✅ ยืนยัน — ส่ง PDF รูปติดตั้ง</button>' +
     '</form>' +
     '<p style="color:#aaa;font-size:12px;text-align:center;margin-top:24px">Plan B Installation App</p></div>';
   return HtmlService.createHtmlOutput(html).setTitle('Plan B — ส่งรูปให้เซล')
@@ -2118,29 +2181,19 @@ function approveSend(p) {
     // 2) ลิงก์ Portal เรียลไทม์ (สร้าง key ถ้ายังไม่มี)
     var portalKey = String(jr.values[8] || '').trim();
     if (!portalKey) { portalKey = genPortalKey(); jr.sh.getRange(jr.row, 9).setValue(portalKey); }
-    var portalUrl = PORTAL_BASE_URL + portalKey;
 
     // 3) ส่งอีเมลถึงเซล (หรือแอดมินถ้าไม่มีเซล)
     var noSales = !salesEmail;
     var to = noSales ? CONFIG.ADMIN_EMAIL : salesEmail;
-    var mailHtml = '<div style="font-family:Sarabun,Arial,sans-serif;max-width:620px;padding:24px">'+
-      '<h2 style="margin:0 0 4px 0">'+(isDone ? '📦 งานติดตั้งเสร็จสมบูรณ์ พร้อมส่งมอบ' : '📋 อัปเดตงานติดตั้งประจำวัน')+'</h2>'+
-      (media ? '<div style="color:#1665c1;font-weight:bold">📺 '+media+'</div>' : '')+
-      '<div style="font-size:19px;font-weight:bold;margin:4px 0 14px 0">'+jobName+'</div>'+
-      (noSales ? '<p style="color:#c62828;font-weight:bold">⚠️ งานนี้ไม่ได้ระบุอีเมลเซล — กรุณาส่งต่อให้เซลผู้ดูแลเองค่ะ</p>' : '')+
-      '<p style="color:#555">รอบนี้ติดตั้ง <b>'+sentNow.length+' จุด</b> · สะสม <b>'+cum+'/'+spots.length+' จุด</b>'+(isDone ? ' — <b style="color:#2e7d32">ครบแล้ว</b>' : '')+'<br>PDF ด้านล่างเป็นรูปของจุดรอบนี้ ส่วนลิงก์เรียลไทม์ดูได้ทุกจุดค่ะ</p>'+
-      '<div style="margin:18px 0">'+
-        '<a href="'+(pdfRes.pdfUrl||pdfRes.docUrl)+'" style="background:#c62828;color:#fff;padding:13px 22px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block;margin:0 8px 8px 0">📄 ดาวน์โหลด PDF รูปติดตั้ง</a>'+
-        '<a href="'+portalUrl+'" style="background:#2e7d32;color:#fff;padding:13px 22px;border-radius:9px;text-decoration:none;font-weight:bold;display:inline-block;margin-bottom:8px">🔗 ลิงก์สถานะเรียลไทม์ (ส่งให้ลูกค้าได้เลย)</a>'+
-      '</div>'+
-      '<div style="background:#f7f7f7;border-radius:10px;padding:14px;font-size:13px;color:#555">'+
-        '💡 ลิงก์เรียลไทม์เปิดได้ทุกอุปกรณ์ ไม่ต้อง login — ลูกค้าเห็นชื่อสื่อ สินค้า แผนที่ และรูปติดตั้งของทุกจุด อัปเดตอัตโนมัติ<br>'+
-        '<span style="color:#888;word-break:break-all">'+portalUrl+'</span>'+
-      '</div></div>';
+    var logoBlob = _planbLogoBlob_();
+    var mailHtml = _salesCardHtml_({ logo: !!logoBlob, isDone: isDone, media: media, jobName: jobName, noSales: noSales,
+      dateStart: dateStart, dateEnd: dateEnd, nNow: sentNow.length, cum: cum, total: spots.length,
+      photos: pdfRes.photoCount || 0, pdfUrl: pdfRes.pdfUrl || pdfRes.docUrl, codes: sentNow });
     var mailOpts = { to: to,
       subject: (isDone ? '📦 [ส่งมอบงาน] ' : '📋 [อัปเดตรายวัน] ') + (media ? media + ' · ' : '') + jobName +
         (isDone ? ' — ครบ ' + spots.length + ' จุด' : ' — +' + sentNow.length + ' จุด (' + cum + '/' + spots.length + ')'),
       htmlBody: mailHtml };
+    if (logoBlob) mailOpts.inlineImages = { planblogo: logoBlob };
     if (ccEmail) mailOpts.cc = ccEmail;
     else if (!noSales && CONFIG.ADMIN_EMAIL) mailOpts.cc = CONFIG.ADMIN_EMAIL;
     MailApp.sendEmail(mailOpts);
@@ -2160,7 +2213,7 @@ function approveSend(p) {
     });
 
     return page('ส่งเรียบร้อยแล้ว 🎉',
-      'งาน <b>'+jobName+'</b> · รอบนี้ '+sentNow.length+' จุด (สะสม '+cum+'/'+spots.length+')<br>PDF รูปติดตั้ง ('+(pdfRes.photoCount||0)+' รูป) + ลิงก์เรียลไทม์<br>ส่งถึง <b>'+esc_(to)+'</b> แล้ว'+
+      'งาน <b>'+jobName+'</b> · รอบนี้ '+sentNow.length+' จุด (สะสม '+cum+'/'+spots.length+')<br>PDF รูปติดตั้ง ('+(pdfRes.photoCount||0)+' รูป)<br>ส่งถึง <b>'+esc_(to)+'</b> แล้ว'+
       (mailOpts.cc ? '<br>CC: <b>' + esc_(mailOpts.cc) + '</b>' : '') +
       (noSales ? '<br><span style="color:#c62828">(ไม่ได้ใส่อีเมลเซล จึงส่งเข้าอีเมลแอดมิน)</span>' : '') +
       (leftOver.length ? '<br><span style="color:#b25e00">⏳ อีก ' + leftOver.length + ' จุดสร้าง PDF ไม่ทันรอบนี้ — กดปุ่มเดิมในอีเมลอีกครั้งเพื่อส่งต่อ</span>' : ''), true);
