@@ -41,19 +41,32 @@ function _resolveFolderId() {
   }
   return id || null;
 }
+// 📧 อีเมลที่รับแจ้งเตือนทุกฉบับ (รูปเข้า / รายงานประจำวัน / ปัญหาหน้างาน) · หลายคนคั่นด้วย ,
+//    ถ้าตั้ง ADMIN_EMAIL ใน Script properties ไว้ ระบบจะใช้ค่านั้นก่อน
+var DEFAULT_ADMIN_EMAIL = 'saranya@planbmedia.co.th';
 function _resolveAdminEmail() {
   var e = String(_props.getProperty('ADMIN_EMAIL') || '').trim();
   if (e) return e;
+  if (DEFAULT_ADMIN_EMAIL) return DEFAULT_ADMIN_EMAIL;
   // ตอนช่าง/ลูกค้าเรียกผ่านเว็บ Google มักไม่บอกอีเมลเจ้าของ (ได้ค่าว่าง) → ต้องเก็บไว้ใน Script Properties
   try { e = Session.getEffectiveUser().getEmail() || Session.getActiveUser().getEmail() || ''; } catch (err) { e = ''; }
+  if (!e) e = _driveOwnerEmail_();
   if (e) { try { _props.setProperty('ADMIN_EMAIL', e); } catch (err) {} }   // เจอครั้งเดียว จำไว้ใช้ตลอด
   return e;
 }
 // ▶ ตั้งอีเมลแอดมิน: ใน Apps Script เลือกฟังก์ชัน setupAdminEmail แล้วกด Run (ครั้งเดียวพอ)
 //   ระบบจะจำอีเมลของบัญชีที่กด Run ไว้ส่งแจ้งเตือนทุกฉบับ · อยากใช้อีเมลอื่น ให้แก้ค่า ADMIN_EMAIL ใน Project Settings → Script properties
+// สคริปต์บางตัวไม่มีสิทธิ์อ่านอีเมลผู้ใช้ (Session คืนค่าว่าง) → ใช้อีเมลเจ้าของโฟลเดอร์รูป/ไดรฟ์แทน (ใช้สิทธิ์ Drive ที่มีอยู่แล้ว)
+function _driveOwnerEmail_() {
+  var id = String(_props.getProperty('DRIVE_FOLDER_ID') || '').trim();
+  try { if (id) { var o = DriveApp.getFolderById(id).getOwner(); if (o && o.getEmail()) return o.getEmail(); } } catch (err) {}
+  try { var r = DriveApp.getRootFolder().getOwner(); if (r && r.getEmail()) return r.getEmail(); } catch (err) {}
+  return '';
+}
 function setupAdminEmail() {
   var e = '';
   try { e = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || ''; } catch (err) {}
+  if (!e) e = _driveOwnerEmail_();
   if (!e) throw new Error('หาอีเมลบัญชีนี้ไม่เจอ — ใส่เองที่ Project Settings → Script properties: ADMIN_EMAIL');
   _props.setProperty('ADMIN_EMAIL', e);
   MailApp.sendEmail(e, '[Snap] ทดสอบอีเมลแจ้งเตือน', 'ตั้งค่าเรียบร้อย — ต่อจากนี้ระบบจะส่งอีเมลแจ้งรูปเข้า/งานครบมาที่ ' + e);
@@ -1966,10 +1979,10 @@ function _sendDailyAdminEmail(jr, total, reportedCount, pending, carried) {
       '<div style="color:#888;font-size:12px;margin-bottom:14px;word-break:break-word">' + codeList + '</div>' +
       _aiJobSummaryHtml(jobId, pending) +
       '<div style="background:#f7f7f7;border-radius:10px;padding:12px;font-size:13px;color:#666;margin-bottom:18px">' +
-        (salesEmail ? 'เมื่อกดยืนยัน ระบบจะส่ง PDF รูปของจุดรอบนี้ + ลิงก์เรียลไทม์ ให้เซล<br><b style="color:#111">' + salesEmail + '</b> (CC ถึงคุณ)'
-                    : '⚠️ งานนี้<b>ไม่ได้ระบุอีเมลเซล</b> — เมื่อกดยืนยัน ระบบจะส่งมาที่อีเมลคุณ เพื่อส่งต่อเอง') +
+        'กดปุ่มด้านล่าง → <b style="color:#111">ใส่/แก้อีเมลเซลและ CC</b> → กดยืนยัน ระบบจะส่ง PDF รูปของจุดรอบนี้ + ลิงก์เรียลไทม์ให้ทันที' +
+        (salesEmail ? '<br>อีเมลเซลที่ใช้ครั้งก่อน: <b style="color:#111">' + esc_(salesEmail) + '</b>' : '') +
       '</div>' +
-      '<a href="' + confirmUrl + '" style="background:#2e7d32;color:#fff;padding:16px 32px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">✅ ยืนยัน — ส่งรูปรอบนี้ให้เซล</a>' +
+      '<a href="' + confirmUrl + '" style="background:#2e7d32;color:#fff;padding:16px 32px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">✅ ใส่อีเมลเซล แล้วส่งรูปรอบนี้</a>' +
       '<div style="color:#999;font-size:11px;margin-top:14px">การสร้าง PDF ใช้เวลา 1-3 นาที กดแล้วรอหน้ายืนยันขึ้นก่อนปิดนะคะ · ใช้ปุ่มจากอีเมลฉบับล่าสุดเท่านั้น</div>' +
     '</div></div>';
   MailApp.sendEmail({ to: CONFIG.ADMIN_EMAIL,
@@ -1981,6 +1994,44 @@ function _sendDailyAdminEmail(jr, total, reportedCount, pending, carried) {
 
 
 /** แอดมินกดปุ่มยืนยันจากอีเมล → สร้าง PDF → ส่งเซล + ลิงก์ Portal → ปิดจ็อบ */
+// แยกรายการอีเมลจากช่องกรอก (คั่นด้วย , ; เว้นวรรค หรือขึ้นบรรทัดใหม่)
+function _emailList_(v) {
+  var ok = [], bad = [];
+  String(v || '').split(/[\s,;]+/).forEach(function(e) {
+    e = e.trim(); if (!e) return;
+    if (/^[^@\s<>"']+@[^@\s<>"']+\.[^@\s<>"']+$/.test(e)) { if (ok.indexOf(e.toLowerCase()) < 0) ok.push(e.toLowerCase()); }
+    else bad.push(e);
+  });
+  return { ok: ok.slice(0, 20), bad: bad };
+}
+// หน้าใส่อีเมลเซล + CC ก่อนกดส่งจริง
+function _approveFormPage(jobId, k, jobName, media, nNew, nReported, nTotal, err, toVal, ccVal) {
+  var url = _webAppUrl();
+  var inp = 'width:100%;box-sizing:border-box;padding:12px;border:1px solid #ccc;border-radius:8px;font-size:15px;font-family:inherit';
+  var html = '<div style="font-family:Sarabun,Arial,sans-serif;max-width:480px;margin:40px auto;padding:20px">' +
+    '<div style="text-align:center;font-size:44px">📨</div>' +
+    '<h2 style="text-align:center;margin:6px 0 2px">ส่งรูปติดตั้งให้เซล</h2>' +
+    (media ? '<div style="text-align:center;color:#1665c1;font-weight:bold">📺 ' + esc_(media) + '</div>' : '') +
+    '<div style="text-align:center;font-size:18px;font-weight:bold;margin:4px 0">' + esc_(jobName) + '</div>' +
+    '<div style="text-align:center;color:#666;margin-bottom:18px">รอบนี้ <b>' + nNew + ' จุด</b>' + (nReported ? ' · ส่งไปแล้วก่อนหน้า ' + nReported + ' จุด' : '') + '</div>' +
+    (err ? '<div style="background:#fdecea;color:#c62828;padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:14px">⚠️ ' + esc_(err) + '</div>' : '') +
+    '<form method="get" action="' + url + '" target="_top" onsubmit="var b=document.getElementById(\'sb\');b.disabled=true;b.textContent=\'⏳ กำลังสร้าง PDF และส่ง (1-3 นาที) อย่าปิดหน้านี้...\'">' +
+      '<input type="hidden" name="action" value="approveSend">' +
+      '<input type="hidden" name="jobId" value="' + esc_(jobId) + '">' +
+      '<input type="hidden" name="k" value="' + esc_(k) + '">' +
+      '<input type="hidden" name="go" value="1">' +
+      '<label style="font-weight:bold;font-size:14px">ถึง (อีเมลเซล)</label>' +
+      '<input name="to" type="text" value="' + esc_(toVal) + '" placeholder="sales@planbmedia.co.th" style="' + inp + ';margin:6px 0 14px">' +
+      '<label style="font-weight:bold;font-size:14px">CC</label>' +
+      '<input name="cc" type="text" value="' + esc_(ccVal) + '" placeholder="ไม่ใส่ก็ได้" style="' + inp + ';margin:6px 0 6px">' +
+      '<div style="color:#888;font-size:12px;margin-bottom:18px">หลายคนคั่นด้วย , · ถ้าไม่ใส่อีเมลเซล ระบบจะส่งเข้าอีเมลแอดมินเพื่อส่งต่อเอง · ระบบจำอีเมลไว้ใช้รอบหน้า</div>' +
+      '<button id="sb" type="submit" style="width:100%;background:#2e7d32;color:#fff;border:none;padding:16px;border-radius:10px;font-size:16px;font-weight:bold;font-family:inherit;cursor:pointer">✅ ยืนยัน — ส่ง PDF + ลิงก์เรียลไทม์</button>' +
+    '</form>' +
+    '<p style="color:#aaa;font-size:12px;text-align:center;margin-top:24px">Plan B Installation App</p></div>';
+  return HtmlService.createHtmlOutput(html).setTitle('Plan B — ส่งรูปให้เซล')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
 function approveSend(p) {
   function page(title, msg, ok) {
     return HtmlService.createHtmlOutput(
@@ -2004,6 +2055,19 @@ function approveSend(p) {
     var jobId = jr.values[0], jobName = jr.values[1] || '', media = jr.values[7] || '';
     var pending = _codesOf(jr.values[13]), reported = _codesOf(jr.values[12]);
     if (!pending.length) return page('ไม่มีจุดใหม่รอส่ง', 'รอบนี้ไม่มีจุดติดตั้งใหม่ที่รอส่งเซลค่ะ', true);
+
+    // ขั้นที่ 1: หน้าใส่อีเมลเซล + CC ก่อนส่ง (กดจากอีเมลแล้วยังไม่ส่งทันที — กันตัวสแกนลิงก์ในอีเมลกดแทนด้วย)
+    var savedTo = String(jr.values[9] || '').trim(), savedCc = String(jr.values[14] || '').trim();
+    if (String(p.go || '') !== '1') {
+      return _approveFormPage(p.jobId, p.k, jobName, media, pending.length, reported.length,
+        0,
+        p.err ? String(p.err) : '', p.to != null ? String(p.to) : savedTo, p.cc != null ? String(p.cc) : (savedCc || CONFIG.ADMIN_EMAIL || ''));
+    }
+    var toList = _emailList_(p.to), ccList = _emailList_(p.cc);
+    if (toList.bad.length || ccList.bad.length) {
+      return _approveFormPage(p.jobId, p.k, jobName, media, pending.length, reported.length, 0,
+        'อีเมลไม่ถูกต้อง: ' + toList.bad.concat(ccList.bad).join(', '), String(p.to || ''), String(p.cc || ''));
+    }
     // กันกดซ้ำ/ตัวสแกนลิงก์ในอีเมลเปิดซ้อน → เซลได้อีเมล 2 ฉบับ: จองสถานะ "กำลังส่ง" ภายใต้ lock
     var busy = withLock2(function() {
       var cur = String(jr.sh.getRange(jr.row, 12).getValue() || '');
@@ -2016,7 +2080,13 @@ function approveSend(p) {
     var releaseClaim = function(){ try { jr.sh.getRange(jr.row, 12).setValue('pending'); } catch(e) {} };
     var dateStart = ymd_(jr.values[4]);
     var dateEnd = ymd_(jr.values[5]);
-    var salesEmail = String(jr.values[9] || '').trim();
+    var salesEmail = toList.ok.join(',');
+    var ccEmail = ccList.ok.filter(function(e){ return toList.ok.indexOf(e) < 0; }).join(',');
+    // จำอีเมลที่ใส่ไว้ใช้รอบหน้า (คอลัมน์ 10 = เซล, 15 = CC)
+    try {
+      jr.sh.getRange(jr.row, 10).setValue(salesEmail); jr.sh.getRange(jr.row, 15).setValue(ccEmail);
+      if (!jr.sh.getRange(1, 15).getValue()) jr.sh.getRange(1, 15).setValue('ccEmail');
+    } catch(e) {}
     var spots = JSON.parse(jr.values[2] || '[]');
 
     // 1) สร้าง PDF รูปติดตั้ง
@@ -2071,7 +2141,8 @@ function approveSend(p) {
       subject: (isDone ? '📦 [ส่งมอบงาน] ' : '📋 [อัปเดตรายวัน] ') + (media ? media + ' · ' : '') + jobName +
         (isDone ? ' — ครบ ' + spots.length + ' จุด' : ' — +' + sentNow.length + ' จุด (' + cum + '/' + spots.length + ')'),
       htmlBody: mailHtml };
-    if (!noSales) mailOpts.cc = CONFIG.ADMIN_EMAIL;
+    if (ccEmail) mailOpts.cc = ccEmail;
+    else if (!noSales && CONFIG.ADMIN_EMAIL) mailOpts.cc = CONFIG.ADMIN_EMAIL;
     MailApp.sendEmail(mailOpts);
 
     // 4) ปิดสถานะ
@@ -2089,8 +2160,9 @@ function approveSend(p) {
     });
 
     return page('ส่งเรียบร้อยแล้ว 🎉',
-      'งาน <b>'+jobName+'</b> · รอบนี้ '+sentNow.length+' จุด (สะสม '+cum+'/'+spots.length+')<br>PDF รูปติดตั้ง ('+(pdfRes.photoCount||0)+' รูป) + ลิงก์เรียลไทม์<br>ส่งถึง <b>'+to+'</b> แล้ว'+
-      (noSales ? '<br><span style="color:#c62828">(งานนี้ไม่มีอีเมลเซล จึงส่งเข้าอีเมลแอดมิน)</span>' : ' (CC ถึงแอดมิน)') +
+      'งาน <b>'+jobName+'</b> · รอบนี้ '+sentNow.length+' จุด (สะสม '+cum+'/'+spots.length+')<br>PDF รูปติดตั้ง ('+(pdfRes.photoCount||0)+' รูป) + ลิงก์เรียลไทม์<br>ส่งถึง <b>'+esc_(to)+'</b> แล้ว'+
+      (mailOpts.cc ? '<br>CC: <b>' + esc_(mailOpts.cc) + '</b>' : '') +
+      (noSales ? '<br><span style="color:#c62828">(ไม่ได้ใส่อีเมลเซล จึงส่งเข้าอีเมลแอดมิน)</span>' : '') +
       (leftOver.length ? '<br><span style="color:#b25e00">⏳ อีก ' + leftOver.length + ' จุดสร้าง PDF ไม่ทันรอบนี้ — กดปุ่มเดิมในอีเมลอีกครั้งเพื่อส่งต่อ</span>' : ''), true);
   } catch(err) {
     try { var jr2 = findJobRow(p.jobId || ''); if (jr2 && /^sending/.test(String(jr2.values[11]))) jr2.sh.getRange(jr2.row, 12).setValue('pending'); } catch(e) {}
