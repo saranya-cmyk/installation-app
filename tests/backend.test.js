@@ -156,6 +156,18 @@ t('อีเมลผิดรูปแบบ → กลับหน้าเด
 approveSend({ jobId: 'S1', k: 'KEY', go: '1', to: 'sale1@planbmedia.co.th, sale2@planbmedia.co.th', cc: 'boss@planbmedia.co.th' });
 t('ส่งถึงเซลที่ใส่ + CC ที่ใส่ และจำไว้ใช้รอบหน้า', sent.length === 1 && sent[0].to === 'sale1@planbmedia.co.th,sale2@planbmedia.co.th' && sent[0].cc === 'boss@planbmedia.co.th'
   && writes[10] === 'sale1@planbmedia.co.th,sale2@planbmedia.co.th' && writes[15] === 'boss@planbmedia.co.th');
+t('อีเมลถึงเซลไม่มีลิงก์เรียลไทม์', sent[0].htmlBody.indexOf('portal.html') === -1 && sent[0].htmlBody.indexOf('เรียลไทม์') === -1);
+// ลิงก์โฟลเดอร์รูปใน Drive + Code เว้นระยะเป็นช่อง
+jrow[11] = 'pending'; jrow[12] = '[]'; jrow[13] = JSON.stringify(['A1']);
+openNamedSS = (name) => name === '_InstallLog' ? { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => [
+  ['jobId','code','i','d','c','f','p','imgIds'], ['S1','A1','ก','2026-10-07',2,'u','https://drive.google.com/drive/folders/PROD123','["x1"]'] ] }) }) } : null;
+let shared = 0;
+DriveApp.Access = { ANYONE_WITH_LINK: 1 }; DriveApp.Permission = { VIEW: 1 };
+DriveApp.getFolderById = (id) => ({ getName: () => 'สินค้า Cookies', setSharing: () => { shared++; } });
+approveSend({ jobId: 'S1', k: 'KEY', go: '1', to: 'sale1@planbmedia.co.th', cc: '' });
+const lastMail = sent[sent.length - 1].htmlBody;
+t('อีเมลถึงเซลมีลิงก์โฟลเดอร์รูปใน Drive และเปิดสิทธิ์ให้ดูได้', lastMail.indexOf('folders/PROD123') > -1 && shared === 1);
+t('Code แต่ละจุดอยู่คนละช่อง ไม่ติดกัน', /A1<\/div><\/td><td/.test(lastMail));
 
 console.log(`\nผล: ${pass}/${pass+fail}`);
 process.exit(fail?1:0);
