@@ -2023,9 +2023,24 @@ function _salesCardHtml_(d) {
       '<div style="font-size:26px;font-weight:bold;color:' + color + ';line-height:1.15">' + n + '</div>' +
       '<div style="font-size:12px;color:#8a8a8a;margin-top:4px">' + label + '</div></td>';
   };
-  var list = (d.codes || []).slice(0, 60).map(function(c) {
-    return '<span style="display:inline-block;background:#1d1d1d;border:1px solid #2e2e2e;border-radius:6px;padding:3px 8px;margin:0 4px 6px 0;font-size:12px;color:#cfcfcf;font-family:Consolas,Menlo,monospace">' + esc_(c) + '</span>';
-  }).join('') + ((d.codes || []).length > 60 ? '<span style="font-size:12px;color:#8a8a8a">และอีก ' + (d.codes.length - 60) + ' จุด</span>' : '');
+  // Code แต่ละจุดเป็นช่องในตาราง 4 คอลัมน์ — ทุกโปรแกรมอีเมล (รวม Outlook) เว้นระยะชัดเจน ไม่ติดกัน
+  var cs = (d.codes || []).slice(0, 60), rows = '';
+  for (var ri = 0; ri < cs.length; ri += 4) {
+    rows += '<tr>';
+    for (var ci = 0; ci < 4; ci++) {
+      var cc = cs[ri + ci];
+      rows += '<td width="25%" style="padding:3px">' + (cc ? '<div style="background:#1d1d1d;border:1px solid #2e2e2e;border-radius:6px;padding:6px 4px;text-align:center;font-size:13px;color:#e0e0e0;font-family:Consolas,Menlo,monospace">' + esc_(cc) + '</div>' : '&nbsp;') + '</td>';
+    }
+    rows += '</tr>';
+  }
+  var list = rows ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">' + rows + '</table>' +
+    ((d.codes || []).length > 60 ? '<div style="font-size:12px;color:#8a8a8a;margin-top:6px">และอีก ' + (d.codes.length - 60) + ' จุด</div>' : '') : '';
+  var fl = (d.folders || []).map(function(f, i) {
+    var label = (d.folders.length > 1 && f.name) ? 'รูปติดตั้งใน Drive · ' + esc_(f.name) : 'เปิดโฟลเดอร์รูปติดตั้งใน Drive';
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:10px"><tr>' +
+      '<td align="center" style="border:1px solid ' + ac + ';border-radius:10px">' +
+      '<a href="' + esc_(f.url) + '" style="display:block;padding:13px;' + F + 'font-size:14px;font-weight:bold;color:' + ac + ';text-decoration:none">' + label + '</a></td></tr></table>';
+  }).join('');
   var brand = d.logo
     ? '<img src="cid:planblogo" alt="Plan B" height="30" style="height:30px;display:block;border:0">'
     : '<span style="font-size:17px;font-weight:bold;color:#ffffff">Plan <span style="color:' + PLANB_BLUE + '">B</span></span>';
@@ -2052,7 +2067,7 @@ function _salesCardHtml_(d) {
     '<tr><td style="padding:22px 28px 10px">' +
       '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" bgcolor="' + ac + '" style="background:' + ac + ';border-radius:10px">' +
         '<a href="' + esc_(d.pdfUrl || '') + '" style="display:block;padding:15px;' + F + 'font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none">ดาวน์โหลด PDF รูปติดตั้ง</a>' +
-      '</td></tr></table></td></tr>' +
+      '</td></tr></table>' + fl + '</td></tr>' +
     '<tr><td align="center" style="padding:8px 28px 24px;' + F + 'font-size:11px;color:#6b6b6b">ส่งจากระบบจัดการภาพติดตั้ง Snap · Plan B Media</td></tr>' +
   '</table></td></tr></table>';
 }
@@ -2156,6 +2171,7 @@ function approveSend(p) {
     var pendSet = {}; pending.forEach(function(c){ pendSet[c] = true; });
     var codes = spots.filter(function(s){ return pendSet[String(s.code).trim().toUpperCase()]; })
       .map(function(s){ return { code: s.code, address: s.address || '', product: s.product || '' }; });
+    var prodUrlOf = {};   // Code → ลิงก์โฟลเดอร์รูป (โฟลเดอร์สินค้า: มีแต่รูปติดตั้ง ไม่มี PDF/เอกสาร)
     // ใช้ดัชนีรูปของงานนี้ (_InstallLog) — เร็ว และไม่ดึงรูปของงานอื่นที่ Code ซ้ำกันมาปน
     try {
       var ilog = openNamedSS('_InstallLog', null);
@@ -2164,6 +2180,7 @@ function approveSend(p) {
         for (var ir = 1; ir < irows.length; ir++) {
           if (String(irows[ir][0]) !== String(jobId)) continue;
           try { idMap[String(irows[ir][1]).trim().toUpperCase()] = JSON.parse(irows[ir][7] || '[]'); } catch(e) {}
+          if (irows[ir][6]) prodUrlOf[String(irows[ir][1]).trim().toUpperCase()] = String(irows[ir][6]);
         }
         codes.forEach(function(c){ c.imgIds = idMap[String(c.code).trim().toUpperCase()] || []; });
       }
@@ -2185,10 +2202,19 @@ function approveSend(p) {
     // 3) ส่งอีเมลถึงเซล (หรือแอดมินถ้าไม่มีเซล)
     var noSales = !salesEmail;
     var to = noSales ? CONFIG.ADMIN_EMAIL : salesEmail;
+    // ลิงก์โฟลเดอร์รูปใน Drive ของจุดรอบนี้ — เปิดสิทธิ์ "ทุกคนที่มีลิงก์ดูได้" ให้เซลเปิดได้
+    var folders = [], seenF = {};
+    sentNow.forEach(function(c) {
+      var u = prodUrlOf[c]; if (!u || seenF[u]) return; seenF[u] = true;
+      var m = /folders\/([A-Za-z0-9_-]+)/.exec(u), name = '';
+      try { if (m) { var fo = DriveApp.getFolderById(m[1]); name = fo.getName();
+        try { fo.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(e) {} } } catch(e) {}
+      folders.push({ url: u, name: name });
+    });
     var logoBlob = _planbLogoBlob_();
     var mailHtml = _salesCardHtml_({ logo: !!logoBlob, isDone: isDone, media: media, jobName: jobName, noSales: noSales,
       dateStart: dateStart, dateEnd: dateEnd, nNow: sentNow.length, cum: cum, total: spots.length,
-      photos: pdfRes.photoCount || 0, pdfUrl: pdfRes.pdfUrl || pdfRes.docUrl, codes: sentNow });
+      photos: pdfRes.photoCount || 0, pdfUrl: pdfRes.pdfUrl || pdfRes.docUrl, codes: sentNow, folders: folders.slice(0, 6) });
     var mailOpts = { to: to,
       subject: (isDone ? '📦 [ส่งมอบงาน] ' : '📋 [อัปเดตรายวัน] ') + (media ? media + ' · ' : '') + jobName +
         (isDone ? ' — ครบ ' + spots.length + ' จุด' : ' — +' + sentNow.length + ' จุด (' + cum + '/' + spots.length + ')'),
