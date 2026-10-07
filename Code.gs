@@ -1202,7 +1202,7 @@ function reportRepair(body) {
         '</table>'+
         '<div style="margin-top:16px">'+
           (mapLink ? '<a href="'+mapLink+'" style="background:#1665c1;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin-right:8px">📍 เปิดแผนที่จุดเกิดเหตุ</a>' : '')+
-          (folderUrl ? '<a href="'+folderUrl+'" style="background:#c8f542;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">📷 ดูรูปหน้างาน ('+photoLinks.length+' รูป)</a>' : '')+
+          (folderUrl ? '<a href="'+folderUrl+'" style="background:'+PLANB_BLUE+';color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">📷 ดูรูปหน้างาน ('+photoLinks.length+' รูป)</a>' : '')+
         '</div></div></div>';
 
     var to = CONFIG.ADMIN_EMAIL;
@@ -1594,7 +1594,7 @@ function sendEmail(installer, jobName, codes, unmatched, folderUrl, mediaName, f
       rows+'</table>'+
     '<p style="margin-top:14px">✅ <b>'+codes.length+' จุด</b> · 📸 <b>'+total+' รูป</b>'+
       (unmatched?' · ⚠️ ตรวจสอบ <b>'+unmatched+' รูป</b>':'')+
-    '<br><br><a href="'+folderUrl+'" style="background:#c8f542;color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">📁 เปิดโฟลเดอร์</a></p></div>';
+    '<br><br><a href="'+folderUrl+'" style="background:'+PLANB_BLUE+';color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">📁 เปิดโฟลเดอร์</a></p></div>';
   var subjectMedia = mediaLabel ? mediaLabel + ' · ' : '';
   MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:'[ส่งรูป] '+subjectMedia+jobName+' — '+installer+' — '+codes.length+' จุด',htmlBody:html});
 }
@@ -1915,7 +1915,7 @@ function _aiFlagReport(jobId, codes) {
 function _aiJobSummaryHtml(jobId, codes) {
   var c = _aiJobCounts(jobId, codes);
   var total = c.total, checked = c.checked, waiting = c.waiting, unchecked = c.unchecked;
-  var lines = [], color = '#2e7d32', bg = '#eef7ee';
+  var lines = [], color = PLANB_BLUE, bg = '#eaf2fd';
   if (!total) lines.push('🤖 ยังไม่มีข้อมูลรูปสำหรับ AI ตรวจ');
   else lines.push('🤖 AI ตรวจรูปแล้ว <b>' + checked + '/' + total + '</b> รูป');
   if (total) lines.push('🔎 อ่าน Code บนป้ายยืนยันตรง <b>' + c.codeMatch + '/' + c.spots + '</b> จุด' + (c.codeMatch < c.spots ? ' (จุดที่เหลือไม่มีรูปป้าย Code ที่อ่านได้)' : ''));
@@ -1928,7 +1928,7 @@ function _aiJobSummaryHtml(jobId, codes) {
     }
     color = '#b25e00'; bg = '#fff4e5';
   }
-  if (unchecked) { lines.push('⏳ AI ยังไม่ได้ตรวจ ' + unchecked + ' รูป (บอทจะตรวจให้ในรอบถัดไป)'); if (color === '#2e7d32') { color = '#555'; bg = '#f3f3f3'; } }
+  if (unchecked) { lines.push('⏳ AI ยังไม่ได้ตรวจ ' + unchecked + ' รูป (บอทจะตรวจให้ในรอบถัดไป)'); if (color === PLANB_BLUE) { color = '#555'; bg = '#f3f3f3'; } }
   if (total && !waiting && !unchecked) lines.push('✓ ไม่พบรูปที่ต้องแจ้งช่าง');
   return '<div style="background:' + bg + ';color:' + color + ';border-radius:10px;padding:12px;font-size:13px;line-height:1.7;margin-bottom:18px;text-align:left">' + lines.join('<br>') + '</div>';
 }
@@ -1967,7 +1967,7 @@ function _sendDailyAdminEmail(jr, total, reportedCount, pending, carried) {
   var confirmUrl = _webAppUrl() + '?action=approveSend&jobId=' + encodeURIComponent(jobId) + '&k=' + approveKey;
   var codeList = pending.slice(0, 40).join(', ') + (pending.length > 40 ? ' และอีก ' + (pending.length - 40) + ' จุด' : '');
   var html = '<div style="font-family:Sarabun,Arial,sans-serif;max-width:600px;padding:24px">' +
-    '<div style="background:' + (isDone ? 'linear-gradient(135deg,#2e7d32,#66bb6a)' : 'linear-gradient(135deg,#1665c1,#4a90e2)') +
+    '<div style="background:' + PLANB_BLUE + ';background-image:linear-gradient(135deg,' + PLANB_BLUE + ',#4f9dff)' +
       ';color:#fff;padding:20px;border-radius:12px 12px 0 0;text-align:center">' +
       '<div style="font-size:30px">' + (isDone ? '🎉' : '📋') + '</div>' +
       '<h2 style="margin:6px 0 0 0">' + (isDone ? 'งานติดตั้งครบ 100%' : 'รายงานติดตั้งประจำวัน') + '</h2></div>' +
@@ -1982,7 +1982,7 @@ function _sendDailyAdminEmail(jr, total, reportedCount, pending, carried) {
         'กดปุ่มด้านล่าง → <b style="color:#111">ใส่/แก้อีเมลเซลและ CC</b> → กดยืนยัน ระบบจะส่ง PDF รูปของจุดรอบนี้ให้ทันที' +
         (salesEmail ? '<br>อีเมลเซลที่ใช้ครั้งก่อน: <b style="color:#111">' + esc_(salesEmail) + '</b>' : '') +
       '</div>' +
-      '<a href="' + confirmUrl + '" style="background:#2e7d32;color:#fff;padding:16px 32px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">✅ ใส่อีเมลเซล แล้วส่งรูปรอบนี้</a>' +
+      '<a href="' + confirmUrl + '" style="background:' + PLANB_BLUE + ';color:#fff;padding:16px 32px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">✅ ใส่อีเมลเซล แล้วส่งรูปรอบนี้</a>' +
       '<div style="color:#999;font-size:11px;margin-top:14px">การสร้าง PDF ใช้เวลา 1-3 นาที กดแล้วรอหน้ายืนยันขึ้นก่อนปิดนะคะ · ใช้ปุ่มจากอีเมลฉบับล่าสุดเท่านั้น</div>' +
     '</div></div>';
   MailApp.sendEmail({ to: CONFIG.ADMIN_EMAIL,
@@ -2103,7 +2103,7 @@ function _approveFormPage(jobId, k, jobName, media, nNew, nReported, nTotal, err
       '<label style="font-weight:bold;font-size:14px">CC</label>' +
       '<input name="cc" type="text" value="' + esc_(ccVal) + '" placeholder="ไม่ใส่ก็ได้" style="' + inp + ';margin:6px 0 6px">' +
       '<div style="color:#888;font-size:12px;margin-bottom:18px">หลายคนคั่นด้วย , · ถ้าไม่ใส่อีเมลเซล ระบบจะส่งเข้าอีเมลแอดมินเพื่อส่งต่อเอง · ระบบจำอีเมลไว้ใช้รอบหน้า</div>' +
-      '<button id="sb" type="submit" style="width:100%;background:#2e7d32;color:#fff;border:none;padding:16px;border-radius:10px;font-size:16px;font-weight:bold;font-family:inherit;cursor:pointer">✅ ยืนยัน — ส่ง PDF รูปติดตั้ง</button>' +
+      '<button id="sb" type="submit" style="width:100%;background:' + PLANB_BLUE + ';color:#fff;border:none;padding:16px;border-radius:10px;font-size:16px;font-weight:bold;font-family:inherit;cursor:pointer">✅ ยืนยัน — ส่ง PDF รูปติดตั้ง</button>' +
     '</form>' +
     '<p style="color:#aaa;font-size:12px;text-align:center;margin-top:24px">Plan B Installation App</p></div>';
   return HtmlService.createHtmlOutput(html).setTitle('Plan B — ส่งรูปให้เซล')
@@ -2115,7 +2115,7 @@ function approveSend(p) {
     return HtmlService.createHtmlOutput(
       '<div style="font-family:Sarabun,Arial,sans-serif;max-width:460px;margin:60px auto;text-align:center;padding:20px">'+
       '<div style="font-size:56px">'+(ok?'✅':'⚠️')+'</div>'+
-      '<h2 style="color:'+(ok?'#2e7d32':'#c62828')+'">'+title+'</h2>'+
+      '<h2 style="color:'+(ok?PLANB_BLUE:'#c62828')+'">'+title+'</h2>'+
       '<p style="color:#555;line-height:1.7">'+msg+'</p>'+
       '<p style="color:#aaa;font-size:12px;margin-top:30px">ปิดหน้านี้ได้เลยค่ะ — Plan B Installation App</p></div>')
       .setTitle('Plan B — ' + title);
