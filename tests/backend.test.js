@@ -6,7 +6,8 @@ global.ContentService = { createTextOutput: s => ({ _s:s, setMimeType(){return t
 const today = new Date();
 global.Utilities = { formatDate: (d) => d.toISOString().substring(0,10), base64Decode:s=>s, newBlob:()=>({}), sleep:()=>{} };
 global.Logger = { log: ()=>{} };
-global.PropertiesService = { getScriptProperties: () => ({ getProperty:()=>null, setProperty:()=>{}, deleteProperty:()=>{} }) };
+const propStore = { AI_BASELINE: 'set' };
+global.PropertiesService = { getScriptProperties: () => ({ getProperty:k=>propStore[k]||null, setProperty:(k,v)=>{propStore[k]=v;}, deleteProperty:k=>{delete propStore[k];} }) };
 global.LockService = { getScriptLock: () => ({ waitLock:()=>{}, releaseLock:()=>{}, tryLock:()=>true }) };
 // mock ชีท: งาน A ครบ+เลยกำหนด(archive), งาน B ครบแต่ยังไม่หมดเขต, งาน C ไม่ครบ+เลยกำหนด
 const yest = new Date(Date.now()-2*86400000).toISOString().substring(0,10);
@@ -56,6 +57,8 @@ const aiRows = [
 ];
 openNamedSS = (name) => name === '_InstallLog' ? { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => logRows2 }) }) }
   : { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => aiRows }), getRange: () => ({ getValue: () => 'x', setValue(){} }) }) };
+const bjob = JSON.parse(aiPending({}).getContent()).byJob;
+t('การ์ดงาน: สรุป AI ต่องาน (ตรวจ 3 · ติดธง 2 · รอตรวจ 0)', bjob && bjob.J && bjob.J.checked === 3 && bjob.J.flagged === 2 && bjob.J.pending === 0);
 const rep = _aiFlagReport('J', ['A1','A2']);
 t('รายงานธงจัดกลุ่มตามช่าง (สมชาย: A1 รูปมืด, สมหญิง: A2 รูปเบลอ)',
   rep['สมชาย'] && rep['สมชาย'].length === 1 && rep['สมชาย'][0].code === 'A1' && rep['สมหญิง'][0].reason === 'รูปเบลอ');
@@ -109,5 +112,50 @@ putBig_(cc, 'portal_BIG', big, 120);
 t('cache ใหญ่ 250KB เก็บแล้วอ่านกลับได้ครบ', getBig_(cc, 'portal_BIG') === big);
 bustCache(['portal_BIG']);
 t('ล้าง cache ใหญ่ด้วย key หลักได้', getBig_(cc, 'portal_BIG') === null);
+
+// ── อีเมลสรุปส่งรูป: ก้อนเข้าไม่เรียงลำดับ ต้องได้อีเมล 1 ฉบับที่ครบทุกก้อน ──
+const mails = [];
+sendEmail = (inst, jn, codes) => mails.push(codes.map(c => c.code + ':' + c.count).join(','));
+const mkFolder_ = () => ({ getFiles: () => ({ hasNext: () => false }), createFile: (b) => ({ getId: () => 'id' + Math.random(), setSharing(){}, setName(){} }), getUrl: () => 'u' });
+makeCodeFolderChain = () => ({ code: mkFolder_(), month: mkFolder_(), product: mkFolder_() });
+upsertInstallLog = () => {}; logSheet = () => {}; checkJobCompletion = () => {};
+const up = (b, code, n, tok) => uploadBatch({ jobId: 'M', installer: 'ช่าง', jobName: 'งานM', media: 'Bus', spots: [{code}], batchIndex: b, totalBatches: 3,
+  sessionToken: tok, requestId: tok + b, files: Array.from({length:n}, () => ({ _forceCode: code, data: 'x', name: 'a.jpg' })) });
+up(2, 'C3', 1, 'T1');
+t('รูปเข้าแล้วส่งอีเมลทันที ไม่รอก้อนอื่น', mails.length === 1 && mails[0] === 'C3:1');
+up(0, 'C1', 2, 'T1'); up(1, 'C2', 3, 'T1');
+t('ทุกก้อนได้อีเมลของตัวเอง ครบทุกจุด ไม่ตกหล่น', mails.length === 3 && mails.join('|') === 'C3:1|C1:2|C2:3');
+
+// ── ตรวจเฉพาะรูปใหม่: ครั้งแรก รูปเก่าที่ค้างถูกบันทึกเป็น base แล้วไม่ตรวจย้อนหลัง ──
+delete propStore.AI_BASELINE;
+const bLog = [['jobId','code','i','d','c','f','p','imgIds'], ['B','B1','ก', yest, 2, '', '', JSON.stringify(['old1','old2'])]];
+const bAI = [['checkedAt','jobId','code','fileId','result','reason','score','decision','decidedAt','ocr'], ['t','B','B1','x0','ok','','0','','','']];
+const bSheet = { getDataRange: () => ({ getValues: () => bAI }), getLastRow: () => bAI.length,
+  getRange: (r, c, n) => ({ getValue: () => 'ocr', setValue(){}, setValues: (v) => { v.forEach(x => bAI.push(x)); } }) };
+openNamedSS = (name) => name === '_InstallLog' ? { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => bLog }) }) } : { getActiveSheet: () => bSheet };
+const b1 = JSON.parse(aiPending({}).getContent());
+t('ครั้งแรก: รูปเก่าที่ค้างไม่ถูกส่งไปตรวจ (pending 0) และไม่นับเป็น "ตรวจแล้ว"', b1.pending.length === 0 && b1.stats.pending === 0 && b1.stats.checked === 1 && bAI.filter(r => r[4] === 'base').length === 2);
+bLog[1][7] = JSON.stringify(['old1','old2','new9']);
+const b2 = JSON.parse(aiPending({}).getContent());
+t('รูปที่เข้ามาหลังจากนั้น AI ตรวจตามปกติ', b2.pending.length === 1 && b2.pending[0].id === 'new9');
+
+// ── ส่งเซล: หน้าใส่อีเมลเซล + CC ก่อนส่ง ──
+global.HtmlService = { createHtmlOutput: h => ({ h, setTitle(){ return this; }, addMetaTag(){ return this; } }) };
+const sent = [], writes = {};
+global.MailApp = { sendEmail: o => sent.push(o) };
+const jrow = ['S1','งานส่ง', JSON.stringify([{code:'A1'},{code:'A2'}]), '', '2026-10-01', '2026-10-09', true, 'Bus', 'pk1', 'old@planbmedia.co.th', 'KEY', 'pending', '[]', JSON.stringify(['A1']), ''];
+const jsh = { getRange: (r, c, nr, nc) => ({ getValue: () => (c === 12 ? jrow[11] : jrow[c-1]), setValue: v => { if (r === 1) return; writes[c] = v; if (c === 12) jrow[11] = v; },
+  getValues: () => [jrow], setValues(){} }) };
+findJobRow = () => ({ sh: jsh, row: 2, values: jrow });
+createSalesPDF = () => ({ getContent: () => JSON.stringify({ success: true, pdfUrl: 'pdf', photoCount: 3, timedOut: [] }) });
+openNamedSS = () => null;
+const f1 = approveSend({ jobId: 'S1', k: 'KEY' });
+t('กดจากอีเมล → ได้หน้าใส่อีเมลก่อน ยังไม่ส่ง (เติมอีเมลเซลเดิมไว้ให้)', sent.length === 0 && f1.h.indexOf('name="to"') > -1 && f1.h.indexOf('old@planbmedia.co.th') > -1 && f1.h.indexOf('name="cc"') > -1);
+const f2 = approveSend({ jobId: 'S1', k: 'KEY', go: '1', to: 'ผิดๆ', cc: '' });
+t('อีเมลผิดรูปแบบ → กลับหน้าเดิมพร้อมแจ้ง ไม่ส่ง', sent.length === 0 && f2.h.indexOf('อีเมลไม่ถูกต้อง') > -1);
+approveSend({ jobId: 'S1', k: 'KEY', go: '1', to: 'sale1@planbmedia.co.th, sale2@planbmedia.co.th', cc: 'boss@planbmedia.co.th' });
+t('ส่งถึงเซลที่ใส่ + CC ที่ใส่ และจำไว้ใช้รอบหน้า', sent.length === 1 && sent[0].to === 'sale1@planbmedia.co.th,sale2@planbmedia.co.th' && sent[0].cc === 'boss@planbmedia.co.th'
+  && writes[10] === 'sale1@planbmedia.co.th,sale2@planbmedia.co.th' && writes[15] === 'boss@planbmedia.co.th');
+
 console.log(`\nผล: ${pass}/${pass+fail}`);
 process.exit(fail?1:0);
