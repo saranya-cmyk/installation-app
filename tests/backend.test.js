@@ -175,7 +175,21 @@ t('Code แต่ละจุดอยู่คนละช่อง ไม่�
 
 // ── ความปลอดภัย: Apps Script ตรวจบัตรผ่านเองทุกคำขอ ──
 delete propStore.AUTH_SECRET; delete propStore.AUTH_ENFORCE;
-t('ยังไม่ตั้งรหัส → ล็อกอินไม่ได้ บอกให้รัน setupSecurity', JSON.parse(login({ role:'admin', pass:'x' }).getContent()).error.indexOf('setupSecurity') > -1);
+t('ยังไม่ตั้งรหัส → ล็อกอินไม่ได้ แอปพาไปหน้าตั้งรหัสผ่าน', JSON.parse(login({ role:'admin', pass:'x' }).getContent()).noPass === true);
+t('แอปรู้ว่ายังไม่มีรหัสผ่าน (เปิดหน้าตั้งรหัสให้เอง)', JSON.parse(authInfo().getContent()).hasPass === false);
+// ตั้งรหัสในแอป: ต้องยืนยันด้วยรหัส 6 หลักที่ส่งไปอีเมลแอดมิน
+const before = sent.length;
+const pc = JSON.parse(passCode().getContent());
+const codeMail = sent[sent.length - 1];
+const code6 = (codeMail.subject.match(/(\d{6})$/) || [])[1];
+t('กดขอรหัส → ส่งรหัส 6 หลักไปอีเมลแอดมิน (ไม่ส่งกลับมาที่แอป)', pc.ok && sent.length === before + 1 && codeMail.to === CONFIG.ADMIN_EMAIL && !!code6 && JSON.stringify(pc).indexOf(code6) === -1);
+t('รหัสยืนยันผิด → ตั้งรหัสไม่ได้', JSON.parse(passSet({ code: '000000' === code6 ? '111111' : '000000', pass: 'newpass123' }).getContent()).ok === false && !propStore.ADMIN_PASS);
+t('รหัสผ่านสั้นกว่า 8 ตัว → ไม่รับ', JSON.parse(passSet({ code: code6, pass: 'short' }).getContent()).ok === false);
+const ps = JSON.parse(passSet({ code: code6, pass: 'newpass123' }).getContent());
+t('รหัสยืนยันถูก → ตั้งรหัสผ่านได้ และเข้าสู่ระบบทันที', ps.ok && ps.token && propStore.ADMIN_PASS === 'newpass123' && !!propStore.VIEW_KEY && _roleOf(ps.token) === 'admin');
+t('รหัสยืนยันใช้ซ้ำไม่ได้', JSON.parse(passSet({ code: code6, pass: 'hacker1234' }).getContent()).ok === false && propStore.ADMIN_PASS === 'newpass123');
+t('เปิด/ปิดการบังคับจากเมนู 🔒 ในแอปได้', (securitySet({ enforce: true }), _authOn()) && (securitySet({ enforce: false }), !_authOn()));
+delete propStore.ADMIN_PASS; delete propStore.VIEW_KEY;
 setupSecurity();
 t('setupSecurity สร้างรหัสแอดมิน 10 ตัว · รหัสจอ 16 ตัว (ช่างไม่ต้องมีรหัส)', propStore.ADMIN_PASS.length === 10 && propStore.VIEW_KEY.length === 16 && !propStore.TEAM_PIN);
 t('โหมดทดลอง (ยังไม่ enable) → คำขอที่ไม่มีบัตรผ่านยังใช้ได้ ระบบไม่สะดุด', _authGate('deleteJob', '') === null);
@@ -188,6 +202,7 @@ t('แอปช่างไม่ต้องล็อกอิน: ส่งร
 const fieldJobs = JSON.parse(getJobsList({ view: 'field' }).getContent()).jobs;
 t('รายการงานแบบช่างไม่มีอีเมลเซล', fieldJobs.length > 0 && fieldJobs.every(j => !('salesEmail' in j)));
 t('ลูกค้า Portal และลิงก์ยืนยันในอีเมล ยังเปิดได้โดยไม่ต้องล็อกอิน', !deny('portalData', '') && !deny('approveSend', ''));
+t('เมนู 🔒 และการเปิด/ปิดระบบ ใช้ได้เฉพาะแอดมิน · หน้าตั้งรหัส (ยืนยันทางอีเมล) เปิดได้', deny('securityInfo', '') && deny('securitySet', '') && !deny('passCode', '') && !deny('passSet', ''));
 const bad = JSON.parse(login({ role:'admin', pass:'ผิด' }).getContent());
 t('รหัสผิด → ไม่ได้บัตรผ่าน', bad.ok === false && !bad.token);
 const tkA = JSON.parse(login({ role:'admin', pass: propStore.ADMIN_PASS }).getContent()).token;
