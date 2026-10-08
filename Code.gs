@@ -87,6 +87,11 @@ var SESSION_TTL_SEC = 3600; // อายุ session upload (1 ชม.)
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
+    if (body.action === 'login')           return login(body);
+    var tokP = (e.parameter && e.parameter.t) || body.t;
+    body._role = _roleOf(tokP);   // ไว้ให้ deletePhotos รู้ว่าเป็นแอดมินหรือช่าง (ฝั่งแอปส่งค่านี้มาเองไม่ได้)
+    var gateP = _authGate(body.action, tokP, body);
+    if (gateP) return gateP;
     if (body.action === 'uploadBatch')     return uploadBatch(body);
     if (body.action === 'uploadDone')      return uploadDone(body);
     if (body.action === 'saveJob')         return withLock(function(){ return saveJobFn(body.job); });
@@ -106,6 +111,8 @@ function doPost(e) {
 
 function doGet(e) {
   var p = e ? e.parameter : {};
+  var gateG = _authGate(p.action, p.t, p);
+  if (gateG) return gateG;
   if (p.action === 'getPhotos')      return getPhotos(p);
   if (p.action === 'getPhotoThumbs') return getPhotoThumbs(p);
   if (p.action === 'aiPending')      return aiPending(p);
@@ -121,6 +128,123 @@ function doGet(e) {
   if (p.action === 'mailStatus')     return mailStatus();
   return ContentService.createTextOutput('OK');
 }
+
+// ═══════════════════════════ SECURITY (ล็อกอิน) ═══════════════════════════
+// ทุกคำขอต้องมี "บัตรผ่าน" (t) ที่ได้จากการล็อกอิน — Apps Script ตรวจเองทุกครั้ง ไม่ได้พึ่งแค่หน้าแอป
+//   แอดมิน (Snaphub)   = รหัสผ่านแอดมิน  → บัตรผ่าน 30 วัน  → ทำได้ทุกอย่าง
+//   ช่าง (Snapsite)     = ไม่ต้องล็อกอิน (ใช้งานหน้างานต้องเร็ว) → ทำได้แค่ส่งรูป/แจ้งปัญหา/ดูงานที่ต้องติด
+//                         ลบรูปได้เฉพาะรูปที่เพิ่งส่งไม่เกิน 3 วัน (รูปที่ลบไปอยู่ถังขยะ Drive กู้คืนได้ 30 วัน)
+//   จอ War Room / หุ่นยนต์ AI = รหัสจอ   → บัตรผ่าน 1 ปี    → ดูอย่างเดียว + บันทึกผล AI
+//   ลูกค้า (Portal) และลิงก์ยืนยันในอีเมล ใช้ลิงก์ที่มีรหัสเฉพาะงานอยู่แล้ว ไม่ต้องล็อกอิน
+// ขั้นตอนเปิดใช้: 1) รัน setupSecurity()  2) อัปโหลดหน้าแอปใหม่ ให้ทุกคนล็อกอิน  3) รัน enableSecurity()
+// ฉุกเฉิน (ใช้งานไม่ได้): รัน disableSecurity() · มีคนลาออก/รหัสหลุด: รัน changePasswords()
+var AUTH_PUBLIC = { '': 1, login: 1, approveSend: 1, portalData: 1,
+  // แอปช่าง (ไม่ต้องล็อกอิน) — ทำได้แค่ส่งรูป/แจ้งปัญหา/ดูงานที่ต้องติด
+  uploadBatch: 1, uploadDone: 1, reportProblem: 1, reportRepair: 1, deletePhotos: 1,
+  getInstallers: 1, getInstallLog: 1, getPhotos: 1, getPhotoThumbs: 1, getJobsField: 1 };
+var AUTH_ACL = {           // งานที่จอ War Room / หุ่นยนต์ AI ทำได้ (แอดมินทำได้ทุกอย่าง · ที่ไม่อยู่ในรายการ = แอดมินเท่านั้น)
+  getJobs: ['view'], getProblemLog: ['view'], aiPending: ['view'], aiThumbs: ['view'], aiSaveChecks: ['view']
+};
+var AUTH_DAYS = { admin: 30, view: 365 };
+var AUTH_PROP = { admin: 'ADMIN_PASS', view: 'VIEW_KEY' };
+var TECH_DELETE_HOURS = 72;  // ช่างลบรูปได้เฉพาะรูปที่ส่งมาไม่เกินกี่ชั่วโมง (แอดมินลบได้ทุกรูป)
+
+function _authOn() { return _props.getProperty('AUTH_ENFORCE') === '1'; }
+function _sign_(s) {
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(s, _props.getProperty('AUTH_SECRET') || '')).replace(/=+$/, '');
+}
+function _makeToken_(role) {
+  var exp = Date.now() + AUTH_DAYS[role] * 86400000;
+  var body = role + '.' + exp;
+  return body + '.' + _sign_(body);
+}
+/** บัตรผ่าน → บทบาท ('admin'/'view') หรือ '' ถ้าไม่ถูกต้อง/หมดอายุ */
+function _roleOf(t) {
+  t = String(t || '');
+  if (!t || !_props.getProperty('AUTH_SECRET')) return '';
+  var vk = _props.getProperty('VIEW_KEY');
+  if (vk && vk.length >= 12 && t === vk) return 'view';      // หุ่นยนต์ AI ใช้รหัสจอตรงๆ (เก็บใน GitHub Secrets)
+  var parts = t.split('.');
+  if (parts.length !== 3 || !AUTH_DAYS[parts[0]]) return '';
+  if (_sign_(parts[0] + '.' + parts[1]) !== parts[2]) return '';
+  if (Number(parts[1]) < Date.now()) return '';
+  return parts[0];
+}
+function _authAllowed(action, role) {
+  if (AUTH_PUBLIC[action || '']) return true;
+  if (role === 'admin') return true;
+  var who = AUTH_ACL[action];
+  return !!(who && role && who.indexOf(role) > -1);
+}
+/** คืน null = ผ่าน · คืนคำตอบ error = ไม่ผ่าน (เฉพาะตอนเปิดใช้ AUTH_ENFORCE แล้ว) */
+function _authGate(action, t, p) {
+  var role = _roleOf(t);
+  // รายการงาน: ถ้าไม่ใช่แอดมิน/จอ → ให้ดูแบบช่างอัตโนมัติ (เฉพาะงานที่ยังไม่จบ ไม่มีอีเมลเซล) แทนการปฏิเสธ
+  if (action === 'getJobs' && p && (p.view === 'field' || (role !== 'admin' && role !== 'view' && _authOn()))) { p.view = 'field'; action = 'getJobsField'; }
+  if (_authAllowed(action, role)) return null;
+  if (!_authOn()) {         // โหมดทดลอง: ยังปล่อยผ่าน แต่จดไว้ว่ายังมีคำขอที่ไม่มีบัตรผ่าน (ดูได้จาก mailStatus)
+    try { CacheService.getScriptCache().put('auth_last_miss', String(action) + ' @ ' + new Date().toISOString(), 21600); } catch (e) {}
+    return null;
+  }
+  return json({ error: 'กรุณาเข้าสู่ระบบ', auth: true, need: AUTH_ACL[action] ? AUTH_ACL[action].concat('admin') : ['admin'] });
+}
+/** ล็อกอิน: {role, pass} → {ok, token} · ผิดเกิน 8 ครั้งใน 15 นาที → ล็อกบทบาทนั้นชั่วคราว */
+function login(body) {
+  var role = String(body.role || '');
+  if (!AUTH_PROP[role]) return json({ ok: false, error: 'บทบาทไม่ถูกต้อง' });
+  var real = _props.getProperty(AUTH_PROP[role]);
+  if (!real || !_props.getProperty('AUTH_SECRET')) return json({ ok: false, error: 'ยังไม่ได้ตั้งรหัส — แอดมินต้องรัน setupSecurity() ใน Apps Script ก่อน' });
+  var cache = CacheService.getScriptCache(), ck = 'auth_fail_' + role;
+  var fails = Number(cache.get(ck) || 0);
+  if (fails >= 8) return json({ ok: false, locked: true, error: 'ใส่รหัสผิดหลายครั้ง ล็อกไว้ 15 นาที' });
+  if (String(body.pass || '').trim() !== String(real).trim()) {
+    cache.put(ck, String(fails + 1), 900);
+    Utilities.sleep(700);    // หน่วงเวลา กันการเดารหัสรัวๆ
+    return json({ ok: false, error: 'รหัสไม่ถูกต้อง' });
+  }
+  cache.remove(ck);
+  return json({ ok: true, role: role, token: _makeToken_(role), days: AUTH_DAYS[role] });
+}
+function _rand_(n, chars) {
+  chars = chars || 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  var out = '', raw = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  for (var i = 0; i < n; i++) out += chars.charAt((parseInt(raw.substr((i * 2) % 60, 2), 16) + Math.floor(Math.random() * 256)) % chars.length);
+  return out;
+}
+/** ▶ รันครั้งแรก: สร้างรหัสทั้งหมด (ถ้ายังไม่มี) แล้วดูรหัสใน Execution log · ยังไม่บังคับใช้ */
+function setupSecurity() {
+  if (!_props.getProperty('AUTH_SECRET')) _props.setProperty('AUTH_SECRET', _rand_(40));
+  if (!_props.getProperty('ADMIN_PASS')) _props.setProperty('ADMIN_PASS', _rand_(10));
+  if (!_props.getProperty('VIEW_KEY')) _props.setProperty('VIEW_KEY', _rand_(16));
+  _logSecurity_();
+}
+/** ▶ รันเมื่อทุกเครื่องล็อกอินแล้ว: เริ่มบังคับใช้ (คำขอที่ไม่มีบัตรผ่านจะถูกปฏิเสธ) */
+function enableSecurity() {
+  if (!_props.getProperty('AUTH_SECRET')) setupSecurity();
+  _props.setProperty('AUTH_ENFORCE', '1');
+  Logger.log('🔒 เปิดใช้ความปลอดภัยแล้ว — ถ้ามีปัญหาเร่งด่วน รัน disableSecurity()');
+}
+/** ▶ ฉุกเฉิน: ปิดการบังคับชั่วคราว (ระบบกลับมาใช้ได้ทันที) */
+function disableSecurity() { _props.deleteProperty('AUTH_ENFORCE'); Logger.log('🔓 ปิดการบังคับล็อกอินชั่วคราวแล้ว'); }
+/** ▶ มีคนลาออก / รหัสหลุด: เปลี่ยนรหัสทุกตัว + ทุกเครื่องต้องล็อกอินใหม่ */
+function changePasswords() {
+  _props.setProperty('AUTH_SECRET', _rand_(40));
+  _props.setProperty('ADMIN_PASS', _rand_(10));
+  _props.setProperty('VIEW_KEY', _rand_(16));
+  Logger.log('♻️ เปลี่ยนรหัสใหม่ทั้งหมดแล้ว ทุกเครื่องต้องล็อกอินใหม่ · อย่าลืมอัปเดต SNAP_VIEW_KEY ใน GitHub Secrets');
+  _logSecurity_();
+}
+/** ▶ ให้ทุกเครื่องล็อกอินใหม่ แต่ใช้รหัสเดิม */
+function logoutEveryone() { _props.setProperty('AUTH_SECRET', _rand_(40)); Logger.log('ทุกเครื่องต้องล็อกอินใหม่แล้ว (รหัสเดิม)'); }
+function _logSecurity_() {
+  Logger.log('รหัสแอดมิน (Snaphub): ' + _props.getProperty('ADMIN_PASS'));
+  Logger.log('แอปช่าง (Snapsite): ไม่ต้องใช้รหัส');
+  Logger.log('รหัสจอ War Room / หุ่นยนต์ AI: ' + _props.getProperty('VIEW_KEY'));
+  Logger.log('สถานะ: ' + (_authOn() ? '🔒 บังคับใช้แล้ว' : '🟡 โหมดทดลอง (ยังไม่บังคับ) — ทุกเครื่องล็อกอินแล้วค่อยรัน enableSecurity()'));
+  try { Logger.log('คำขอล่าสุดที่ยังไม่มีบัตรผ่าน: ' + (CacheService.getScriptCache().get('auth_last_miss') || '— ไม่มี —')); } catch (e) {}
+}
+/** ▶ ดูรหัสและสถานะปัจจุบัน */
+function showSecurity() { _logSecurity_(); }
 
 // ═══════════════════════════ CORE HELPERS ═══════════════════════════
 
@@ -253,7 +377,10 @@ function getJobsList(p) {
   return respCache('resp_jobs_' + view, 60, function() {
     var out = buildJobsList();
     if (view === 'field' && out.jobs) {
-      out.jobs = out.jobs.filter(function(j){ return !j.archived; });
+      out.jobs = out.jobs.filter(function(j){ return !j.archived; }).map(function(j){
+        var c = {}; for (var k in j) if (k !== 'salesEmail' && k !== 'sentStatus') c[k] = j[k];   // ช่างไม่ต้องเห็นอีเมลเซล
+        return c;
+      });
     }
     return out;
   });
@@ -598,7 +725,8 @@ function uploadDone(body) { return json({ success:true, mailed:false }); }
 function mailStatus() {
   var q = -1; try { q = MailApp.getRemainingDailyQuota(); } catch(e) {}
   return json({ adminEmail: CONFIG.ADMIN_EMAIL ? CONFIG.ADMIN_EMAIL.replace(/^(.{2}).*(@.*)$/, '$1***$2') : '(ไม่มี)',
-    quotaLeftToday: q, lastMailOk: _props.getProperty('lastMailOk') || '', lastMailError: _props.getProperty('lastMailError') || '' });
+    quotaLeftToday: q, lastMailOk: _props.getProperty('lastMailOk') || '', lastMailError: _props.getProperty('lastMailError') || '',
+    security: _authOn() ? 'เปิดใช้แล้ว' : 'ยังไม่เปิด (โหมดทดลอง)' });
 }
 
 /** lock สั้นๆ แบบคืนค่า (ใช้ภายใน) */
@@ -962,6 +1090,9 @@ function deletePhotosFn(body) {
     ids.forEach(function(fid) {
       try {
         var f = DriveApp.getFileById(fid);
+        var tooOld = body._role !== 'admin' && _authOn() && f.getDateCreated &&
+          (Date.now() - f.getDateCreated().getTime()) > TECH_DELETE_HOURS * 3600000;
+        if (tooOld) { refused++; return; }   // ช่าง (ไม่ได้ล็อกอิน) ลบรูปเก่าเกิน 3 วันไม่ได้ — ต้องให้แอดมินลบ
         if (String(f.getName()).toUpperCase().indexOf(prefix) === 0) {
           f.setTrashed(true); deleted++;
         } else { refused++; } // ชื่อไม่ใช่ของ code นี้ — ไม่แตะ
