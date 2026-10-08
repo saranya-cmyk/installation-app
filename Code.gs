@@ -88,6 +88,9 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
     if (body.action === 'login')           return login(body);
+    if (body.action === 'authInfo')        return authInfo();
+    if (body.action === 'passCode')        return passCode();
+    if (body.action === 'passSet')         return passSet(body);
     var tokP = (e.parameter && e.parameter.t) || body.t;
     body._role = _roleOf(tokP);   // ไว้ให้ deletePhotos รู้ว่าเป็นแอดมินหรือช่าง (ฝั่งแอปส่งค่านี้มาเองไม่ได้)
     var gateP = _authGate(body.action, tokP, body);
@@ -105,6 +108,8 @@ function doPost(e) {
     if (body.action === 'reportRepair')    return reportRepair(body);
     if (body.action === 'aiSaveChecks')    return withLock(function(){ return aiSaveChecks(body); });
     if (body.action === 'aiDecision')      return withLock(function(){ return aiDecision(body); });
+    if (body.action === 'securityInfo')    return securityInfo();
+    if (body.action === 'securitySet')     return securitySet(body);
     return json({ error: 'unknown action' });
   } catch(err) { return json({ error: err.message }); }
 }
@@ -136,9 +141,10 @@ function doGet(e) {
 //                         ลบรูปได้เฉพาะรูปที่เพิ่งส่งไม่เกิน 3 วัน (รูปที่ลบไปอยู่ถังขยะ Drive กู้คืนได้ 30 วัน)
 //   จอ War Room / หุ่นยนต์ AI = รหัสจอ   → บัตรผ่าน 1 ปี    → ดูอย่างเดียว + บันทึกผล AI
 //   ลูกค้า (Portal) และลิงก์ยืนยันในอีเมล ใช้ลิงก์ที่มีรหัสเฉพาะงานอยู่แล้ว ไม่ต้องล็อกอิน
-// ขั้นตอนเปิดใช้: 1) รัน setupSecurity()  2) อัปโหลดหน้าแอปใหม่ ให้ทุกคนล็อกอิน  3) รัน enableSecurity()
+// ขั้นตอนเปิดใช้ (ทำในแอปได้ทั้งหมด): 1) เปิด Snaphub → ตั้งรหัสผ่าน (ยืนยันด้วยรหัส 6 หลักทางอีเมลแอดมิน)
+//   2) ให้จอ War Room เข้าลิงก์จากเมนู 🔒  3) กด "เปิดใช้งาน" ในเมนู 🔒 · ลืมรหัส = กด "ลืมรหัสผ่าน" แล้วยืนยันทางอีเมลเหมือนกัน
 // ฉุกเฉิน (ใช้งานไม่ได้): รัน disableSecurity() · มีคนลาออก/รหัสหลุด: รัน changePasswords()
-var AUTH_PUBLIC = { '': 1, login: 1, approveSend: 1, portalData: 1,
+var AUTH_PUBLIC = { '': 1, login: 1, authInfo: 1, passCode: 1, passSet: 1, approveSend: 1, portalData: 1,
   // แอปช่าง (ไม่ต้องล็อกอิน) — ทำได้แค่ส่งรูป/แจ้งปัญหา/ดูงานที่ต้องติด
   uploadBatch: 1, uploadDone: 1, reportProblem: 1, reportRepair: 1, deletePhotos: 1,
   getInstallers: 1, getInstallLog: 1, getPhotos: 1, getPhotoThumbs: 1, getJobsField: 1 };
@@ -193,7 +199,7 @@ function login(body) {
   var role = String(body.role || '');
   if (!AUTH_PROP[role]) return json({ ok: false, error: 'บทบาทไม่ถูกต้อง' });
   var real = _props.getProperty(AUTH_PROP[role]);
-  if (!real || !_props.getProperty('AUTH_SECRET')) return json({ ok: false, error: 'ยังไม่ได้ตั้งรหัส — แอดมินต้องรัน setupSecurity() ใน Apps Script ก่อน' });
+  if (!real || !_props.getProperty('AUTH_SECRET')) return json({ ok: false, noPass: true, error: role === 'admin' ? 'ยังไม่ได้ตั้งรหัสผ่าน — กด "ตั้งรหัสผ่าน"' : 'แอดมินยังไม่ได้เปิดระบบรหัส' });
   var cache = CacheService.getScriptCache(), ck = 'auth_fail_' + role;
   var fails = Number(cache.get(ck) || 0);
   if (fails >= 8) return json({ ok: false, locked: true, error: 'ใส่รหัสผิดหลายครั้ง ล็อกไว้ 15 นาที' });
@@ -245,6 +251,67 @@ function _logSecurity_() {
 }
 /** ▶ ดูรหัสและสถานะปัจจุบัน */
 function showSecurity() { _logSecurity_(); }
+
+// ── ตั้ง/เปลี่ยนรหัสผ่านจากในแอป: ยืนยันตัวตนด้วยรหัส 6 หลักที่ส่งไปอีเมลแอดมิน (คนที่ได้ลิงก์ระบบแต่ไม่มีอีเมลแอดมิน ตั้งรหัสแทนไม่ได้) ──
+function _ensureKeys_() {
+  if (!_props.getProperty('AUTH_SECRET')) _props.setProperty('AUTH_SECRET', _rand_(40));
+  if (!_props.getProperty('VIEW_KEY')) _props.setProperty('VIEW_KEY', _rand_(16));
+}
+function authInfo() {
+  var em = CONFIG.ADMIN_EMAIL || '';
+  return json({ ok: true, hasPass: !!_props.getProperty('ADMIN_PASS'), enforce: _authOn(),
+    email: em ? em.replace(/^(.{2}).*(@.*)$/, '$1***$2') : '' });
+}
+function passCode() {
+  var em = CONFIG.ADMIN_EMAIL;
+  if (!em) return json({ ok: false, error: 'ยังไม่ได้ตั้งอีเมลแอดมินในระบบ' });
+  var cache = CacheService.getScriptCache();
+  var n = Number(cache.get('pass_code_n') || 0);
+  if (n >= 3) return json({ ok: false, error: 'ขอรหัสบ่อยเกินไป รอ 15 นาทีแล้วลองใหม่' });
+  cache.put('pass_code_n', String(n + 1), 900);
+  var code = _rand_(6, '0123456789');
+  cache.put('pass_code', code, 600);
+  cache.remove('pass_code_fail');
+  MailApp.sendEmail({ to: em, subject: '[Snap] รหัสยืนยันตั้งรหัสผ่าน Snaphub: ' + code,
+    htmlBody: '<div style="font-family:Arial,sans-serif;font-size:15px;color:#222">' +
+      '<p>รหัสยืนยันสำหรับตั้งรหัสผ่าน Snaphub ของคุณคือ</p>' +
+      '<p style="font-size:32px;font-weight:bold;letter-spacing:8px;color:' + PLANB_BLUE + '">' + code + '</p>' +
+      '<p style="color:#777">ใช้ได้ภายใน 10 นาที · ถ้าคุณไม่ได้ขอรหัสนี้ ไม่ต้องทำอะไร รหัสผ่านเดิมยังใช้ได้ตามปกติ</p></div>' });
+  return json({ ok: true, sentTo: em.replace(/^(.{2}).*(@.*)$/, '$1***$2') });
+}
+function passSet(body) {
+  var cache = CacheService.getScriptCache();
+  var real = cache.get('pass_code');
+  if (!real) return json({ ok: false, error: 'รหัสยืนยันหมดอายุ — กดขอรหัสใหม่' });
+  var fails = Number(cache.get('pass_code_fail') || 0);
+  if (String(body.code || '').trim() !== real) {
+    if (fails + 1 >= 5) cache.remove('pass_code'); else cache.put('pass_code_fail', String(fails + 1), 600);
+    Utilities.sleep(700);
+    return json({ ok: false, error: fails + 1 >= 5 ? 'ใส่รหัสยืนยันผิดหลายครั้ง — กดขอรหัสใหม่' : 'รหัสยืนยันไม่ถูกต้อง' });
+  }
+  var pass = String(body.pass || '').trim();
+  if (pass.length < 8) return json({ ok: false, error: 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัว' });
+  cache.remove('pass_code'); cache.remove('pass_code_fail'); cache.remove('auth_fail_admin');
+  _ensureKeys_();
+  _props.setProperty('AUTH_SECRET', _rand_(40));        // เปลี่ยนรหัส = เครื่องเก่าที่ล็อกอินไว้ต้องเข้าใหม่
+  _props.setProperty('ADMIN_PASS', pass);
+  return json({ ok: true, role: 'admin', token: _makeToken_('admin'), days: AUTH_DAYS.admin });
+}
+/** เมนู 🔒 ใน Snaphub (แอดมินเท่านั้น) */
+function securityInfo() {
+  _ensureKeys_();
+  var miss = ''; try { miss = CacheService.getScriptCache().get('auth_last_miss') || ''; } catch (e) {}
+  return json({ ok: true, enforce: _authOn(), viewKey: _props.getProperty('VIEW_KEY'), lastMiss: miss });
+}
+function securitySet(body) {
+  if (body.enforce === true) _props.setProperty('AUTH_ENFORCE', '1');
+  if (body.enforce === false) _props.deleteProperty('AUTH_ENFORCE');
+  if (body.newViewKey) _props.setProperty('VIEW_KEY', _rand_(16));
+  if (body.logoutAll) _props.setProperty('AUTH_SECRET', _rand_(40));
+  var r = JSON.parse(securityInfo().getContent());
+  if (body.logoutAll) r.token = _makeToken_('admin');     // คนที่กดยังอยู่ในระบบต่อ
+  return json(r);
+}
 
 // ═══════════════════════════ CORE HELPERS ═══════════════════════════
 
