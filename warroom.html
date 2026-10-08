@@ -70,6 +70,69 @@ body { background:var(--bg); color:var(--tx); font-family:var(--f); overflow:hid
 @keyframes ripple { 0%{box-shadow:0 0 0 0 rgba(200,245,66,.7)} 100%{box-shadow:0 0 0 3.2vh rgba(200,245,66,0)} }
 .pulse-marker.pulsing { animation:ripple 1.3s ease-out 5; }
 </style>
+<script>
+/* ═══ ล็อกอิน (ความปลอดภัย) — แนบ "บัตรผ่าน" ไปกับทุกคำขอที่ส่งถึง Apps Script · Apps Script ตรวจเองทุกครั้ง ═══
+   ใส่รหัสครั้งเดียว เครื่องจำไว้ (แอดมิน 30 วัน · ช่าง 90 วัน · จอ 1 ปี) · ลูกค้า Portal ไม่ต้องล็อกอิน */
+var SNAP_AUTH = {"role": "view", "key": "snapAuth_view", "title": "War Room", "hint": "ใส่รหัสจอ War Room", "label": "รหัสจอ", "numeric": false, "urlKey": true};
+(function () {
+  var A = SNAP_AUTH, shown = false;
+  function get() { try { return localStorage.getItem(A.key) || ''; } catch (e) { return ''; } }
+  function set(v) { try { v ? localStorage.setItem(A.key, v) : localStorage.removeItem(A.key); } catch (e) {} }
+  if (A.urlKey) {   // จอทีวี: เปิดลิงก์ที่มี ?k=รหัสจอ ครั้งเดียว เครื่องจำไว้ แล้วลบรหัสออกจากแถบที่อยู่
+    try { var qk = new URLSearchParams(location.search).get('k'); if (qk) { set(qk); history.replaceState(null, '', location.pathname); } } catch (e) {}
+  }
+  function isApi(u) { return typeof u === 'string' && typeof SCRIPT_URL !== 'undefined' && u.indexOf(SCRIPT_URL) === 0; }
+  var _f = window.fetch.bind(window);
+  window.fetch = function (u, o) {
+    var api = isApi(u), tk = get();
+    if (api && tk) u += (u.indexOf('?') < 0 ? '?' : '&') + 't=' + encodeURIComponent(tk);
+    var p = _f(u, o);
+    if (api) p.then(function (res) {
+      try { res.clone().json().then(function (d) { if (d && d.auth && !shown) { set(''); show(tk ? 'หมดเวลาเข้าสู่ระบบ หรือรหัสถูกเปลี่ยน — กรุณาใส่รหัสอีกครั้ง' : ''); } }).catch(function () {}); } catch (e) {}
+    }).catch(function () {});
+    return p;
+  };
+  function show(msg) {
+    if (shown) { var m0 = document.getElementById('snapAuthMsg'); if (m0 && msg) m0.textContent = msg; return; }
+    if (!document.body) { document.addEventListener('DOMContentLoaded', function () { show(msg); }); return; }
+    shown = true;
+    var w = document.createElement('div');
+    w.id = 'snapAuth';
+    w.setAttribute('style', 'position:fixed;inset:0;z-index:2147483000;background:rgba(10,10,10,.96);display:flex;align-items:center;justify-content:center;padding:16px;font-family:inherit');
+    w.innerHTML =
+      '<form id="snapAuthForm" style="width:100%;max-width:340px;background:#171717;border:1px solid #2c2c2c;border-radius:18px;padding:26px 22px;color:#f2f2f2;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5)">' +
+        '<div style="font-size:34px;margin-bottom:6px">🔒</div>' +
+        '<div style="font-size:18px;font-weight:700;margin-bottom:4px">' + A.title + '</div>' +
+        '<div style="font-size:13px;color:#9a9a9a;margin-bottom:18px">' + A.hint + '</div>' +
+        '<input id="snapAuthPass" type="password" autocomplete="current-password" ' + (A.numeric ? 'inputmode="numeric" ' : '') +
+          'placeholder="' + (A.numeric ? '••••••' : A.label) + '" style="width:100%;box-sizing:border-box;padding:14px;border-radius:12px;border:1px solid #3a3a3a;background:#0f0f0f;color:#fff;font-size:18px;text-align:center;letter-spacing:' + (A.numeric ? '6px' : '1px') + ';outline:none">' +
+        '<div id="snapAuthMsg" style="min-height:20px;font-size:13px;color:#ff8a80;margin:10px 0 6px">' + (msg || '') + '</div>' +
+        '<button id="snapAuthBtn" type="submit" style="width:100%;padding:14px;border:0;border-radius:12px;background:#c8f031;color:#0f0f0f;font-size:16px;font-weight:700;cursor:pointer">เข้าสู่ระบบ</button>' +
+        '<div style="font-size:11px;color:#6f6f6f;margin-top:14px">ใส่ครั้งเดียว เครื่องนี้จะจำไว้ · ลืมรหัสติดต่อแอดมิน</div>' +
+      '</form>';
+    document.body.appendChild(w);
+    var inp = document.getElementById('snapAuthPass'), btn = document.getElementById('snapAuthBtn'), out = document.getElementById('snapAuthMsg');
+    setTimeout(function () { try { inp.focus(); } catch (e) {} }, 50);
+    document.getElementById('snapAuthForm').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var pass = String(inp.value || '').trim();
+      if (!pass) { out.textContent = 'กรุณาใส่' + A.label; return; }
+      btn.disabled = true; btn.textContent = 'กำลังตรวจ…'; out.textContent = '';
+      _f(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'login', role: A.role, pass: pass }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok && d.token) { set(d.token); location.reload(); return; }
+          out.textContent = (d && d.error === 'unknown action') ? 'ระบบหลังบ้านยังไม่อัปเดต — แจ้งแอดมิน' : ((d && d.error) || 'เข้าสู่ระบบไม่สำเร็จ');
+          btn.disabled = false; btn.textContent = 'เข้าสู่ระบบ'; inp.select();
+        })
+        .catch(function () { out.textContent = 'เชื่อมต่อไม่ได้ — ตรวจอินเทอร์เน็ตแล้วลองใหม่'; btn.disabled = false; btn.textContent = 'เข้าสู่ระบบ'; });
+    });
+  }
+  window.snapAuthShow = show;
+  window.snapLogout = function () { set(''); location.reload(); };
+  if (!get()) show();
+})();
+</script>
 </head>
 <body>
 <div class="wrap">
