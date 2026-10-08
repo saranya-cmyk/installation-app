@@ -9,7 +9,8 @@ global.Utilities = { formatDate: (d) => d.toISOString().substring(0,10), base64D
   base64DecodeWebSafe: (s) => [...Buffer.from(s, 'base64url')], sleep:()=>{},
   computeHmacSha256Signature: (v, k) => [...nodeCrypto.createHmac('sha256', k).update(v).digest()],
   base64EncodeWebSafe: (b) => Buffer.from(b).toString('base64').replace(/\+/g,'-').replace(/\//g,'_'),
-  getUuid: () => nodeCrypto.randomUUID() };
+  getUuid: () => nodeCrypto.randomUUID(),
+  DigestAlgorithm: { MD5: 'md5' }, computeDigest: (a, v) => [...nodeCrypto.createHash('md5').update(v).digest()] };
 global.Logger = { log: ()=>{} };
 const propStore = { AI_BASELINE: 'set' };
 global.PropertiesService = { getScriptProperties: () => ({ getProperty:k=>propStore[k]||null, setProperty:(k,v)=>{propStore[k]=v;}, deleteProperty:k=>{delete propStore[k];} }) };
@@ -245,6 +246,49 @@ deletePhotosFn({ code: 'P1', fileIds: ['old1'], _role: 'admin' });
 t('แอดมินลบรูปเก่าได้', trashed.join() === 'new1,old1');
 disableSecurity();
 t('disableSecurity → ใช้งานได้ทันที (ฉุกเฉิน)', _authGate('deleteJob', '', {}) === null);
+
+// ── Gemini API: ร่างข้อความแจ้งช่าง (ส่งเฉพาะ Code + เหตุผล · ตรวจผลก่อนใช้ · พังได้ไม่กระทบงาน) ──
+for (const k of Object.keys(cacheStore)) delete cacheStore[k];
+const apiLog = [], fetched = [];
+openNamedSS = (name) => name === '_AIApiLog' ? { getActiveSheet: () => ({ appendRow: r => apiLog.push(r) }) } : null;
+let gemReply = null;
+global.UrlFetchApp = { fetch: (url, opt) => {
+  fetched.push({ url, body: opt && opt.payload ? String(opt.payload) : '' });
+  if (/\/models\?/.test(url)) return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ models: [] }) };
+  const m = url.match(/models\/([^:]+):generateContent/)[1];
+  return gemReply(m);
+} };
+delete propStore.GEMINI_API_KEY; delete propStore.GEMINI_MODEL;
+const byF = { 'สมชาย': [{ code: 'DP713', reason: 'รูปเบลอมาก' }], 'วิชัย': [{ code: 'DP959', reason: 'อาจติดผิดป้าย — อ่านได้ DP958' }, { code: 'DP1090', reason: 'รูปมืด / อาจไฟป้ายดับ' }] };
+const d0 = _draftInstallerMessages_(byF);
+t('ไม่มีคีย์ Gemini → ใช้ข้อความแม่แบบ ไม่เรียก API งานไม่สะดุด', d0.source === 'template' && fetched.length === 0 && /DP713/.test(d0.msgs['สมชาย']));
+for (const k of Object.keys(cacheStore)) delete cacheStore[k];
+propStore.GEMINI_API_KEY = 'KEY123';
+const okText = { messages: [ { id: 'ช่าง 1', text: '{NAME} รบกวนถ่าย DP713 ใหม่นะครับ รูปเบลอ ลองถือมือถือให้นิ่งแล้วแตะโฟกัสที่ป้ายก่อนกดถ่าย' },
+                             { id: 'ช่าง 2', text: '{NAME} รบกวนเช็ค DP959 กับ DP1090 ครับ DP959 อาจติดผิดป้าย ส่วน DP1090 รูปมืด ถ่ายป้าย Code ให้ชัดด้วยนะครับ' } ] };
+gemReply = (m) => m === 'gemini-2.5-flash-lite' ? { getResponseCode: () => 404, getContentText: () => '{}' }
+  : { getResponseCode: () => 200, getContentText: () => JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(okText) }] } }] }) };
+const d1 = _draftInstallerMessages_(byF);
+const sentBody = fetched.filter(f => /generateContent/.test(f.url)).map(f => f.body).join(' ');
+t('มีคีย์ → เรียก Gemini API จริง (รุ่นแรกใช้ไม่ได้ → ลองรุ่นถัดไปเอง)', d1.source === 'gemini' && d1.model === 'gemini-2.5-flash' && fetched.some(f => /gemini-2.5-flash-lite:generateContent/.test(f.url)));
+t('ข้อความที่ได้ใส่ชื่อช่างกลับให้ และมีครบทุก Code', /^ช่างสมชาย/.test(d1.msgs['สมชาย']) && /DP959/.test(d1.msgs['วิชัย']) && /DP1090/.test(d1.msgs['วิชัย']));
+t('ส่งให้ Gemini เฉพาะ Code + เหตุผล — ไม่มีชื่อช่างจริง ไม่มีรูป', sentBody.indexOf('สมชาย') === -1 && sentBody.indexOf('วิชัย') === -1 && !/base64|inlineData|image/.test(sentBody) && /DP713/.test(sentBody));
+t('ทุกครั้งที่เรียก บันทึกลงชีท _AIApiLog (โมเดล · ผล · เวลา)', apiLog.length === 1 && apiLog[0][2] === 'gemini-2.5-flash' && apiLog[0][3] === 'ok');
+t('จำรุ่นที่ใช้ได้ไว้ รอบหน้าไม่ต้องลองใหม่', propStore.GEMINI_MODEL === 'gemini-2.5-flash');
+for (const k of Object.keys(cacheStore)) delete cacheStore[k];
+const badText = { messages: [ { id: 'ช่าง 1', text: '{NAME} รบกวนถ่าย DP713 ใหม่' }, { id: 'ช่าง 2', text: '{NAME} รบกวนเช็ค DP959 ครับ' } ] };
+gemReply = () => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(badText) }] } }] }) });
+const d2 = _draftInstallerMessages_(byF);
+t('ตรวจผลก่อนใช้: Gemini ลืม Code (DP1090) → ข้อความช่างคนนั้นใช้แม่แบบแทน คนอื่นใช้ของ Gemini', d2.source === 'gemini+template' && /DP1090/.test(d2.msgs['วิชัย']) && /ถ่าย DP713 ใหม่/.test(d2.msgs['สมชาย']));
+for (const k of Object.keys(cacheStore)) delete cacheStore[k];
+apiLog.length = 0;
+gemReply = () => ({ getResponseCode: () => 429, getContentText: () => '{}' });
+const d3 = _draftInstallerMessages_(byF);
+t('โควต้าหมด/ระบบล่ม → ใช้แม่แบบ งานไม่สะดุด + บันทึก error', d3.source === 'template' && apiLog.length === 1 && apiLog[0][3] === 'error');
+gemReply = () => { throw new Error('ไม่ควรเรียกซ้ำ'); };
+t('ข้อมูลเดิมไม่เรียก API ซ้ำ (ใช้ผลที่จำไว้)', _draftInstallerMessages_(byF).source === 'template');
+const si = JSON.parse(securityInfo({ _who: 'saranya@planbmedia.co.th' }).getContent());
+t('เมนู 🔒 บอกว่ามีคีย์ แต่ไม่ส่งคีย์กลับไปที่แอป', si.gemini.hasKey === true && JSON.stringify(si).indexOf('KEY123') === -1);
 
 console.log(`\nผล: ${pass}/${pass+fail}`);
 process.exit(fail?1:0);
