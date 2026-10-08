@@ -9,6 +9,7 @@ const CACHE_DIR = process.env.CACHE_DIR || '.ai-cache';          // เก็บ
 const BUDGET_MIN = Number(process.env.BUDGET_MIN || 45);         // รอบนี้ทำงานได้นานสุดกี่นาที (ที่เหลือรอบหน้าตรวจต่อ)
 const MAX_ROUNDS = Number(process.env.MAX_ROUNDS || 50);         // aiRun 1 รอบ = รูปค้างตรวจสูงสุด 200 รูป
 const SCRIPT_TARGET = process.env.SCRIPT_TARGET || '';           // ใช้ตอนทดสอบเท่านั้น (ชี้ไป Apps Script จำลอง)
+const VIEW_KEY = process.env.SNAP_VIEW_KEY || '';               // รหัสจอ (สิทธิ์ดูอย่างเดียว + บันทึกผล AI) — เก็บใน GitHub Secrets ชื่อ SNAP_VIEW_KEY
 
 const t0 = Date.now();
 const LINES = [];
@@ -46,6 +47,7 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
         headers: isPost ? { 'Content-Type': 'text/plain;charset=utf-8' } : undefined,
       });
       const body = await res.text();
+      if (/"auth":true/.test(body)) log('🔒 Apps Script ปฏิเสธ: ไม่มีบัตรผ่าน/รหัสจอไม่ถูกต้อง — ตรวจ SNAP_VIEW_KEY ใน GitHub Secrets');
       if (!res.ok || !/^\s*[\[{]/.test(body)) {
         log('⚠️ Apps Script ตอบผิดปกติ:', res.status, (res.url || '').slice(0, 90), '|', body.slice(0, 200).replace(/\s+/g, ' '));
       }
@@ -55,6 +57,9 @@ const left = () => BUDGET_MIN * 60000 - (Date.now() - t0);
       await route.abort().catch(() => {});
     }
   });
+  // ล็อกอิน: ใส่รหัสจอเป็นบัตรผ่านของหน้า Snaphub ก่อนเปิด (Apps Script ให้สิทธิ์แค่ดูรูป + บันทึกผล AI)
+  if (VIEW_KEY) await ctx.addInitScript(k => { try { localStorage.setItem('snapAuth_admin', k); } catch (e) {} }, VIEW_KEY);
+  else log('⚠️ ยังไม่ได้ตั้ง SNAP_VIEW_KEY ใน GitHub Secrets — ถ้าเปิดใช้ความปลอดภัยแล้ว หุ่นยนต์จะเรียก Apps Script ไม่ได้');
   const page = ctx.pages()[0] || await ctx.newPage();
   page.on('pageerror', e => log('⚠️ page error:', e.message));
   page.on('dialog', d => d.dismiss().catch(() => {}));   // กันหน้าต่าง alert ค้าง
