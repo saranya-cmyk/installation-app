@@ -229,7 +229,7 @@ function _audit_(body) {
     if (body.code) d.push('Code ' + body.code);
     if (body.codes && body.codes.length) d.push(body.codes.length + ' จุด');
     if (body.fileIds && body.fileIds.length) d.push(body.fileIds.length + ' รูป');
-    if (body.enforce === true) d.push('เปิดใช้ความปลอดภัย'); if (body.enforce === false) d.push('ปิดการบังคับ');
+    if (body.geminiKey !== undefined) d.push(body.geminiKey ? 'ตั้งคีย์ Gemini' : 'ลบคีย์ Gemini'); if (body.enforce === true) d.push('เปิดใช้ความปลอดภัย'); if (body.enforce === false) d.push('ปิดการบังคับ');
     if (body.addAdmin) d.push('เพิ่มแอดมิน ' + body.addAdmin); if (body.removeAdmin) d.push('ลบแอดมิน ' + body.removeAdmin);
     _auditWrite_(body._who || '(ไม่ได้ล็อกอิน)', body.action, d.join(' · '));
   } catch (e) {}
@@ -305,7 +305,8 @@ function securityInfo(body) {
   var miss = ''; try { miss = CacheService.getScriptCache().get('auth_last_miss') || ''; } catch (e) {}
   var me = (body && body._who) || '';
   return json({ ok: true, enforce: _authOn(), viewKey: _props.getProperty('VIEW_KEY'), lastMiss: miss,
-    me: me, owner: _ownerEmail_(), isOwner: !!me && me === _ownerEmail_(), admins: _adminList_() });
+    me: me, owner: _ownerEmail_(), isOwner: !!me && me === _ownerEmail_(), admins: _adminList_(),
+    gemini: { hasKey: !!_geminiKey_(), model: _props.getProperty('GEMINI_MODEL') || '' } });
 }
 function securitySet(body) {
   var isOwner = !!body._who && body._who === _ownerEmail_();
@@ -327,6 +328,16 @@ function securitySet(body) {
   if (body.enforce === true) _props.setProperty('AUTH_ENFORCE', '1');
   if (body.enforce === false) _props.deleteProperty('AUTH_ENFORCE');
   if (body.newViewKey) _props.setProperty('VIEW_KEY', _rand_(16));
+  if (body.geminiKey !== undefined) {
+    var gk = String(body.geminiKey || '').trim();
+    if (gk) _props.setProperty('GEMINI_API_KEY', gk); else _props.deleteProperty('GEMINI_API_KEY');
+    _props.deleteProperty('GEMINI_MODEL');
+  }
+  if (body.geminiTest) {
+    var gt = _draftInstallerMessages_({ 'ทดสอบ': [{ code: 'TEST-' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'HHmmss'), reason: 'รูปมืด / อาจไฟป้ายดับ' }] });
+    var rr = JSON.parse(securityInfo(body).getContent()); rr.geminiTest = { source: gt.source, model: gt.model || '', text: gt.msgs['ทดสอบ'] || '' };
+    return json(rr);
+  }
   var tok = '';
   if (body.logoutAll) { _props.setProperty('AUTH_SECRET', _rand_(40)); tok = _makeToken_('admin', body._who); }   // คนที่กดยังอยู่ในระบบต่อ
   var r = JSON.parse(securityInfo(body).getContent());
@@ -2157,10 +2168,115 @@ function _aiJobSummaryHtml(jobId, codes) {
       lines.push('&nbsp;&nbsp;👷 <b>' + who + '</b>: ' + items + (by[who].length > 12 ? ' และอีก ' + (by[who].length - 12) + ' จุด' : ''));
     }
     color = '#b25e00'; bg = '#fff4e5';
+    var draftBy = by;
   }
   if (unchecked) { lines.push('⏳ AI ยังไม่ได้ตรวจ ' + unchecked + ' รูป (บอทจะตรวจให้ในรอบถัดไป)'); if (color === PLANB_BLUE) { color = '#555'; bg = '#f3f3f3'; } }
   if (total && !waiting && !unchecked) lines.push('✓ ไม่พบรูปที่ต้องแจ้งช่าง');
-  return '<div style="background:' + bg + ';color:' + color + ';border-radius:10px;padding:12px;font-size:13px;line-height:1.7;margin-bottom:18px;text-align:left">' + lines.join('<br>') + '</div>';
+  return '<div style="background:' + bg + ';color:' + color + ';border-radius:10px;padding:12px;font-size:13px;line-height:1.7;margin-bottom:18px;text-align:left">' + lines.join('<br>') + '</div>' +
+    (draftBy ? _draftHtml_(draftBy) : '');
+}
+
+// ═══════════════ Gemini API — ร่างข้อความแจ้งช่างจากธงที่ AI ตรวจรูปเจอ ═══════════════
+// ส่งไป Gemini เฉพาะข้อความ: Code จุด + เหตุผลที่ติดธง (ไม่มีรูป · ไม่มีชื่อลูกค้า/ชื่องาน · ชื่อช่างแทนด้วย "ช่าง 1, 2, ...")
+// Gemini ตอบเป็น JSON → ระบบตรวจว่าครบทุก Code ก่อนใช้ ถ้าไม่ผ่าน/ไม่มีคีย์/โควต้าหมด → ใช้ข้อความแม่แบบแทน (งานไม่สะดุด)
+// ทุกครั้งที่เรียกบันทึกลงชีท _AIApiLog (เวลา · โมเดล · ผล · เวลาที่ใช้) — ใส่คีย์ได้ในเมนู 🔒 ของ Snaphub
+var GEMINI_PREF = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.0-flash'];
+function _geminiKey_() { return String(_props.getProperty('GEMINI_API_KEY') || '').trim(); }
+function _geminiModelList_(key) {
+  var saved = _props.getProperty('GEMINI_MODEL'), list = saved ? [saved] : [];
+  GEMINI_PREF.forEach(function (m) { if (list.indexOf(m) < 0) list.push(m); });
+  try {   // เผื่อชื่อรุ่นเปลี่ยน: ถามรายชื่อรุ่นที่ใช้ได้จริงจาก API แล้วต่อท้าย
+    var r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + encodeURIComponent(key), { muteHttpExceptions: true });
+    if (r.getResponseCode() === 200) (JSON.parse(r.getContentText()).models || []).forEach(function (m) {
+      var n = String(m.name || '').replace('models/', '');
+      if (/flash/.test(n) && !/image|tts|audio|live|embedding|thinking|exp/.test(n) && (m.supportedGenerationMethods || []).indexOf('generateContent') > -1 && list.indexOf(n) < 0) list.push(n);
+    });
+  } catch (e) {}
+  return list;
+}
+function _geminiJson_(prompt, purpose) {
+  var key = _geminiKey_(), t0 = Date.now();
+  if (!key) return { ok: false, why: 'nokey' };
+  var body = JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.3, responseMimeType: 'application/json', maxOutputTokens: 2048 } });
+  var models = _geminiModelList_(key), lastErr = '';
+  for (var i = 0; i < models.length && i < 6; i++) {
+    try {
+      var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent?key=' + encodeURIComponent(key),
+        { method: 'post', contentType: 'application/json', payload: body, muteHttpExceptions: true });
+      var code = res.getResponseCode();
+      if (code === 404 || code === 400) { lastErr = models[i] + ' ' + code; continue; }   // รุ่นนี้ใช้ไม่ได้ → ลองรุ่นถัดไป
+      if (code !== 200) { lastErr = models[i] + ' ' + code; break; }                      // โควต้าหมด/ระบบล่ม → ใช้แม่แบบแทน
+      var j = JSON.parse(res.getContentText());
+      var txt = (((j.candidates || [])[0] || {}).content || {}).parts;
+      txt = (txt || []).map(function (x) { return x.text || ''; }).join('');
+      var data = JSON.parse(txt.replace(/^```(json)?|```$/g, '').trim());
+      _props.setProperty('GEMINI_MODEL', models[i]);
+      _aiApiLog_(purpose, models[i], 'ok', Date.now() - t0, '');
+      return { ok: true, data: data, model: models[i] };
+    } catch (e) { lastErr = models[i] + ' ' + e.message; }
+  }
+  _aiApiLog_(purpose, models[Math.min(i, models.length - 1)] || '-', 'error', Date.now() - t0, String(lastErr).slice(0, 200));
+  return { ok: false, why: lastErr };
+}
+function _aiApiLog_(purpose, model, status, ms, note) {
+  try {
+    var ss = openNamedSS('_AIApiLog', ['เวลา', 'งานที่ให้ AI ทำ', 'โมเดล', 'ผล', 'ใช้เวลา (ms)', 'หมายเหตุ']);
+    if (ss) ss.getActiveSheet().appendRow([Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd HH:mm:ss'), purpose, model, status, ms, note || '']);
+  } catch (e) {}
+}
+/** by = {ชื่อช่าง: [{code, reason}]} → {ชื่อช่าง: ข้อความพร้อมส่ง LINE} · source = 'gemini' | 'template' */
+function _draftInstallerMessages_(by) {
+  var names = Object.keys(by || {});
+  if (!names.length) return { source: 'none', msgs: {} };
+  var tpl = {};
+  names.forEach(function (n) {
+    tpl[n] = 'ช่าง' + n + ' ครับ/ค่ะ รบกวนตรวจรูปจุดต่อไปนี้: ' + by[n].map(function (x) { return x.code + ' (' + x.reason + ')'; }).join(', ') + ' ถ้าผ่านไปแถวนั้นรบกวนถ่ายใหม่ให้ด้วยนะคะ ขอบคุณค่ะ';
+  });
+  var cacheKey = 'gem_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(by))).slice(0, 22);
+  var cache = CacheService.getScriptCache(), hit = cache.get(cacheKey);
+  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  // ส่งแบบไม่ระบุตัวตน: ช่าง 1, ช่าง 2 ... (ไม่ส่งชื่อจริง ชื่อลูกค้า หรือรูป)
+  var anon = names.map(function (n, k) { return { id: 'ช่าง ' + (k + 1), items: by[n].slice(0, 20) }; });
+  var prompt = 'คุณคือผู้ช่วยแอดมินทีมติดตั้งป้ายโฆษณา AI ตรวจรูปติดตั้งแล้วพบรูปที่ควรให้ช่างถ่ายใหม่ ' +
+    'เขียนข้อความ LINE สั้นๆ สุภาพ เป็นกันเอง ถึงช่างแต่ละคน (2-4 ประโยค) บอกว่าจุดไหนต้องถ่ายใหม่เพราะอะไร ' +
+    'และให้คำแนะนำการถ่ายที่ตรงกับปัญหา 1 ข้อ (เช่น รูปมืด → ถ่ายตอนไฟป้ายติดหรือเปิดแฟลช, รูปเบลอ → ถือนิ่ง/แตะโฟกัส, อาจติดผิดป้าย → ถ่ายป้าย Code ให้ชัด) ' +
+    'ต้องระบุ Code ทุกจุดให้ครบตามข้อมูล ห้ามแต่ง Code ใหม่ ขึ้นต้นข้อความด้วยคำว่า {NAME} แทนชื่อช่าง\n' +
+    'ตอบเป็น JSON เท่านั้น รูปแบบ {"messages":[{"id":"ช่าง 1","text":"..."}]}\nข้อมูล: ' + JSON.stringify(anon);
+  var r = _geminiJson_(prompt, 'ร่างข้อความแจ้งช่าง (' + names.length + ' คน)');
+  var out = { source: 'template', msgs: tpl, model: '' };
+  if (r.ok && r.data && r.data.messages) {
+    var got = {}, good = true;
+    r.data.messages.forEach(function (m) { got[String(m.id || '').trim()] = String(m.text || ''); });
+    var msgs = {};
+    anon.forEach(function (a, k) {
+      var t = got[a.id] || '';
+      // ตรวจผลก่อนใช้: ต้องมีครบทุก Code และไม่ยาวเกิน — ไม่ผ่าน = ใช้แม่แบบของช่างคนนั้น
+      var allCodes = a.items.every(function (x) { return t.toUpperCase().indexOf(x.code) > -1; });
+      if (!t || !allCodes || t.length > 700) { good = false; msgs[names[k]] = tpl[names[k]]; }
+      else msgs[names[k]] = t.replace(/\{NAME\}/g, 'ช่าง' + names[k]);
+    });
+    out = { source: good ? 'gemini' : 'gemini+template', msgs: msgs, model: r.model };
+    if (!good) _aiApiLog_('ตรวจผล Gemini', r.model, 'บางข้อความไม่ครบ Code → ใช้แม่แบบแทน', 0, '');
+  }
+  try { cache.put(cacheKey, JSON.stringify(out), 21600); } catch (e) {}
+  return out;
+}
+function _draftHtml_(by) {
+  var d = _draftInstallerMessages_(by), names = Object.keys(d.msgs || {});
+  if (!names.length) return '';
+  var head = d.source === 'template' ? '💬 ข้อความแจ้งช่าง (แม่แบบ) — คัดลอกส่ง LINE ได้เลย'
+    : '💬 ข้อความแจ้งช่าง — ร่างโดย Gemini API' + (d.model ? ' (' + d.model + ')' : '') + ' · คัดลอกส่ง LINE ได้เลย';
+  return '<div style="text-align:left;margin:-8px 0 18px 0;padding:12px;border:1px dashed #d9b98a;border-radius:10px;background:#fffdf8;font-size:13px;color:#333">' +
+    '<div style="font-weight:bold;color:#b25e00;margin-bottom:6px">' + head + '</div>' +
+    names.map(function (n) { return '<div style="margin:6px 0;padding:8px 10px;background:#fff;border-radius:8px;border:1px solid #eee">' + esc_(d.msgs[n]) + '</div>'; }).join('') +
+    '<div style="color:#999;font-size:11px">ส่งให้ AI เฉพาะ Code + เหตุผล (ไม่มีรูป · ไม่มีชื่อลูกค้า · ไม่มีชื่อช่าง)</div></div>';
+}
+/** เมนู 🔒: ใส่/ลบคีย์ Gemini (คีย์ไม่ถูกส่งกลับไปที่แอป) + ทดสอบ */
+function geminiTest() {   // ▶ รันใน Apps Script เพื่อลองเรียก Gemini (ดูผลใน Execution log และชีท _AIApiLog)
+  var r = _draftInstallerMessages_({ 'ทดสอบ': [{ code: 'TEST-' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'HHmmss'), reason: 'รูปมืด / อาจไฟป้ายดับ' }] });
+  Logger.log(JSON.stringify(r));
+  return r;
 }
 
 function _webAppUrl() {
