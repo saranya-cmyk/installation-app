@@ -4,7 +4,11 @@ const cacheStore = {};
 global.CacheService = { getScriptCache: () => ({ get: k => cacheStore[k]||null, put:(k,v)=>{cacheStore[k]=v;}, remove:k=>{delete cacheStore[k];}, removeAll:ks=>ks.forEach(k=>delete cacheStore[k]), putAll:(o)=>Object.assign(cacheStore,o), getAll:(ks)=>{const o={};ks.forEach(k=>{if(k in cacheStore)o[k]=cacheStore[k];});return o;} }) };
 global.ContentService = { createTextOutput: s => ({ _s:s, setMimeType(){return this;}, getContent(){return this._s;} }), MimeType:{JSON:'json'} };
 const today = new Date();
-global.Utilities = { formatDate: (d) => d.toISOString().substring(0,10), base64Decode:s=>s, newBlob:()=>({}), sleep:()=>{} };
+const nodeCrypto = require('crypto');
+global.Utilities = { formatDate: (d) => d.toISOString().substring(0,10), base64Decode:s=>s, newBlob:()=>({}), sleep:()=>{},
+  computeHmacSha256Signature: (v, k) => [...nodeCrypto.createHmac('sha256', k).update(v).digest()],
+  base64EncodeWebSafe: (b) => Buffer.from(b).toString('base64').replace(/\+/g,'-').replace(/\//g,'_'),
+  getUuid: () => nodeCrypto.randomUUID() };
 global.Logger = { log: ()=>{} };
 const propStore = { AI_BASELINE: 'set' };
 global.PropertiesService = { getScriptProperties: () => ({ getProperty:k=>propStore[k]||null, setProperty:(k,v)=>{propStore[k]=v;}, deleteProperty:k=>{delete propStore[k];} }) };
@@ -168,6 +172,48 @@ approveSend({ jobId: 'S1', k: 'KEY', go: '1', to: 'sale1@planbmedia.co.th', cc: 
 const lastMail = sent[sent.length - 1].htmlBody;
 t('อีเมลถึงเซลมีลิงก์โฟลเดอร์รูปใน Drive และเปิดสิทธิ์ให้ดูได้', lastMail.indexOf('folders/PROD123') > -1 && shared === 1);
 t('Code แต่ละจุดอยู่คนละช่อง ไม่ติดกัน', /A1<\/div><\/td><td/.test(lastMail));
+
+// ── ความปลอดภัย: Apps Script ตรวจบัตรผ่านเองทุกคำขอ ──
+delete propStore.AUTH_SECRET; delete propStore.AUTH_ENFORCE;
+t('ยังไม่ตั้งรหัส → ล็อกอินไม่ได้ บอกให้รัน setupSecurity', JSON.parse(login({ role:'admin', pass:'x' }).getContent()).error.indexOf('setupSecurity') > -1);
+setupSecurity();
+t('setupSecurity สร้างรหัสแอดมิน 10 ตัว · รหัสจอ 16 ตัว (ช่างไม่ต้องมีรหัส)', propStore.ADMIN_PASS.length === 10 && propStore.VIEW_KEY.length === 16 && !propStore.TEAM_PIN);
+t('โหมดทดลอง (ยังไม่ enable) → คำขอที่ไม่มีบัตรผ่านยังใช้ได้ ระบบไม่สะดุด', _authGate('deleteJob', '') === null);
+enableSecurity();
+const deny = (a, tk, p) => { const g = _authGate(a, tk, p); return !!(g && JSON.parse(g.getContent()).auth); };
+t('เปิดใช้แล้ว → ไม่มีบัตรผ่าน ลบงาน/สร้างงาน/ลิงก์ลูกค้าไม่ได้', deny('deleteJob', '') && deny('saveJob', '') && deny('portalLink', '') && deny('createPDF', ''));
+const pj = {}; _authGate('getJobs', '', pj);
+t('ไม่มีบัตรผ่านขอรายการงาน → ได้แบบช่างอัตโนมัติ (แอปช่างรุ่นเก่ายังใช้ได้)', pj.view === 'field');
+t('แอปช่างไม่ต้องล็อกอิน: ส่งรูป แจ้งปัญหา ดูงานแบบช่าง ได้ปกติ', !deny('uploadBatch', '') && !deny('reportProblem', '') && !deny('getJobs', '', { view: 'field' }) && !deny('getInstallLog', ''));
+const fieldJobs = JSON.parse(getJobsList({ view: 'field' }).getContent()).jobs;
+t('รายการงานแบบช่างไม่มีอีเมลเซล', fieldJobs.length > 0 && fieldJobs.every(j => !('salesEmail' in j)));
+t('ลูกค้า Portal และลิงก์ยืนยันในอีเมล ยังเปิดได้โดยไม่ต้องล็อกอิน', !deny('portalData', '') && !deny('approveSend', ''));
+const bad = JSON.parse(login({ role:'admin', pass:'ผิด' }).getContent());
+t('รหัสผิด → ไม่ได้บัตรผ่าน', bad.ok === false && !bad.token);
+const tkA = JSON.parse(login({ role:'admin', pass: propStore.ADMIN_PASS }).getContent()).token;
+const tkV = JSON.parse(login({ role:'view', pass: propStore.VIEW_KEY }).getContent()).token;
+t('แอดมินทำได้ทุกอย่าง', !deny('deleteJob', tkA) && !deny('saveJob', tkA) && !deny('portalLink', tkA));
+t('จอ War Room ดู + บันทึกผล AI ได้ แต่ลบ/สร้างงานไม่ได้', !deny('aiPending', tkV) && !deny('aiSaveChecks', tkV) && !deny('getJobs', tkV) && deny('deleteJob', tkV) && deny('saveJob', tkV));
+t('หุ่นยนต์ใช้รหัสจอตรงๆ ได้ (สิทธิ์ดูอย่างเดียว)', !deny('aiPending', propStore.VIEW_KEY) && deny('deleteJob', propStore.VIEW_KEY));
+const forged = tkV.replace(/^view/, 'admin');
+t('ปลอมบัตรจอเป็นแอดมินไม่ได้', deny('deleteJob', forged));
+const parts = tkA.split('.'); const expired = 'admin.' + (Date.now() - 1000) + '.' + _sign_('admin.' + (Date.now() - 1000));
+t('บัตรผ่านหมดอายุ → ต้องล็อกอินใหม่', deny('deleteJob', expired) && parts.length === 3);
+logoutEveryone();
+t('logoutEveryone → บัตรเก่าใช้ไม่ได้ทันที', deny('deleteJob', tkA) && deny('aiPending', tkV));
+for (let i = 0; i < 8; i++) login({ role:'admin', pass:'เดา' });
+t('เดารหัสแอดมินผิดเกิน 8 ครั้ง → ล็อกชั่วคราว แม้ใส่ถูก', JSON.parse(login({ role:'admin', pass: propStore.ADMIN_PASS }).getContent()).locked === true);
+// ช่างลบรูปได้เฉพาะรูปที่เพิ่งส่ง · แอดมินลบได้ทุกรูป
+const trashed = [];
+const mkFile = (id, hoursAgo) => ({ getName: () => 'P1_' + id + '.jpg', getDateCreated: () => new Date(Date.now() - hoursAgo * 3600000), setTrashed: () => trashed.push(id) });
+const files = { new1: mkFile('new1', 2), old1: mkFile('old1', 24 * 10) };
+DriveApp.getFileById = id => files[id];
+deletePhotosFn({ code: 'P1', fileIds: ['new1', 'old1'], _role: '' });
+t('ช่าง (ไม่ล็อกอิน) ลบได้แค่รูปที่ส่งไม่เกิน 3 วัน รูปเก่ากว่านั้นลบไม่ได้', trashed.join() === 'new1');
+deletePhotosFn({ code: 'P1', fileIds: ['old1'], _role: 'admin' });
+t('แอดมินลบรูปเก่าได้', trashed.join() === 'new1,old1');
+disableSecurity();
+t('disableSecurity → ใช้งานได้ทันที (ฉุกเฉิน)', _authGate('deleteJob', '') === null);
 
 console.log(`\nผล: ${pass}/${pass+fail}`);
 process.exit(fail?1:0);
