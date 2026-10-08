@@ -25,4 +25,6 @@ jobs:
           restore-keys: ai-models-v
       - run: cd bot && npm install --no-audit --no-fund && npx playwright install --with-deps chromium
       - name: AI ตรวจรูปที่ยังไม่ได้ตรวจ
+        env:
+          SNAP_VIEW_KEY: ${{ secrets.SNAP_VIEW_KEY }}   # รหัสจอ War Room (จาก setupSecurity) — Settings → Secrets and variables → Actions
         run: cd bot && node ai-bot.js
