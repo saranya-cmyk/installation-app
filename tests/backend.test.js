@@ -5,7 +5,8 @@ global.CacheService = { getScriptCache: () => ({ get: k => cacheStore[k]||null, 
 global.ContentService = { createTextOutput: s => ({ _s:s, setMimeType(){return this;}, getContent(){return this._s;} }), MimeType:{JSON:'json'} };
 const today = new Date();
 const nodeCrypto = require('crypto');
-global.Utilities = { formatDate: (d) => d.toISOString().substring(0,10), base64Decode:s=>s, newBlob:()=>({}), sleep:()=>{},
+global.Utilities = { formatDate: (d) => d.toISOString().substring(0,10), base64Decode:s=>s, newBlob:(b)=>({ getDataAsString: () => Buffer.from(b||[]).toString('utf8') }),
+  base64DecodeWebSafe: (s) => [...Buffer.from(s, 'base64url')], sleep:()=>{},
   computeHmacSha256Signature: (v, k) => [...nodeCrypto.createHmac('sha256', k).update(v).digest()],
   base64EncodeWebSafe: (b) => Buffer.from(b).toString('base64').replace(/\+/g,'-').replace(/\//g,'_'),
   getUuid: () => nodeCrypto.randomUUID() };
@@ -173,51 +174,66 @@ const lastMail = sent[sent.length - 1].htmlBody;
 t('อีเมลถึงเซลมีลิงก์โฟลเดอร์รูปใน Drive และเปิดสิทธิ์ให้ดูได้', lastMail.indexOf('folders/PROD123') > -1 && shared === 1);
 t('Code แต่ละจุดอยู่คนละช่อง ไม่ติดกัน', /A1<\/div><\/td><td/.test(lastMail));
 
-// ── ความปลอดภัย: Apps Script ตรวจบัตรผ่านเองทุกคำขอ ──
-delete propStore.AUTH_SECRET; delete propStore.AUTH_ENFORCE;
-t('ยังไม่ตั้งรหัส → ล็อกอินไม่ได้ แอปพาไปหน้าตั้งรหัสผ่าน', JSON.parse(login({ role:'admin', pass:'x' }).getContent()).noPass === true);
-t('แอปรู้ว่ายังไม่มีรหัสผ่าน (เปิดหน้าตั้งรหัสให้เอง)', JSON.parse(authInfo().getContent()).hasPass === false);
-// ตั้งรหัสในแอป: ต้องยืนยันด้วยรหัส 6 หลักที่ส่งไปอีเมลแอดมิน
-const before = sent.length;
-const pc = JSON.parse(passCode().getContent());
-const codeMail = sent[sent.length - 1];
-const code6 = (codeMail.subject.match(/(\d{6})$/) || [])[1];
-t('กดขอรหัส → ส่งรหัส 6 หลักไปอีเมลแอดมิน (ไม่ส่งกลับมาที่แอป)', pc.ok && sent.length === before + 1 && codeMail.to === CONFIG.ADMIN_EMAIL && !!code6 && JSON.stringify(pc).indexOf(code6) === -1);
-t('รหัสยืนยันผิด → ตั้งรหัสไม่ได้', JSON.parse(passSet({ code: '000000' === code6 ? '111111' : '000000', pass: 'newpass123' }).getContent()).ok === false && !propStore.ADMIN_PASS);
-t('รหัสผ่านสั้นกว่า 8 ตัว → ไม่รับ', JSON.parse(passSet({ code: code6, pass: 'short' }).getContent()).ok === false);
-const ps = JSON.parse(passSet({ code: code6, pass: 'newpass123' }).getContent());
-t('รหัสยืนยันถูก → ตั้งรหัสผ่านได้ และเข้าสู่ระบบทันที', ps.ok && ps.token && propStore.ADMIN_PASS === 'newpass123' && !!propStore.VIEW_KEY && _roleOf(ps.token) === 'admin');
-t('รหัสยืนยันใช้ซ้ำไม่ได้', JSON.parse(passSet({ code: code6, pass: 'hacker1234' }).getContent()).ok === false && propStore.ADMIN_PASS === 'newpass123');
-t('เปิด/ปิดการบังคับจากเมนู 🔒 ในแอปได้', (securitySet({ enforce: true }), _authOn()) && (securitySet({ enforce: false }), !_authOn()));
-delete propStore.ADMIN_PASS; delete propStore.VIEW_KEY;
-setupSecurity();
-t('setupSecurity สร้างรหัสแอดมิน 10 ตัว · รหัสจอ 16 ตัว (ช่างไม่ต้องมีรหัส)', propStore.ADMIN_PASS.length === 10 && propStore.VIEW_KEY.length === 16 && !propStore.TEAM_PIN);
-t('โหมดทดลอง (ยังไม่ enable) → คำขอที่ไม่มีบัตรผ่านยังใช้ได้ ระบบไม่สะดุด', _authGate('deleteJob', '') === null);
-enableSecurity();
-const deny = (a, tk, p) => { const g = _authGate(a, tk, p); return !!(g && JSON.parse(g.getContent()).auth); };
-t('เปิดใช้แล้ว → ไม่มีบัตรผ่าน ลบงาน/สร้างงาน/ลิงก์ลูกค้าไม่ได้', deny('deleteJob', '') && deny('saveJob', '') && deny('portalLink', '') && deny('createPDF', ''));
+// ── ความปลอดภัย: แอดมินล็อกอินด้วยอีเมลตัวเอง + รหัส 6 หลักทางอีเมล · Apps Script ตรวจบัตรผ่านเองทุกคำขอ ──
+for (const k of ['AUTH_SECRET','AUTH_ENFORCE','VIEW_KEY','ADMIN_LIST']) delete propStore[k];
+CONFIG.ADMIN_EMAIL = 'saranya@planbmedia.co.th';
+const audit = [];
+openNamedSS = (name) => name === '_AuditLog' ? { getActiveSheet: () => ({ appendRow: r => audit.push(r) }) } : null;
+const deny = (a, tk, p) => { const g = _authGate(a, tk, p || {}); return !!(g && JSON.parse(g.getContent()).auth); };
+const otpLogin = (em) => {
+  const r = JSON.parse(otpSend({ email: em }).getContent());
+  if (!r.ok) return r;
+  const m = sent[sent.length - 1]; const code = (m.subject.match(/(\d{6})$/) || [])[1];
+  return Object.assign({ code, mailTo: m.to }, JSON.parse(otpVerify({ email: em, code }).getContent()));
+};
+const notListed = JSON.parse(otpSend({ email: 'stranger@planbmedia.co.th' }).getContent());
+t('อีเมลที่ไม่อยู่ในรายชื่อแอดมิน → ขอรหัสไม่ได้ (ไม่ส่งอีเมล)', notListed.ok === false && /ยังไม่มีสิทธิ์/.test(notListed.error));
+const own = otpLogin('Saranya@PlanBmedia.co.th');
+t('เจ้าของระบบใส่อีเมล → รหัส 6 หลักส่งเข้าอีเมลตัวเอง → เข้าระบบได้', own.ok && own.mailTo === 'saranya@planbmedia.co.th' && _authOf(own.token).email === 'saranya@planbmedia.co.th');
+t('รหัสจากอีเมลไม่ถูกส่งกลับมาที่แอป', JSON.stringify(JSON.parse(otpSend({ email: 'saranya@planbmedia.co.th' }).getContent())).indexOf('code') === -1);
+t('รหัสผิด → เข้าไม่ได้', JSON.parse(otpVerify({ email: 'saranya@planbmedia.co.th', code: 'xxxxxx' }).getContent()).ok === false);
+t('รหัสใช้ซ้ำไม่ได้', JSON.parse(otpVerify({ email: 'saranya@planbmedia.co.th', code: own.code }).getContent()).ok === false);
+const tkO = own.token;
+const ownerBody = { _who: 'saranya@planbmedia.co.th' };
+t('เพิ่มได้เฉพาะอีเมล @planbmedia.co.th', JSON.parse(securitySet(Object.assign({ addAdmin: 'x@gmail.com' }, ownerBody)).getContent()).ok === false);
+securitySet(Object.assign({ addAdmin: 'Nok@planbmedia.co.th' }, ownerBody));
+const nok = otpLogin('nok@planbmedia.co.th');
+t('เจ้าของเพิ่มแอดมินใหม่ → คนนั้นใส่อีเมลตัวเองแล้วเข้าระบบได้', nok.ok && _authOf(nok.token).role === 'admin' && _authOf(nok.token).email === 'nok@planbmedia.co.th');
+t('แอดมินที่ไม่ใช่เจ้าของ เพิ่ม/ลบแอดมินไม่ได้', JSON.parse(securitySet({ _who: 'nok@planbmedia.co.th', addAdmin: 'b@planbmedia.co.th' }).getContent()).ok === false);
+t('ลบเจ้าของระบบไม่ได้', JSON.parse(securitySet(Object.assign({ removeAdmin: 'saranya@planbmedia.co.th' }, ownerBody)).getContent()).ok === false);
+t('โหมดทดลอง (ยังไม่เปิด) → คำขอที่ไม่มีบัตรผ่านยังใช้ได้ ระบบไม่สะดุด', _authGate('deleteJob', '', {}) === null);
+securitySet(Object.assign({ enforce: true }, ownerBody));
+t('เปิดใช้จากเมนู 🔒 ได้', _authOn());
+t('เปิดใช้แล้ว → ไม่มีบัตรผ่าน ลบงาน/สร้างงาน/ลิงก์ลูกค้า/เมนู 🔒 ไม่ได้', deny('deleteJob', '') && deny('saveJob', '') && deny('portalLink', '') && deny('securityInfo', '') && deny('securitySet', ''));
+t('แอปช่างไม่ต้องล็อกอิน: ส่งรูป แจ้งปัญหา ดูงานแบบช่าง ได้ปกติ', !deny('uploadBatch', '') && !deny('reportProblem', '') && !deny('getJobs', '', { view: 'field' }) && !deny('getInstallLog', ''));
 const pj = {}; _authGate('getJobs', '', pj);
 t('ไม่มีบัตรผ่านขอรายการงาน → ได้แบบช่างอัตโนมัติ (แอปช่างรุ่นเก่ายังใช้ได้)', pj.view === 'field');
-t('แอปช่างไม่ต้องล็อกอิน: ส่งรูป แจ้งปัญหา ดูงานแบบช่าง ได้ปกติ', !deny('uploadBatch', '') && !deny('reportProblem', '') && !deny('getJobs', '', { view: 'field' }) && !deny('getInstallLog', ''));
 const fieldJobs = JSON.parse(getJobsList({ view: 'field' }).getContent()).jobs;
 t('รายการงานแบบช่างไม่มีอีเมลเซล', fieldJobs.length > 0 && fieldJobs.every(j => !('salesEmail' in j)));
-t('ลูกค้า Portal และลิงก์ยืนยันในอีเมล ยังเปิดได้โดยไม่ต้องล็อกอิน', !deny('portalData', '') && !deny('approveSend', ''));
-t('เมนู 🔒 และการเปิด/ปิดระบบ ใช้ได้เฉพาะแอดมิน · หน้าตั้งรหัส (ยืนยันทางอีเมล) เปิดได้', deny('securityInfo', '') && deny('securitySet', '') && !deny('passCode', '') && !deny('passSet', ''));
-const bad = JSON.parse(login({ role:'admin', pass:'ผิด' }).getContent());
-t('รหัสผิด → ไม่ได้บัตรผ่าน', bad.ok === false && !bad.token);
-const tkA = JSON.parse(login({ role:'admin', pass: propStore.ADMIN_PASS }).getContent()).token;
-const tkV = JSON.parse(login({ role:'view', pass: propStore.VIEW_KEY }).getContent()).token;
-t('แอดมินทำได้ทุกอย่าง', !deny('deleteJob', tkA) && !deny('saveJob', tkA) && !deny('portalLink', tkA));
+t('ลูกค้า Portal และลิงก์ยืนยันในอีเมล ยังเปิดได้โดยไม่ต้องล็อกอิน', !deny('portalData', '') && !deny('approveSend', '') && !deny('otpSend', ''));
+t('แอดมินทำได้ทุกอย่าง', !deny('deleteJob', nok.token) && !deny('saveJob', tkO) && !deny('portalLink', tkO));
+const tkV = JSON.parse(login({ role: 'view', pass: propStore.VIEW_KEY }).getContent()).token;
 t('จอ War Room ดู + บันทึกผล AI ได้ แต่ลบ/สร้างงานไม่ได้', !deny('aiPending', tkV) && !deny('aiSaveChecks', tkV) && !deny('getJobs', tkV) && deny('deleteJob', tkV) && deny('saveJob', tkV));
 t('หุ่นยนต์ใช้รหัสจอตรงๆ ได้ (สิทธิ์ดูอย่างเดียว)', !deny('aiPending', propStore.VIEW_KEY) && deny('deleteJob', propStore.VIEW_KEY));
-const forged = tkV.replace(/^view/, 'admin');
-t('ปลอมบัตรจอเป็นแอดมินไม่ได้', deny('deleteJob', forged));
-const parts = tkA.split('.'); const expired = 'admin.' + (Date.now() - 1000) + '.' + _sign_('admin.' + (Date.now() - 1000));
-t('บัตรผ่านหมดอายุ → ต้องล็อกอินใหม่', deny('deleteJob', expired) && parts.length === 3);
-logoutEveryone();
-t('logoutEveryone → บัตรเก่าใช้ไม่ได้ทันที', deny('deleteJob', tkA) && deny('aiPending', tkV));
-for (let i = 0; i < 8; i++) login({ role:'admin', pass:'เดา' });
-t('เดารหัสแอดมินผิดเกิน 8 ครั้ง → ล็อกชั่วคราว แม้ใส่ถูก', JSON.parse(login({ role:'admin', pass: propStore.ADMIN_PASS }).getContent()).locked === true);
+const pv = tkV.split('.');
+const forgedRole = ['admin', pv[1], pv[2], pv[3]].join('.');
+const forgedWho = [ 'admin', nok.token.split('.')[1], Buffer.from('saranya@planbmedia.co.th').toString('base64url'), nok.token.split('.')[3] ].join('.');
+t('ปลอมบัตรจอเป็นแอดมิน หรือแก้อีเมลในบัตรเป็นคนอื่น ไม่ได้', deny('deleteJob', forgedRole) && deny('deleteJob', forgedWho));
+const expBody = 'admin.' + (Date.now() - 1000) + '.' + Buffer.from('nok@planbmedia.co.th').toString('base64url');
+t('บัตรผ่านหมดอายุ → ต้องล็อกอินใหม่', deny('deleteJob', expBody + '.' + _sign_(expBody)));
+// บันทึกว่าใครทำอะไร
+audit.length = 0;
+const fakeReq = (action, tok, extra) => { const b = Object.assign({ action }, extra); const w = _authOf(tok); b._role = w.role; b._who = w.email; _audit_(b); };
+fakeReq('deleteJob', nok.token, { jobId: 'J9' });
+t('ลบงาน → บันทึกชื่อคนลบลงชีท _AuditLog', audit.length === 1 && audit[0][1] === 'nok@planbmedia.co.th' && audit[0][2] === 'deleteJob' && /J9/.test(audit[0][3]));
+fakeReq('uploadBatch', '', {});
+t('งานของช่าง (ส่งรูป) ไม่ต้องบันทึกซ้ำใน _AuditLog', audit.length === 1);
+securitySet(Object.assign({ removeAdmin: 'nok@planbmedia.co.th' }, ownerBody));
+t('เจ้าของลบชื่อออก → คนนั้นใช้ไม่ได้ทันที (แม้บัตรยังไม่หมดอายุ) คนอื่นไม่สะดุด', deny('deleteJob', nok.token) && !deny('deleteJob', tkO));
+const la = JSON.parse(securitySet(Object.assign({ logoutAll: true }, ownerBody)).getContent());
+t('ให้ทุกเครื่องออกจากระบบ → บัตรเก่าใช้ไม่ได้ · คนกดได้บัตรใหม่ใช้ต่อ', deny('deleteJob', tkO) && deny('aiPending', tkV) && !deny('deleteJob', la.token));
+for (let i = 0; i < 8; i++) login({ role: 'view', pass: 'เดา' });
+t('เดารหัสจอผิดเกิน 8 ครั้ง → ล็อกชั่วคราว', JSON.parse(login({ role: 'view', pass: propStore.VIEW_KEY }).getContent()).locked === true);
 // ช่างลบรูปได้เฉพาะรูปที่เพิ่งส่ง · แอดมินลบได้ทุกรูป
 const trashed = [];
 const mkFile = (id, hoursAgo) => ({ getName: () => 'P1_' + id + '.jpg', getDateCreated: () => new Date(Date.now() - hoursAgo * 3600000), setTrashed: () => trashed.push(id) });
@@ -228,7 +244,7 @@ t('ช่าง (ไม่ล็อกอิน) ลบได้แค่รู�
 deletePhotosFn({ code: 'P1', fileIds: ['old1'], _role: 'admin' });
 t('แอดมินลบรูปเก่าได้', trashed.join() === 'new1,old1');
 disableSecurity();
-t('disableSecurity → ใช้งานได้ทันที (ฉุกเฉิน)', _authGate('deleteJob', '') === null);
+t('disableSecurity → ใช้งานได้ทันที (ฉุกเฉิน)', _authGate('deleteJob', '', {}) === null);
 
 console.log(`\nผล: ${pass}/${pass+fail}`);
 process.exit(fail?1:0);
