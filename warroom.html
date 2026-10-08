@@ -76,8 +76,11 @@ body { background:var(--bg); color:var(--tx); font-family:var(--f); overflow:hid
 var SNAP_AUTH = {"role": "view", "key": "snapAuth_view", "title": "War Room", "hint": "ใส่รหัสจอ War Room", "label": "รหัสจอ", "urlKey": true};
 (function () {
   var A = SNAP_AUTH, shown = false;
-  function get() { try { return localStorage.getItem(A.key) || ''; } catch (e) { return ''; } }
-  function set(v) { try { v ? localStorage.setItem(A.key, v) : localStorage.removeItem(A.key); } catch (e) {} }
+  // ล็อกอินด้วยอีเมลครั้งเดียว ใช้ได้ทุกแอปในเครื่องนี้ (Snaphub, War Room) — เก็บบัตรผ่านไว้ที่เดียวกัน
+  var SHARED = 'snapAuth_admin';
+  function get() { try { return sessionStorage.getItem(SHARED) || localStorage.getItem(SHARED) || (A.key !== SHARED ? localStorage.getItem(A.key) : '') || ''; } catch (e) { return ''; } }
+  function setKey(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) {} }
+  function set(v) { if (v) setKey(A.key, v); else { setKey(SHARED, ''); setKey(A.key, ''); try { sessionStorage.removeItem(SHARED); } catch (e) {} } }
   function lastEmail(v) { try { if (v) localStorage.setItem('snapAuth_email', v); return localStorage.getItem('snapAuth_email') || ''; } catch (e) { return v || ''; } }
   if (A.urlKey) {   // จอทีวี: เปิดลิงก์ที่มี ?k=รหัสจอ ครั้งเดียว เครื่องจำไว้ แล้วลบรหัสออกจากแถบที่อยู่
     try { var qk = new URLSearchParams(location.search).get('k'); if (qk) { set(qk); history.replaceState(null, '', location.pathname); } } catch (e) {}
@@ -108,7 +111,7 @@ var SNAP_AUTH = {"role": "view", "key": "snapAuth_view", "title": "War Room", "h
     w.setAttribute('style', 'position:fixed;inset:0;z-index:2147483000;background:rgba(10,10,10,.96);display:flex;align-items:center;justify-content:center;padding:16px;font-family:inherit');
     w.innerHTML = '<div id="snapAuthCard" style="width:100%;max-width:340px;background:#171717;border:1px solid #2c2c2c;border-radius:18px;padding:26px 22px;color:#f2f2f2;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5)"></div>';
     document.body.appendChild(w);
-    if (A.role === 'admin') emailView(msg || ''); else keyView(msg || '');
+    emailView(msg || '');
   }
   function card(html) { document.getElementById('snapAuthCard').innerHTML = html; }
   function head(title, hint) {
@@ -117,44 +120,99 @@ var SNAP_AUTH = {"role": "view", "key": "snapAuth_view", "title": "War Room", "h
   }
   function busy(btn, on, label) { btn.disabled = on; btn.textContent = on ? 'กำลังดำเนินการ…' : label; }
   function focus(id) { setTimeout(function () { try { document.getElementById(id).focus(); } catch (e) {} }, 50); }
-  // แอดมิน ขั้น 1: ใส่อีเมลตัวเอง
+  // แอดมิน ขั้น 1: ใส่อีเมลบริษัท → ระบบดูว่าตั้งรหัสผ่านแล้วหรือยัง
   function emailView(msg) {
-    var L = 'ส่งรหัสเข้าอีเมล';
-    card('<form id="snapEmailForm">' + head(A.title, 'ใส่อีเมล Plan B ของคุณ ระบบจะส่งรหัส 6 หลักไปให้<br>ไม่ต้องจำรหัสผ่าน') +
-      '<input id="snapEmail" type="email" autocomplete="email" inputmode="email" placeholder="ชื่อ@planbmedia.co.th" value="' + lastEmail().replace(/"/g, '') + '" style="' + CSS_IN + ';font-size:16px">' +
+    var L = 'ถัดไป';
+    card('<form id="snapEmailForm">' + head(A.title, 'เข้าสู่ระบบด้วยอีเมลบริษัท + รหัสผ่านของคุณ<br>ใช้ได้ทั้ง Snaphub และ War Room') +
+      '<input id="snapEmail" type="email" autocomplete="username" inputmode="email" placeholder="ชื่อ@planbmedia.co.th" value="' + lastEmail().replace(/"/g, '') + '" style="' + CSS_IN + ';font-size:16px">' +
       MSG + msg + '</div><button id="snapEmailBtn" type="submit" style="' + CSS_BTN + '">' + L + '</button>' +
-      '<div style="font-size:11px;color:#6f6f6f;margin-top:14px">ใช้ได้เฉพาะอีเมลที่อยู่ในรายชื่อแอดมิน · เข้าครั้งเดียว เครื่องจำไว้ 30 วัน</div></form>');
+      '<div style="font-size:11px;color:#6f6f6f;margin-top:14px">ใช้ได้เฉพาะอีเมลที่อยู่ในรายชื่อแอดมิน</div>' +
+      (A.role === 'view' ? '<button id="snapUseKey" type="button" style="' + CSS_LINK + '">📺 จอทีวีที่ไม่มีอีเมล — ใช้รหัสจอแทน</button>' : '') + '</form>');
     var inp = document.getElementById('snapEmail'), btn = document.getElementById('snapEmailBtn'), out = document.getElementById('snapAuthMsg');
     focus('snapEmail');
+    var uk = document.getElementById('snapUseKey'); if (uk) uk.onclick = function () { keyView(''); };
     document.getElementById('snapEmailForm').onsubmit = function (ev) {
       ev.preventDefault();
       var em = String(inp.value || '').trim().toLowerCase();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { out.textContent = 'กรุณาใส่อีเมลให้ถูกต้อง'; return; }
       busy(btn, true); out.textContent = '';
-      api({ action: 'otpSend', email: em }).then(function (d) {
-        if (d && d.ok) { lastEmail(em); codeView(em); return; }
-        out.textContent = errText(d, 'ส่งรหัสไม่สำเร็จ'); busy(btn, false, L);
+      api({ action: 'pwStatus', email: em }).then(function (d) {
+        if (d && d.ok) { lastEmail(em); if (d.hasPass) passView(em, ''); else firstView(em, ''); return; }
+        out.textContent = errText(d, 'ตรวจอีเมลไม่สำเร็จ'); busy(btn, false, L);
       }).catch(function () { out.textContent = 'เชื่อมต่อไม่ได้ — ตรวจอินเทอร์เน็ตแล้วลองใหม่'; busy(btn, false, L); });
     };
   }
-  // แอดมิน ขั้น 2: ใส่รหัส 6 หลักจากอีเมล
-  function codeView(em) {
+  var REM = '<label style="display:flex;align-items:center;gap:8px;justify-content:center;font-size:13px;color:#aaa;margin:6px 0 4px;cursor:pointer">' +
+    '<input id="snapRemember" type="checkbox" checked style="width:16px;height:16px;accent-color:#c8f031"> จำเครื่องนี้ถึงสิ้นวัน</label>' +
+    '<div style="font-size:11px;color:#6f6f6f;margin-bottom:6px">เครื่องที่ใช้ร่วมกัน: เอาติ๊กออก ปิดหน้าแล้วจะออกจากระบบเอง</div>';
+  function keep(token) {
+    var r = document.getElementById('snapRemember');
+    if (r && !r.checked) { try { sessionStorage.setItem(SHARED, token); } catch (e) {} setKey(SHARED, ''); }
+    else { setKey(SHARED, token); try { sessionStorage.removeItem(SHARED); } catch (e) {} }
+    location.reload();
+  }
+  // แอดมิน ขั้น 2: ใส่รหัสผ่าน
+  function passView(em, msg) {
     var L = 'เข้าสู่ระบบ';
-    card('<form id="snapCodeForm">' + head('ใส่รหัสจากอีเมล', 'ส่งรหัส 6 หลักไปที่<br><b style="color:#ddd">' + em + '</b><br>แล้ว (ใช้ได้ 10 นาที)') +
-      '<input id="snapCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" style="' + CSS_IN + ';letter-spacing:8px;font-size:22px">' +
-      MSG + '</div><button id="snapCodeBtn" type="submit" style="' + CSS_BTN + '">' + L + '</button>' +
-      '<button id="snapBack" type="button" style="' + CSS_LINK + '">← เปลี่ยนอีเมล / ขอรหัสใหม่</button></form>');
-    var inp = document.getElementById('snapCode'), btn = document.getElementById('snapCodeBtn'), out = document.getElementById('snapAuthMsg');
-    focus('snapCode');
+    card('<form id="snapPassForm">' + head(A.title, '<b style="color:#ddd">' + em + '</b>') +
+      '<input type="email" autocomplete="username" value="' + em + '" style="display:none">' +
+      '<input id="snapPass" type="password" autocomplete="current-password" placeholder="รหัสผ่าน" style="' + CSS_IN + '">' + REM +
+      MSG + msg + '</div><button id="snapPassBtn" type="submit" style="' + CSS_BTN + '">' + L + '</button>' +
+      '<div style="display:flex;justify-content:space-between"><button id="snapBack" type="button" style="' + CSS_LINK + '">← เปลี่ยนอีเมล</button>' +
+      '<button id="snapForgot" type="button" style="' + CSS_LINK + '">ลืมรหัสผ่าน?</button></div></form>');
+    var inp = document.getElementById('snapPass'), btn = document.getElementById('snapPassBtn'), out = document.getElementById('snapAuthMsg');
+    focus('snapPass');
     document.getElementById('snapBack').onclick = function () { emailView(''); };
+    document.getElementById('snapForgot').onclick = function () { sendCode(em, 'reset', out); };
+    document.getElementById('snapPassForm').onsubmit = function (ev) {
+      ev.preventDefault();
+      if (!inp.value) { out.textContent = 'กรุณาใส่รหัสผ่าน'; return; }
+      busy(btn, true); out.textContent = '';
+      api({ action: 'pwLogin', email: em, pass: inp.value }).then(function (d) {
+        if (d && d.ok && d.token) { keep(d.token); return; }
+        out.textContent = errText(d, 'เข้าสู่ระบบไม่สำเร็จ'); busy(btn, false, L); inp.select();
+      }).catch(function () { out.textContent = 'เชื่อมต่อไม่ได้'; busy(btn, false, L); });
+    };
+  }
+  // ยังไม่มีรหัสผ่าน: ยืนยันตัวตนทางอีเมลก่อนตั้งรหัส
+  function firstView(em, msg) {
+    card(head('ตั้งรหัสผ่านครั้งแรก', 'เพื่อยืนยันว่าเป็นเจ้าของอีเมลจริง ระบบจะส่งรหัส 6 หลักไปที่<br><b style="color:#ddd">' + em + '</b>') +
+      MSG + msg + '</div><button id="snapSend" type="button" style="' + CSS_BTN + '">📧 ส่งรหัสยืนยันเข้าอีเมล</button>' +
+      '<button id="snapBack" type="button" style="' + CSS_LINK + '">← เปลี่ยนอีเมล</button>');
+    var out = document.getElementById('snapAuthMsg');
+    document.getElementById('snapBack').onclick = function () { emailView(''); };
+    document.getElementById('snapSend').onclick = function () { sendCode(em, 'first', out, this); };
+  }
+  function sendCode(em, mode, out, btn) {
+    if (btn) busy(btn, true); if (out) out.textContent = '';
+    api({ action: 'otpSend', email: em }).then(function (d) {
+      if (d && d.ok) { codeView(em, mode); return; }
+      if (out) out.textContent = errText(d, 'ส่งรหัสไม่สำเร็จ'); if (btn) busy(btn, false, '📧 ส่งรหัสยืนยันเข้าอีเมล');
+    }).catch(function () { if (out) out.textContent = 'เชื่อมต่อไม่ได้'; if (btn) busy(btn, false, '📧 ส่งรหัสยืนยันเข้าอีเมล'); });
+  }
+  // ใส่รหัสจากอีเมล + ตั้งรหัสผ่านใหม่
+  function codeView(em, mode) {
+    var L = 'บันทึกรหัสผ่านและเข้าสู่ระบบ';
+    card('<form id="snapCodeForm">' + head(mode === 'reset' ? 'ตั้งรหัสผ่านใหม่' : 'ตั้งรหัสผ่าน', 'ส่งรหัส 6 หลักไปที่ <b style="color:#ddd">' + em + '</b> แล้ว (ใช้ได้ 10 นาที)') +
+      '<input type="email" autocomplete="username" value="' + em + '" style="display:none">' +
+      '<input id="snapCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="รหัสจากอีเมล 6 หลัก" style="' + CSS_IN + ';letter-spacing:4px">' +
+      '<input id="snapNew1" type="password" autocomplete="new-password" placeholder="รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)" style="' + CSS_IN + '">' +
+      '<input id="snapNew2" type="password" autocomplete="new-password" placeholder="พิมพ์รหัสผ่านใหม่อีกครั้ง" style="' + CSS_IN + '">' + REM +
+      MSG + '</div><button id="snapCodeBtn" type="submit" style="' + CSS_BTN + '">' + L + '</button>' +
+      '<button id="snapResend" type="button" style="' + CSS_LINK + '">ไม่ได้รับอีเมล? ส่งรหัสใหม่</button></form>');
+    var btn = document.getElementById('snapCodeBtn'), out = document.getElementById('snapAuthMsg');
+    focus('snapCode');
+    document.getElementById('snapResend').onclick = function () { sendCode(em, mode, out); };
     document.getElementById('snapCodeForm').onsubmit = function (ev) {
       ev.preventDefault();
-      var code = String(inp.value || '').replace(/\D/g, '');
+      var code = String(document.getElementById('snapCode').value || '').replace(/\D/g, ''), p1 = document.getElementById('snapNew1').value, p2 = document.getElementById('snapNew2').value;
       if (code.length !== 6) { out.textContent = 'ใส่รหัส 6 หลักจากอีเมล'; return; }
+      if (p1.length < 8) { out.textContent = 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัว'; return; }
+      if (p1 !== p2) { out.textContent = 'รหัสผ่านสองช่องไม่ตรงกัน'; return; }
       busy(btn, true); out.textContent = '';
-      api({ action: 'otpVerify', email: em, code: code }).then(function (d) {
-        if (d && d.ok && d.token) { set(d.token); location.reload(); return; }
-        out.textContent = errText(d, 'เข้าสู่ระบบไม่สำเร็จ'); busy(btn, false, L); inp.select();
+      api({ action: 'otpVerify', email: em, code: code, newPass: p1 }).then(function (d) {
+        if (d && d.ok && d.token) { keep(d.token); return; }
+        out.textContent = errText(d, 'บันทึกไม่สำเร็จ'); busy(btn, false, L);
       }).catch(function () { out.textContent = 'เชื่อมต่อไม่ได้'; busy(btn, false, L); });
     };
   }
@@ -164,9 +222,11 @@ var SNAP_AUTH = {"role": "view", "key": "snapAuth_view", "title": "War Room", "h
     card('<form id="snapKeyForm">' + head(A.title, A.hint) +
       '<input id="snapAuthPass" type="password" autocomplete="current-password" placeholder="' + A.label + '" style="' + CSS_IN + '">' +
       MSG + msg + '</div><button id="snapAuthBtn" type="submit" style="' + CSS_BTN + '">' + L + '</button>' +
-      '<div style="font-size:11px;color:#6f6f6f;margin-top:14px">ใส่ครั้งเดียว เครื่องนี้จะจำไว้ · รหัสจอดูได้ในเมนู 🔒 ของ Snaphub</div></form>');
+      '<div style="font-size:11px;color:#6f6f6f;margin-top:14px">ใส่ครั้งเดียว เครื่องนี้จะจำไว้ · รหัสจอดูได้ในเมนู 🔒 ของ Snaphub</div>' +
+      '<button id="snapBackEmail" type="button" style="' + CSS_LINK + '">← เข้าด้วยอีเมลบริษัทแทน</button></form>');
     var inp = document.getElementById('snapAuthPass'), btn = document.getElementById('snapAuthBtn'), out = document.getElementById('snapAuthMsg');
     focus('snapAuthPass');
+    document.getElementById('snapBackEmail').onclick = function () { emailView(''); };
     document.getElementById('snapKeyForm').onsubmit = function (ev) {
       ev.preventDefault();
       var pass = String(inp.value || '').trim();
