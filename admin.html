@@ -2982,6 +2982,16 @@ function secRender(d) {
     '<div style="display:flex;gap:8px"><button onclick="secCopy(\'' + wr + '\',this)" style="' + B + 'flex:1;border:1px solid #444;background:transparent;color:#ddd">คัดลอกลิงก์</button>' +
       '<button onclick="secCopy(\'' + (d.viewKey || '') + '\',this)" style="' + B + 'flex:1;border:1px solid #444;background:transparent;color:#ddd">คัดลอกรหัสจอ</button></div>' +
     '<button onclick="if(confirm(\'เปลี่ยนรหัสจอ? จอ War Room ต้องเข้าลิงก์ใหม่ และต้องอัปเดต SNAP_VIEW_KEY ใน GitHub\'))secCall({action:\'securitySet\',newViewKey:true})" style="' + B + 'border:1px solid #444;background:transparent;color:#aaa">เปลี่ยนรหัสจอ</button>' +
+    '<div style="margin-top:18px;font-weight:700">✨ Gemini API · ร่างข้อความแจ้งช่าง</div>' +
+    '<div style="color:#999;font-size:12px;margin:4px 0 8px">เมื่อ AI ตรวจรูปเจอธง ระบบให้ Gemini ร่างข้อความ LINE แจ้งช่างในอีเมลรายงาน · ส่งเฉพาะ Code + เหตุผล ไม่มีรูป/ชื่อลูกค้า/ชื่อช่าง · ทุกครั้งบันทึกในชีท _AIApiLog</div>' +
+    '<div style="font-size:13px;margin-bottom:6px">' + (d.gemini && d.gemini.hasKey ? '<span style="color:#9cf07a">● ใส่คีย์แล้ว</span>' + (d.gemini.model ? ' · รุ่นที่ใช้ ' + secEsc(d.gemini.model) : '') : '<span style="color:#ffc46b">● ยังไม่ได้ใส่คีย์ (ใช้ข้อความแม่แบบแทน)</span>') + '</div>' +
+    '<div style="display:flex;gap:6px"><input id="secGemKey" type="password" autocomplete="off" placeholder="วางคีย์จาก Google AI Studio" style="flex:1;min-width:0;padding:10px;border-radius:8px;border:1px solid #333;background:#0f0f0f;color:#fff;font-size:14px">' +
+      '<button onclick="var v=document.getElementById(\'secGemKey\').value.trim();if(v)secCall({action:\'securitySet\',geminiKey:v})" style="padding:10px 14px;border:0;border-radius:8px;background:#c8f031;color:#111;font-weight:700;cursor:pointer">บันทึก</button></div>' +
+    (d.gemini && d.gemini.hasKey ? '<div style="display:flex;gap:8px"><button onclick="this.textContent=\'กำลังเรียก Gemini…\';secCall({action:\'securitySet\',geminiTest:true})" style="' + B + 'flex:1;border:1px solid #444;background:transparent;color:#ddd">ทดสอบเรียก Gemini</button>' +
+      '<button onclick="if(confirm(\'ลบคีย์ Gemini?\'))secCall({action:\'securitySet\',geminiKey:\'\'})" style="' + B + 'flex:0 0 auto;padding:12px 16px;border:1px solid #553;background:transparent;color:#ffb4a8">ลบคีย์</button></div>' : '') +
+    (d.geminiTest ? '<div style="margin-top:8px;padding:10px;border-radius:8px;background:' + (d.geminiTest.source === 'gemini' ? '#13261a;border:1px solid #2e6b40' : '#2a2410;border:1px solid #6b5a1f') + ';font-size:13px">' +
+      (d.geminiTest.source === 'gemini' ? '✓ Gemini ตอบกลับแล้ว (' + secEsc(d.geminiTest.model) + ')' : '⚠️ เรียก Gemini ไม่สำเร็จ — ใช้แม่แบบแทน (ดูสาเหตุในชีท _AIApiLog)') +
+      '<div style="color:#ccc;margin-top:6px">' + secEsc(d.geminiTest.text) + '</div></div>' : '') +
     '<div style="margin-top:18px;font-weight:700">👥 รายชื่อแอดมิน</div>' +
     '<div style="color:#999;font-size:12px;margin:4px 0 8px">แต่ละคนเข้าระบบด้วยอีเมลตัวเอง (รับรหัสทางอีเมล) · ลบชื่อออก = คนนั้นใช้ไม่ได้ทันที · ทุกคำสั่งสำคัญบันทึกในชีท _AuditLog</div>' +
     (d.admins || []).map(function (em) {
