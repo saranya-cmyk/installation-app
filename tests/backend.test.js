@@ -10,7 +10,8 @@ global.Utilities = { formatDate: (d) => d.toISOString().substring(0,10), base64D
   computeHmacSha256Signature: (v, k) => [...nodeCrypto.createHmac('sha256', k).update(v).digest()],
   base64EncodeWebSafe: (b) => Buffer.from(b).toString('base64').replace(/\+/g,'-').replace(/\//g,'_'),
   getUuid: () => nodeCrypto.randomUUID(),
-  DigestAlgorithm: { MD5: 'md5' }, computeDigest: (a, v) => [...nodeCrypto.createHash('md5').update(v).digest()] };
+  DigestAlgorithm: { MD5: 'md5', SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' }, base64Encode: (b) => Buffer.from(b).toString('base64'),
+  computeDigest: (a, v) => [...nodeCrypto.createHash(a).update(v).digest()] };
 global.Logger = { log: ()=>{} };
 const propStore = { AI_BASELINE: 'set' };
 global.PropertiesService = { getScriptProperties: () => ({ getProperty:k=>propStore[k]||null, setProperty:(k,v)=>{propStore[k]=v;}, deleteProperty:k=>{delete propStore[k];} }) };
@@ -185,15 +186,33 @@ const otpLogin = (em) => {
   const r = JSON.parse(otpSend({ email: em }).getContent());
   if (!r.ok) return r;
   const m = sent[sent.length - 1]; const code = (m.subject.match(/(\d{6})$/) || [])[1];
-  return Object.assign({ code, mailTo: m.to }, JSON.parse(otpVerify({ email: em, code }).getContent()));
+  return Object.assign({ code, mailTo: m.to }, JSON.parse(otpVerify({ email: em, code, newPass: 'Passw0rd!' + em.length }).getContent()));
 };
 const notListed = JSON.parse(otpSend({ email: 'stranger@planbmedia.co.th' }).getContent());
 t('อีเมลที่ไม่อยู่ในรายชื่อแอดมิน → ขอรหัสไม่ได้ (ไม่ส่งอีเมล)', notListed.ok === false && /ยังไม่มีสิทธิ์/.test(notListed.error));
 const own = otpLogin('Saranya@PlanBmedia.co.th');
 t('เจ้าของระบบใส่อีเมล → รหัส 6 หลักส่งเข้าอีเมลตัวเอง → เข้าระบบได้', own.ok && own.mailTo === 'saranya@planbmedia.co.th' && _authOf(own.token).email === 'saranya@planbmedia.co.th');
 t('รหัสจากอีเมลไม่ถูกส่งกลับมาที่แอป', JSON.stringify(JSON.parse(otpSend({ email: 'saranya@planbmedia.co.th' }).getContent())).indexOf('code') === -1);
-t('รหัสผิด → เข้าไม่ได้', JSON.parse(otpVerify({ email: 'saranya@planbmedia.co.th', code: 'xxxxxx' }).getContent()).ok === false);
-t('รหัสใช้ซ้ำไม่ได้', JSON.parse(otpVerify({ email: 'saranya@planbmedia.co.th', code: own.code }).getContent()).ok === false);
+t('รหัสผิด → เข้าไม่ได้', JSON.parse(otpVerify({ email: 'saranya@planbmedia.co.th', code: 'xxxxxx', newPass: 'abcdefgh' }).getContent()).ok === false);
+t('รหัสใช้ซ้ำไม่ได้', JSON.parse(otpVerify({ email: 'saranya@planbmedia.co.th', code: own.code, newPass: 'abcdefgh' }).getContent()).ok === false);
+// ── รหัสผ่านส่วนตัว ──
+const OWNPW = 'Passw0rd!' + 'saranya@planbmedia.co.th'.length;
+t('ยืนยัน OTP แล้วตั้งรหัสผ่านได้ · เก็บแบบแฮช ไม่เก็บรหัสจริง', !!propStore['PW_saranya@planbmedia.co.th'] && propStore['PW_saranya@planbmedia.co.th'].indexOf(OWNPW) === -1);
+t('อีเมลที่ตั้งรหัสแล้ว → แอปถามรหัสผ่าน (ไม่ต้องขอ OTP)', JSON.parse(pwStatus({ email: 'saranya@planbmedia.co.th' }).getContent()).hasPass === true);
+const pl = JSON.parse(pwLogin({ email: 'Saranya@planbmedia.co.th', pass: OWNPW }).getContent());
+t('เข้าด้วยอีเมล + รหัสผ่านได้', pl.ok && _authOf(pl.token).email === 'saranya@planbmedia.co.th');
+t('รหัสผ่านผิด → เข้าไม่ได้', JSON.parse(pwLogin({ email: 'saranya@planbmedia.co.th', pass: 'wrongpass' }).getContent()).ok === false);
+const expT = Number(pl.token.split('.')[1]);
+t('บัตรผ่านหมดอายุสิ้นวันนี้ (เวลาไทย) — พรุ่งนี้ต้องใส่รหัสใหม่', expT > Date.now() && expT - Date.now() <= 24 * 3600000 && new Date(expT + 7 * 3600000).getUTCHours() === 23);
+t('ตั้งรหัสสั้นกว่า 8 ตัวไม่ได้', JSON.parse((() => { otpSend({ email: 'saranya@planbmedia.co.th' }); const c = sent[sent.length - 1].subject.match(/(\d{6})$/)[1]; return otpVerify({ email: 'saranya@planbmedia.co.th', code: c, newPass: 'short' }); })().getContent()).ok === false);
+const cpBad = JSON.parse(securitySet({ _who: 'saranya@planbmedia.co.th', changePass: { old: 'ผิด', neu: 'NewPass123' } }).getContent());
+const cpOk = JSON.parse(securitySet({ _who: 'saranya@planbmedia.co.th', changePass: { old: OWNPW, neu: 'NewPass123' } }).getContent());
+t('เปลี่ยนรหัสในเมนู 🔒: ต้องใส่รหัสเดิมถูก · รหัสเก่าใช้ไม่ได้ รหัสใหม่ใช้ได้', cpBad.ok === false && cpOk.passChanged === true
+  && JSON.parse(pwLogin({ email: 'saranya@planbmedia.co.th', pass: OWNPW }).getContent()).ok === false
+  && JSON.parse(pwLogin({ email: 'saranya@planbmedia.co.th', pass: 'NewPass123' }).getContent()).ok === true);
+for (let i = 0; i < 6; i++) pwLogin({ email: 'saranya@planbmedia.co.th', pass: 'เดา' + i });
+t('เดารหัสผ่านผิด 5 ครั้ง → ล็อก 15 นาที', JSON.parse(pwLogin({ email: 'saranya@planbmedia.co.th', pass: 'NewPass123' }).getContent()).locked === true);
+delete cacheStore['pw_f_saranya@planbmedia.co.th'];
 const tkO = own.token;
 const ownerBody = { _who: 'saranya@planbmedia.co.th' };
 t('เพิ่มได้เฉพาะอีเมล @planbmedia.co.th', JSON.parse(securitySet(Object.assign({ addAdmin: 'x@gmail.com' }, ownerBody)).getContent()).ok === false);
@@ -230,7 +249,7 @@ t('ลบงาน → บันทึกชื่อคนลบลงชีท
 fakeReq('uploadBatch', '', {});
 t('งานของช่าง (ส่งรูป) ไม่ต้องบันทึกซ้ำใน _AuditLog', audit.length === 1);
 securitySet(Object.assign({ removeAdmin: 'nok@planbmedia.co.th' }, ownerBody));
-t('เจ้าของลบชื่อออก → คนนั้นใช้ไม่ได้ทันที (แม้บัตรยังไม่หมดอายุ) คนอื่นไม่สะดุด', deny('deleteJob', nok.token) && !deny('deleteJob', tkO));
+t('เจ้าของลบชื่อออก → คนนั้นใช้ไม่ได้ทันที (แม้บัตรยังไม่หมดอายุ) คนอื่นไม่สะดุด + ลบรหัสผ่านทิ้ง', deny('deleteJob', nok.token) && !deny('deleteJob', tkO) && !propStore['PW_nok@planbmedia.co.th']);
 const la = JSON.parse(securitySet(Object.assign({ logoutAll: true }, ownerBody)).getContent());
 t('ให้ทุกเครื่องออกจากระบบ → บัตรเก่าใช้ไม่ได้ · คนกดได้บัตรใหม่ใช้ต่อ', deny('deleteJob', tkO) && deny('aiPending', tkV) && !deny('deleteJob', la.token));
 for (let i = 0; i < 8; i++) login({ role: 'view', pass: 'เดา' });
@@ -289,6 +308,17 @@ gemReply = () => { throw new Error('ไม่ควรเรียกซ้ำ')
 t('ข้อมูลเดิมไม่เรียก API ซ้ำ (ใช้ผลที่จำไว้)', _draftInstallerMessages_(byF).source === 'template');
 const si = JSON.parse(securityInfo({ _who: 'saranya@planbmedia.co.th' }).getContent());
 t('เมนู 🔒 บอกว่ามีคีย์ แต่ไม่ส่งคีย์กลับไปที่แอป', si.gemini.hasKey === true && JSON.stringify(si).indexOf('KEY123') === -1);
+
+// ── อีเมลรายงานประจำวัน: การ์ดกว้างคงที่ 600px อยู่กลาง (ไม่ยืดเต็มจอใน Outlook) ──
+const _aiSum = _aiJobSummaryHtml; _aiJobSummaryHtml = () => '<div>AI</div>';
+_planbLogoBlob_ = () => null;
+const before2 = sent.length;
+_sendDailyAdminEmail({ values: ['J1', 'Happy Noz', '', '', '', '', true, 'Cookies', '', 'sale@planbmedia.co.th'], sh: { getRange: () => ({ setValue() {} }) }, row: 2 }, 2, 0, ['DP703', 'DDP023'], 1);
+const dm = sent[sent.length - 1];
+t('รายงานประจำวันเป็นการ์ดกว้าง 600px อยู่กลางจอ แบบเดียวกับอีเมลส่งเซล', sent.length === before2 + 1 && /width="600"/.test(dm.htmlBody) && /align="center"/.test(dm.htmlBody) && !/max-width:600px;padding:24px/.test(dm.htmlBody));
+t('Code แต่ละจุดอยู่คนละช่อง + ปุ่มยืนยันส่งเซลครบ', /DP703<\/div><\/td><td/.test(dm.htmlBody) && /approveSend/.test(dm.htmlBody) && /งานติดตั้งครบ 100%/.test(dm.htmlBody));
+_aiJobSummaryHtml = _aiSum;
+t('อีเมลอื่นห่อเป็นการ์ดกว้างคงที่ด้วย', /width="600"/.test(_wrapMail_('<p>x</p>')));
 
 console.log(`\nผล: ${pass}/${pass+fail}`);
 process.exit(fail?1:0);
