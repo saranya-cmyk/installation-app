@@ -91,6 +91,8 @@ function doPost(e) {
     if (body.action === 'authInfo')        return authInfo();
     if (body.action === 'otpSend')         return otpSend(body);
     if (body.action === 'otpVerify')       return otpVerify(body);
+    if (body.action === 'pwStatus')        return pwStatus(body);
+    if (body.action === 'pwLogin')         return pwLogin(body);
     var tokP = (e.parameter && e.parameter.t) || body.t;
     var who = _authOf(tokP);
     body._role = who.role;   // ไว้ให้ deletePhotos รู้ว่าเป็นแอดมินหรือช่าง (ฝั่งแอปส่งค่านี้มาเองไม่ได้)
@@ -142,7 +144,8 @@ function doGet(e) {
 
 // ═══════════════════════════ SECURITY (ล็อกอิน) ═══════════════════════════
 // ทุกคำขอต้องมี "บัตรผ่าน" (t) — Apps Script ตรวจเองทุกครั้ง ไม่ได้พึ่งแค่หน้าแอป
-//   แอดมิน (Snaphub)  = ใส่อีเมลตัวเอง → รับรหัส 6 หลักทางอีเมล → บัตรผ่าน 30 วัน (ไม่ต้องจำรหัสผ่าน)
+//   แอดมิน (Snaphub/War Room) = อีเมล + รหัสผ่านส่วนตัว → บัตรผ่านถึงสิ้นวัน (วันรุ่งขึ้นใส่ใหม่)
+//                       ตั้งรหัสครั้งแรก / ลืมรหัส = ยืนยันด้วยรหัส 6 หลักทางอีเมลแล้วตั้งใหม่ · เปลี่ยนรหัสได้ในเมนู 🔒
 //                       ต้องเป็นอีเมลที่อยู่ในรายชื่อแอดมิน · เจ้าของระบบ (ADMIN_EMAIL) เพิ่ม/ลบรายชื่อได้ในเมนู 🔒
 //                       ลบชื่อออก = คนนั้นใช้ไม่ได้ทันที · ทุกคำสั่งสำคัญบันทึกลงชีท _AuditLog ว่าใครทำ
 //   ช่าง (Snapsite)    = ไม่ต้องล็อกอิน → ทำได้แค่ส่งรูป/แจ้งปัญหา/ดูงานที่ต้องติด
@@ -151,7 +154,7 @@ function doGet(e) {
 //   ลูกค้า (Portal) และลิงก์ยืนยันในอีเมล ใช้ลิงก์ที่มีรหัสเฉพาะงานอยู่แล้ว ไม่ต้องล็อกอิน
 // ขั้นตอนเปิดใช้ (ทำในแอปได้ทั้งหมด): เปิด Snaphub → ใส่อีเมล → เมนู 🔒 เพิ่มรายชื่อแอดมิน/ลิงก์จอ → กด "เปิดใช้งาน"
 // ฉุกเฉิน (ใช้งานไม่ได้): รัน disableSecurity() ใน Apps Script
-var AUTH_PUBLIC = { '': 1, login: 1, authInfo: 1, otpSend: 1, otpVerify: 1, approveSend: 1, portalData: 1,
+var AUTH_PUBLIC = { '': 1, login: 1, authInfo: 1, otpSend: 1, otpVerify: 1, pwStatus: 1, pwLogin: 1, approveSend: 1, portalData: 1,
   // แอปช่าง (ไม่ต้องล็อกอิน) — ทำได้แค่ส่งรูป/แจ้งปัญหา/ดูงานที่ต้องติด
   uploadBatch: 1, uploadDone: 1, reportProblem: 1, reportRepair: 1, deletePhotos: 1,
   getInstallers: 1, getInstallLog: 1, getPhotos: 1, getPhotoThumbs: 1, getJobsField: 1 };
@@ -180,8 +183,15 @@ function _sign_(s) {
 }
 function _b64_(s) { return Utilities.base64EncodeWebSafe(String(s)).replace(/=+$/, ''); }
 function _unb64_(s) { try { return Utilities.newBlob(Utilities.base64DecodeWebSafe(s + '===='.slice(s.length % 4 || 4))).getDataAsString(); } catch (e) { return ''; } }
+/** เวลาสิ้นวันนี้ (23:59:59 เวลาไทย) — บัตรผ่านแอดมินหมดอายุทุกสิ้นวัน ต้องใส่รหัสผ่านใหม่วันรุ่งขึ้น */
+function _endOfDayTH_() {
+  var now = Date.now(), th = new Date(now + 7 * 3600000);
+  var end = Date.UTC(th.getUTCFullYear(), th.getUTCMonth(), th.getUTCDate(), 23, 59, 59) - 7 * 3600000;
+  return end;
+}
 function _makeToken_(role, email) {
-  var body = role + '.' + (Date.now() + AUTH_DAYS[role] * 86400000) + '.' + _b64_(email || '-');
+  var exp = role === 'admin' ? _endOfDayTH_() : (Date.now() + AUTH_DAYS[role] * 86400000);
+  var body = role + '.' + exp + '.' + _b64_(email || '-');
   return body + '.' + _sign_(body);
 }
 /** บัตรผ่าน → {role:'admin'|'view'|'', email} · แอดมินที่ถูกลบชื่อออกแล้ว = ใช้ไม่ได้ทันที */
@@ -230,7 +240,7 @@ function _audit_(body) {
     if (body.codes && body.codes.length) d.push(body.codes.length + ' จุด');
     if (body.fileIds && body.fileIds.length) d.push(body.fileIds.length + ' รูป');
     if (body.geminiKey !== undefined) d.push(body.geminiKey ? 'ตั้งคีย์ Gemini' : 'ลบคีย์ Gemini'); if (body.enforce === true) d.push('เปิดใช้ความปลอดภัย'); if (body.enforce === false) d.push('ปิดการบังคับ');
-    if (body.addAdmin) d.push('เพิ่มแอดมิน ' + body.addAdmin); if (body.removeAdmin) d.push('ลบแอดมิน ' + body.removeAdmin);
+    if (body.changePass) d.push('เปลี่ยนรหัสผ่าน'); if (body.addAdmin) d.push('เพิ่มแอดมิน ' + body.addAdmin); if (body.removeAdmin) d.push('ลบแอดมิน ' + body.removeAdmin);
     _auditWrite_(body._who || '(ไม่ได้ล็อกอิน)', body.action, d.join(' · '));
   } catch (e) {}
 }
@@ -254,13 +264,15 @@ function otpSend(body) {
   cache.put('otp_n_' + em, String(n + 1), 900); cache.put('otp_n_all', String(g + 1), 900);
   var code = _rand_(6, '0123456789');
   cache.put('otp_' + em, code, 600); cache.remove('otp_f_' + em);
-  MailApp.sendEmail({ to: em, subject: '[Snap] รหัสเข้าสู่ระบบ Snaphub: ' + code,
-    htmlBody: '<div style="font-family:Arial,sans-serif;font-size:15px;color:#222">' +
-      '<p>รหัสเข้าสู่ระบบ Snaphub ของคุณคือ</p>' +
-      '<p style="font-size:32px;font-weight:bold;letter-spacing:8px;color:' + PLANB_BLUE + '">' + code + '</p>' +
-      '<p style="color:#777">ใช้ได้ภายใน 10 นาที · ถ้าคุณไม่ได้ขอรหัสนี้ ไม่ต้องทำอะไร</p></div>' });
+  MailApp.sendEmail({ to: em, subject: '[Snap] รหัสยืนยันตั้งรหัสผ่าน: ' + code,
+    htmlBody: _wrapMail_('<div style="font-family:Arial,sans-serif;font-size:15px;color:#222;padding:20px 24px;text-align:center">' +
+      '<p>รหัสยืนยันสำหรับตั้งรหัสผ่าน Snap ของคุณคือ</p>' +
+      '<p style="font-size:34px;font-weight:bold;letter-spacing:8px;color:' + PLANB_BLUE + ';margin:10px 0">' + code + '</p>' +
+      '<p style="color:#555;font-size:13px">ใส่รหัสนี้แล้วตั้งรหัสผ่านใหม่ — รหัสผ่านเดียวใช้ได้ทั้ง Snaphub และ War Room</p>' +
+      '<p style="color:#999;font-size:12px">ใช้ได้ภายใน 10 นาที · ถ้าคุณไม่ได้ขอรหัสนี้ ไม่ต้องทำอะไร</p></div>') });
   return json({ ok: true });
 }
+/** ยืนยัน OTP + ตั้งรหัสผ่านใหม่ (ครั้งแรก / ลืมรหัส) → เข้าสู่ระบบ */
 function otpVerify(body) {
   var em = String(body.email || '').trim().toLowerCase();
   var cache = CacheService.getScriptCache();
@@ -270,12 +282,42 @@ function otpVerify(body) {
   if (String(body.code || '').trim() !== real) {
     if (f + 1 >= 5) cache.remove('otp_' + em); else cache.put('otp_f_' + em, String(f + 1), 600);
     Utilities.sleep(700);
-    return json({ ok: false, error: f + 1 >= 5 ? 'ใส่รหัสผิดหลายครั้ง — กดขอรหัสใหม่' : 'รหัสไม่ถูกต้อง' });
+    return json({ ok: false, error: f + 1 >= 5 ? 'ใส่รหัสผิดหลายครั้ง — กดขอรหัสใหม่' : 'รหัสยืนยันไม่ถูกต้อง' });
   }
-  cache.remove('otp_' + em); cache.remove('otp_f_' + em);
+  var np = String(body.newPass || '');
+  if (np.length < 8) return json({ ok: false, error: 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัว' });
+  cache.remove('otp_' + em); cache.remove('otp_f_' + em); cache.remove('pw_f_' + em);
   _ensureKeys_();
-  _auditWrite_(em, 'login', 'เข้าสู่ระบบ Snaphub');
-  return json({ ok: true, role: 'admin', email: em, token: _makeToken_('admin', em), days: AUTH_DAYS.admin });
+  _setPass_(em, np);
+  _auditWrite_(em, 'setPassword', 'ตั้งรหัสผ่านใหม่ (ยืนยันด้วยรหัสทางอีเมล)');
+  return json({ ok: true, role: 'admin', email: em, token: _makeToken_('admin', em) });
+}
+// ── รหัสผ่านส่วนตัวของแอดมินแต่ละคน: เก็บแบบแฮช + salt (ไม่เก็บรหัสจริง) ──
+function _pwKey_(em) { return 'PW_' + String(em).trim().toLowerCase(); }
+function _hashPass_(salt, pass) {
+  var h = salt + '|' + pass;
+  for (var i = 0; i < 300; i++) h = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, h + '|' + salt, Utilities.Charset.UTF_8));
+  return h;
+}
+function _setPass_(em, pass) { var salt = _rand_(16); _props.setProperty(_pwKey_(em), salt + ':' + _hashPass_(salt, pass)); }
+function _checkPass_(em, pass) {
+  var v = _props.getProperty(_pwKey_(em)); if (!v) return false;
+  var k = v.indexOf(':'); return _hashPass_(v.slice(0, k), String(pass)) === v.slice(k + 1);
+}
+function pwStatus(body) {
+  var em = String(body.email || '').trim().toLowerCase();
+  if (!_isAdminEmail_(em)) return json({ ok: false, error: 'อีเมลนี้ยังไม่มีสิทธิ์แอดมิน — ขอให้ ' + _ownerEmail_().replace(/^(.{2}).*(@.*)$/, '$1***$2') + ' เพิ่มชื่อในเมนู 🔒' });
+  return json({ ok: true, hasPass: !!_props.getProperty(_pwKey_(em)) });
+}
+function pwLogin(body) {
+  var em = String(body.email || '').trim().toLowerCase();
+  if (!_isAdminEmail_(em) || !_props.getProperty(_pwKey_(em))) return json({ ok: false, error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' });
+  var cache = CacheService.getScriptCache(), fk = 'pw_f_' + em, f = Number(cache.get(fk) || 0);
+  if (f >= 5) return json({ ok: false, locked: true, error: 'ใส่รหัสผิดหลายครั้ง ล็อกไว้ 15 นาที — หรือกด "ลืมรหัสผ่าน" เพื่อตั้งใหม่' });
+  if (!_checkPass_(em, body.pass)) { cache.put(fk, String(f + 1), 900); Utilities.sleep(700); return json({ ok: false, error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' }); }
+  cache.remove(fk); _ensureKeys_();
+  _auditWrite_(em, 'login', 'เข้าสู่ระบบด้วยรหัสผ่าน');
+  return json({ ok: true, role: 'admin', email: em, token: _makeToken_('admin', em) });
 }
 /** จอ War Room: {role:'view', pass: รหัสจอ} → บัตรผ่าน 1 ปี */
 function login(body) {
@@ -306,7 +348,7 @@ function securityInfo(body) {
   var me = (body && body._who) || '';
   return json({ ok: true, enforce: _authOn(), viewKey: _props.getProperty('VIEW_KEY'), lastMiss: miss,
     me: me, owner: _ownerEmail_(), isOwner: !!me && me === _ownerEmail_(), admins: _adminList_(),
-    gemini: { hasKey: !!_geminiKey_(), model: _props.getProperty('GEMINI_MODEL') || '' } });
+    gemini: { hasKey: !!_geminiKey_(), model: _props.getProperty('GEMINI_MODEL') || '' }, myPass: !!(me && _props.getProperty(_pwKey_(me))) });
 }
 function securitySet(body) {
   var isOwner = !!body._who && body._who === _ownerEmail_();
@@ -322,8 +364,16 @@ function securitySet(body) {
       var rm = String(body.removeAdmin).trim().toLowerCase();
       if (rm === _ownerEmail_()) return json({ ok: false, error: 'ลบเจ้าของระบบไม่ได้' });
       list = list.filter(function (x) { return x !== rm; });
+      _props.deleteProperty(_pwKey_(rm));
     }
     _props.setProperty('ADMIN_LIST', JSON.stringify(list));
+  }
+  if (body.changePass) {
+    var cp = body.changePass || {};
+    if (!body._who || !_checkPass_(body._who, cp.old)) return json({ ok: false, error: 'รหัสผ่านเดิมไม่ถูกต้อง' });
+    if (String(cp.neu || '').length < 8) return json({ ok: false, error: 'รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัว' });
+    _setPass_(body._who, cp.neu);
+    var rr2 = JSON.parse(securityInfo(body).getContent()); rr2.passChanged = true; return json(rr2);
   }
   if (body.enforce === true) _props.setProperty('AUTH_ENFORCE', '1');
   if (body.enforce === false) _props.deleteProperty('AUTH_ENFORCE');
@@ -1303,7 +1353,7 @@ function reportProblem(body) {
       '<p>สาเหตุ: <b>'+esc_(reason)+'</b></p>'+
       '<p style="color:#888;font-size:12px">'+esc_(timestamp)+'</p></div>';
     // บันทึกลงชีทแล้ว — ส่งอีเมลไม่ได้ก็ไม่ถือว่าพัง (กันแอปช่างส่งซ้ำจนแถวซ้ำ)
-    if (CONFIG.ADMIN_EMAIL) { try { MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:'[ปัญหาหน้างาน] '+jobName+' — '+installer,htmlBody:html}); } catch(e) { Logger.log('problem mail: '+e.message); } }
+    if (CONFIG.ADMIN_EMAIL) { try { MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:'[ปัญหาหน้างาน] '+jobName+' — '+installer,htmlBody:_wrapMail_(html)}); } catch(e) { Logger.log('problem mail: '+e.message); } }
     bustCache(['resp_plog']);
     return json({ success: true });
   } catch(err) { return json({ success:false, error:err.message }); }
@@ -1451,7 +1501,7 @@ function reportRepair(body) {
     try {
       MailApp.sendEmail({ to: to,
         subject: '🔧 [แจ้งซ่อมด่วน] ' + code + ' — ' + repairType + (jobName ? ' — ' + jobName : ''),
-        htmlBody: html });
+        htmlBody: _wrapMail_(html) });
     } catch(e) { Logger.log('repair mail: '+e.message); }
 
     bustCache(['resp_rlog']);
@@ -1837,7 +1887,7 @@ function sendEmail(installer, jobName, codes, unmatched, folderUrl, mediaName, f
       (unmatched?' · ⚠️ ตรวจสอบ <b>'+unmatched+' รูป</b>':'')+
     '<br><br><a href="'+folderUrl+'" style="background:'+PLANB_BLUE+';color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">📁 เปิดโฟลเดอร์</a></p></div>';
   var subjectMedia = mediaLabel ? mediaLabel + ' · ' : '';
-  MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:'[ส่งรูป] '+subjectMedia+jobName+' — '+installer+' — '+codes.length+' จุด',htmlBody:html});
+  MailApp.sendEmail({to:CONFIG.ADMIN_EMAIL,subject:'[ส่งรูป] '+subjectMedia+jobName+' — '+installer+' — '+codes.length+' จุด',htmlBody:_wrapMail_(html)});
 }
 
 function logSheet(installer,jobName,timestamp,codes,unmatched) {
@@ -2303,6 +2353,13 @@ function _installedByJob() {
 }
 
 
+/** ห่ออีเมลให้เป็นการ์ดกว้างคงที่ 600px อยู่กลางจอ (Outlook/Gmail ไม่ยืดเต็มจอ) */
+function _wrapMail_(inner) {
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f2f4f7" style="background:#f2f4f7"><tr><td align="center" style="padding:24px 12px">' +
+    '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="max-width:600px;width:100%;background:#ffffff;border:1px solid #e3e6ea;border-radius:14px"><tr><td style="padding:4px">' +
+    inner + '</td></tr></table></td></tr></table>';
+}
+
 function _sendDailyAdminEmail(jr, total, reportedCount, pending, carried) {
   var jobId = jr.values[0], jobName = jr.values[1] || '', media = jr.values[7] || '';
   var salesEmail = String(jr.values[9] || '').trim();
@@ -2312,28 +2369,59 @@ function _sendDailyAdminEmail(jr, total, reportedCount, pending, carried) {
   var cum = reportedCount + pending.length, isDone = cum >= total;
   var confirmUrl = _webAppUrl() + '?action=approveSend&jobId=' + encodeURIComponent(jobId) + '&k=' + approveKey;
   var codeList = pending.slice(0, 40).join(', ') + (pending.length > 40 ? ' และอีก ' + (pending.length - 40) + ' จุด' : '');
-  var html = '<div style="font-family:Sarabun,Arial,sans-serif;max-width:600px;padding:24px">' +
-    '<div style="background:' + PLANB_BLUE + ';background-image:linear-gradient(135deg,' + PLANB_BLUE + ',#4f9dff)' +
-      ';color:#fff;padding:20px;border-radius:12px 12px 0 0;text-align:center">' +
-      '<div style="font-size:30px">' + (isDone ? '🎉' : '📋') + '</div>' +
-      '<h2 style="margin:6px 0 0 0">' + (isDone ? 'งานติดตั้งครบ 100%' : 'รายงานติดตั้งประจำวัน') + '</h2></div>' +
-    '<div style="border:1px solid #e5e5e5;border-top:none;border-radius:0 0 12px 12px;padding:22px;text-align:center">' +
-      (media ? '<div style="color:#1665c1;font-weight:bold;margin-bottom:4px">📺 ' + media + '</div>' : '') +
-      '<div style="font-size:20px;font-weight:bold;margin-bottom:6px">' + jobName + '</div>' +
-      '<div style="color:#555;margin-bottom:6px">รอบนี้ติดตั้ง <b>' + pending.length + ' จุด</b> · สะสม <b>' + cum + '/' + total + '</b> จุด</div>' +
-      (carried ? '<div style="color:#b25e00;font-size:12px;margin-bottom:6px">(รวม ' + carried + ' จุดจากรอบก่อนที่ยังไม่ได้กดยืนยัน)</div>' : '') +
-      '<div style="color:#888;font-size:12px;margin-bottom:14px;word-break:break-word">' + codeList + '</div>' +
-      _aiJobSummaryHtml(jobId, pending) +
-      '<div style="background:#f7f7f7;border-radius:10px;padding:12px;font-size:13px;color:#666;margin-bottom:18px">' +
-        'กดปุ่มด้านล่าง → <b style="color:#111">ใส่/แก้อีเมลเซลและ CC</b> → กดยืนยัน ระบบจะส่ง PDF รูปของจุดรอบนี้ให้ทันที' +
-        (salesEmail ? '<br>อีเมลเซลที่ใช้ครั้งก่อน: <b style="color:#111">' + esc_(salesEmail) + '</b>' : '') +
-      '</div>' +
-      '<a href="' + confirmUrl + '" style="background:' + PLANB_BLUE + ';color:#fff;padding:16px 32px;border-radius:10px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">✅ ใส่อีเมลเซล แล้วส่งรูปรอบนี้</a>' +
-      '<div style="color:#999;font-size:11px;margin-top:14px">การสร้าง PDF ใช้เวลา 1-3 นาที กดแล้วรอหน้ายืนยันขึ้นก่อนปิดนะคะ · ใช้ปุ่มจากอีเมลฉบับล่าสุดเท่านั้น</div>' +
-    '</div></div>';
-  MailApp.sendEmail({ to: CONFIG.ADMIN_EMAIL,
+  var F = "font-family:'Sarabun','Leelawadee UI','Segoe UI',Tahoma,Arial,sans-serif;", ac = PLANB_BLUE;
+  var pct = total ? Math.min(100, Math.round(cum / total * 100)) : 0;
+  var stat = function (n, label, color, last) {
+    return '<td align="center" width="33%" style="padding:16px 4px;' + (last ? '' : 'border-right:1px solid #262626;') + F + '">' +
+      '<div style="font-size:26px;font-weight:bold;color:' + color + ';line-height:1.15">' + n + '</div>' +
+      '<div style="font-size:12px;color:#8a8a8a;margin-top:4px">' + label + '</div></td>';
+  };
+  var cs = pending.slice(0, 60), rows = '';
+  for (var ri = 0; ri < cs.length; ri += 4) {
+    rows += '<tr>';
+    for (var ci = 0; ci < 4; ci++) {
+      var cc = cs[ri + ci];
+      rows += '<td width="25%" style="padding:3px">' + (cc ? '<div style="background:#1d1d1d;border:1px solid #2e2e2e;border-radius:6px;padding:6px 4px;text-align:center;font-size:13px;color:#e0e0e0;font-family:Consolas,Menlo,monospace">' + esc_(cc) + '</div>' : '&nbsp;') + '</td>';
+    }
+    rows += '</tr>';
+  }
+  var logo = null; try { logo = _planbLogoBlob_(); } catch (e) {}
+  var brand = logo ? '<img src="cid:planblogo" alt="Plan B" height="30" style="height:30px;display:block;border:0">'
+    : '<span style="font-size:17px;font-weight:bold;color:#ffffff">Plan <span style="color:' + PLANB_BLUE + '">B</span></span>';
+  var html = '' +
+  '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0b0b0b" style="background:#0b0b0b"><tr><td align="center" style="padding:30px 12px">' +
+  '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="#151515" style="max-width:600px;width:100%;background:#151515;border:1px solid #262626;border-radius:16px">' +
+    '<tr><td style="padding:26px 28px 0;' + F + '">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td valign="middle">' + brand + '</td>' +
+        (media ? '<td align="right" valign="middle" style="' + F + 'font-size:12px;color:#8a8a8a">' + esc_(media) + '</td>' : '') + '</tr></table>' +
+      '<div style="margin-top:20px;font-size:13px;color:' + ac + ';font-weight:bold">● ' + (isDone ? '🎉 งานติดตั้งครบ 100%' : 'รายงานติดตั้งประจำวัน') + ' · รอแอดมินยืนยันส่งเซล</div>' +
+      '<div style="font-size:26px;font-weight:bold;color:#ffffff;margin-top:6px;line-height:1.3">' + esc_(jobName) + '</div>' +
+    '</td></tr>' +
+    '<tr><td style="padding:20px 28px 0">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#1d1d1d" style="background:#1d1d1d;border-radius:12px"><tr>' +
+        stat(pending.length, 'จุดรอบนี้', '#ffffff') +
+        stat(cum + '<span style="font-size:15px;color:#777">/' + total + '</span>', 'สะสมทั้งงาน', ac) +
+        stat(pct + '%', 'ความคืบหน้า', '#ffffff', true) +
+      '</tr></table>' +
+      (carried ? '<div style="' + F + 'color:#ffc46b;font-size:12px;margin-top:8px">รวม ' + carried + ' จุดจากรอบก่อนที่ยังไม่ได้กดยืนยัน</div>' : '') +
+    '</td></tr>' +
+    (rows ? '<tr><td style="padding:20px 28px 0;' + F + '"><div style="font-size:13px;font-weight:bold;color:#e6e6e6;margin-bottom:8px">จุดที่ติดตั้งรอบนี้</div>' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">' + rows + '</table>' +
+      (pending.length > 60 ? '<div style="font-size:12px;color:#8a8a8a;margin-top:6px">และอีก ' + (pending.length - 60) + ' จุด</div>' : '') + '</td></tr>' : '') +
+    '<tr><td style="padding:20px 28px 0;' + F + '">' + _aiJobSummaryHtml(jobId, pending) + '</td></tr>' +
+    '<tr><td style="padding:0 28px;' + F + '"><div style="font-size:13px;color:#9a9a9a;line-height:1.6">กดปุ่มด้านล่าง → <b style="color:#ffffff">ใส่/แก้อีเมลเซลและ CC</b> → กดยืนยัน ระบบจะส่ง PDF รูปของจุดรอบนี้ให้ทันที' +
+      (salesEmail ? '<br>อีเมลเซลที่ใช้ครั้งก่อน: <b style="color:#ffffff">' + esc_(salesEmail) + '</b>' : '') + '</div></td></tr>' +
+    '<tr><td style="padding:18px 28px 10px">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" bgcolor="' + ac + '" style="background:' + ac + ';border-radius:10px">' +
+        '<a href="' + confirmUrl + '" style="display:block;padding:15px;' + F + 'font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none">ใส่อีเมลเซล แล้วส่งรูปรอบนี้</a>' +
+      '</td></tr></table></td></tr>' +
+    '<tr><td align="center" style="padding:8px 28px 24px;' + F + 'font-size:11px;color:#6b6b6b">การสร้าง PDF ใช้เวลา 1-3 นาที · ใช้ปุ่มจากอีเมลฉบับล่าสุดเท่านั้น<br>ระบบจัดการภาพติดตั้ง Snap · Plan B Media</td></tr>' +
+  '</table></td></tr></table>';
+  var mail = { to: CONFIG.ADMIN_EMAIL,
     subject: (isDone ? '🎉 [งานครบ 100%] ' : '📋 [รายงานประจำวัน] ') + jobName + ' — +' + pending.length + ' จุด (' + cum + '/' + total + ') กดยืนยันเพื่อส่งเซล',
-    htmlBody: html });
+    htmlBody: html };
+  if (logo) mail.inlineImages = { planblogo: logo };
+  MailApp.sendEmail(mail);
 }
 
 // กด Run ฟังก์ชันนี้ครั้งเดียวใน Apps Script Editor เพื่อตั้งเวลาส่งรายงานทุกวันราว 10:00 น.
