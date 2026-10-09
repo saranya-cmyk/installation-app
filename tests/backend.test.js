@@ -168,12 +168,29 @@ t('อีเมลถึงเซลไม่มีลิงก์เรีย�
 jrow[11] = 'pending'; jrow[12] = '[]'; jrow[13] = JSON.stringify(['A1']);
 openNamedSS = (name) => name === '_InstallLog' ? { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => [
   ['jobId','code','i','d','c','f','p','imgIds'], ['S1','A1','ก','2026-10-07',2,'u','https://drive.google.com/drive/folders/PROD123','["x1"]'] ] }) }) } : null;
-let shared = 0;
-DriveApp.Access = { ANYONE_WITH_LINK: 1 }; DriveApp.Permission = { VIEW: 1 };
-DriveApp.getFolderById = (id) => ({ getName: () => 'สินค้า Cookies', setSharing: () => { shared++; } });
-approveSend({ jobId: 'S1', k: 'KEY', go: '1', to: 'sale1@planbmedia.co.th', cc: '' });
+let shareMode = [], viewers = [];
+DriveApp.Access = { ANYONE_WITH_LINK: 1, PRIVATE: 0 }; DriveApp.Permission = { VIEW: 1, NONE: 0 };
+DriveApp.getFolderById = (id) => ({ getName: () => 'สินค้า Cookies', setSharing: (a) => { shareMode.push(a); }, addViewer: (e) => viewers.push(e) });
+approveSend({ jobId: 'S1', k: 'KEY', go: '1', to: 'sale1@planbmedia.co.th', cc: 'Boss@planbmedia.co.th' });
 const lastMail = sent[sent.length - 1].htmlBody;
-t('อีเมลถึงเซลมีลิงก์โฟลเดอร์รูปใน Drive และเปิดสิทธิ์ให้ดูได้', lastMail.indexOf('folders/PROD123') > -1 && shared === 1);
+t('อีเมลถึงเซลมีลิงก์โฟลเดอร์รูปใน Drive', lastMail.indexOf('folders/PROD123') > -1);
+t('เปิดลิงก์โฟลเดอร์ให้เซลส่งต่อลูกค้าได้', shareMode.join() === '1');
+// ชื่อสินค้าซ้ำกันคนละงาน → งานล่าสุดได้โฟลเดอร์ของตัวเอง
+{
+  const mkF = (name, desc, id) => ({ name, desc, id, getName(){ return this.name; }, getId(){ return this.id; },
+    getDescription(){ return this.desc; }, setDescription(d){ this.desc = d; } });
+  const kids = [];
+  const media = { getFolders: () => { let i = 0; return { hasNext: () => i < kids.length, next: () => kids[i++] }; },
+    createFolder: (n) => { const f = mkF(n, '', 'NEW' + kids.length); kids.push(f); return f; } };
+  const keepOpen = openNamedSS;
+  openNamedSS = (n) => n === '_InstallLog' ? { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => [[], ['OLD', 'X', '', '', 0, '', 'https://drive.google.com/drive/folders/LEG1', '[]']] }) }) } : null;
+  kids.push(mkF('Cookies', '', 'LEG1'));
+  const fA = _productFolder_(media, 'Cookies', 'JOB-NEW');
+  t('ชื่อสินค้าซ้ำกับงานเก่า → สร้างโฟลเดอร์ใหม่ "Cookies (2)" ไม่ปนกัน', fA.getName() === 'Cookies (2)' && fA.getDescription() === 'snap-job:JOB-NEW');
+  t('งานเดิมอัปโหลดรอบต่อไป → ใช้โฟลเดอร์เดิมของตัวเอง', _productFolder_(media, 'Cookies', 'JOB-NEW') === fA && kids.length === 2);
+  t('โฟลเดอร์เก่าที่เป็นของงานนั้นเอง → ใช้ต่อได้', _productFolder_(media, 'Cookies', 'OLD').getId() === 'LEG1');
+  openNamedSS = keepOpen;
+}
 t('Code แต่ละจุดอยู่คนละช่อง ไม่ติดกัน', /A1<\/div><\/td><td/.test(lastMail));
 
 // ── ความปลอดภัย: แอดมินล็อกอินด้วยอีเมลตัวเอง + รหัส 6 หลักทางอีเมล · Apps Script ตรวจบัตรผ่านเองทุกคำขอ ──
@@ -234,6 +251,18 @@ t('ลูกค้า Portal และลิงก์ยืนยันในอ
 t('แอดมินทำได้ทุกอย่าง', !deny('deleteJob', nok.token) && !deny('saveJob', tkO) && !deny('portalLink', tkO));
 const tkV = JSON.parse(login({ role: 'view', pass: propStore.VIEW_KEY }).getContent()).token;
 t('จอ War Room ดู + บันทึกผล AI ได้ แต่ลบ/สร้างงานไม่ได้', !deny('aiPending', tkV) && !deny('aiSaveChecks', tkV) && !deny('getJobs', tkV) && deny('deleteJob', tkV) && deny('saveJob', tkV));
+t('ร่างข้อความแจ้งช่าง (Gemini) ใน Snaphub → แอดมินเท่านั้น จอ War Room/ไม่ล็อกอิน ใช้ไม่ได้', !deny('aiDraft', tkO) && deny('aiDraft', tkV) && deny('aiDraft', ''));
+{
+  const keepR = _aiFlagReport, keepD = _draftInstallerMessages_;
+  let askedJob = null;
+  _aiFlagReport = (j) => { askedJob = j; return { 'สมชาย': [{ code: 'BKK-1', reason: 'รูปมืด' }, { code: 'BKK-2', reason: 'รูปเบลอ' }] }; };
+  _draftInstallerMessages_ = (by) => ({ source: 'gemini', model: 'gemini-x', msgs: { 'สมชาย': 'ช่างสมชาย BKK-1 BKK-2 ถ่ายใหม่' } });
+  const r = JSON.parse(aiDraft({ jobId: 'J9' }).getContent());
+  t('กดร่างข้อความ → ใช้ธงล่าสุดของงานนั้น ได้ข้อความแยกตามช่าง', askedJob === 'J9' && r.success && r.drafts.length === 1 && r.drafts[0].count === 2 && /BKK-2/.test(r.drafts[0].text));
+  _aiFlagReport = () => ({});
+  t('ไม่มีธง → ไม่เรียก Gemini', JSON.parse(aiDraft({}).getContent()).drafts.length === 0);
+  _aiFlagReport = keepR; _draftInstallerMessages_ = keepD;
+}
 t('หุ่นยนต์ใช้รหัสจอตรงๆ ได้ (สิทธิ์ดูอย่างเดียว)', !deny('aiPending', propStore.VIEW_KEY) && deny('deleteJob', propStore.VIEW_KEY));
 const pv = tkV.split('.');
 const forgedRole = ['admin', pv[1], pv[2], pv[3]].join('.');
