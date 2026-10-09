@@ -310,7 +310,7 @@ delete propStore.GEMINI_API_KEY; delete propStore.GEMINI_MODEL;
 const byF = { 'สมชาย': [{ code: 'DP713', reason: 'รูปเบลอมาก' }], 'วิชัย': [{ code: 'DP959', reason: 'อาจติดผิดป้าย — อ่านได้ DP958' }, { code: 'DP1090', reason: 'รูปมืด / อาจไฟป้ายดับ' }] };
 const d0 = _draftInstallerMessages_(byF);
 t('ไม่มีคีย์ Gemini → ใช้ข้อความแม่แบบ ไม่เรียก API งานไม่สะดุด · บอกสาเหตุ', d0.source === 'template' && d0.why === 'nokey' && fetched.length === 0 && /DP713/.test(d0.msgs['สมชาย']));
-t('ไม่มีคีย์ → ไม่จำผลแม่แบบไว้ (ใส่คีย์แล้วใช้ Gemini ได้ทันที)', Object.keys(cacheStore).filter(k => /^gem3_/.test(k)).length === 0);
+t('ไม่มีคีย์ → ไม่จำผลแม่แบบไว้ (ใส่คีย์แล้วใช้ Gemini ได้ทันที)', Object.keys(cacheStore).filter(k => /^gem4_/.test(k)).length === 0);
 for (const k of Object.keys(cacheStore)) delete cacheStore[k];
 propStore.GEMINI_API_KEY = 'KEY123';
 const okText = { messages: [ { id: 'ช่าง 1', items: [{ code: 'DP713', fix: 'ถือมือถือให้นิ่ง แตะโฟกัสก่อนถ่าย' }] },
@@ -322,6 +322,7 @@ const sentBody = fetched.filter(f => /generateContent/.test(f.url)).map(f => f.b
 t('มีคีย์ → เรียก Gemini API จริง (รุ่นแรกใช้ไม่ได้ → ลองรุ่นถัดไปเอง)', d1.source === 'gemini' && d1.model === 'gemini-2.5-flash' && fetched.some(f => /gemini-2.5-flash-lite:generateContent/.test(f.url)));
 t('ข้อความที่ได้ใส่ชื่อช่างกลับให้ และมีครบทุก Code', /^สวัสดีค่ะ ช่างสมชาย/.test(d1.msgs['สมชาย']) && /DP959/.test(d1.msgs['วิชัย']) && /DP1090/.test(d1.msgs['วิชัย']));
 t('อีเมลมีปุ่มส่ง LINE พร้อมข้อความแจ้งช่าง', (() => { const h = _draftHtml_(byF); return /line\.me\/R\/share\?text=/.test(h) && h.indexOf(encodeURIComponent('DP1090')) > -1; })());
+t('ร่างข้อความส่งข้อมูลการ์ดด้วย: ทุกจุดมี Code + ปัญหา + วิธีถ่าย', d1.items['วิชัย'].length === 2 && d1.items['วิชัย'][1].code === 'DP1090' && d1.items['วิชัย'][1].fix === 'ถ่ายตอนไฟป้ายติด' && d0.items['สมชาย'][0].fix.length > 0);
 t('ข้อความแจ้งช่างแบ่งบรรทัดอ่านง่าย: จุดละบรรทัด + วิธีถ่ายใต้แต่ละจุด', d1.msgs['วิชัย'].split('\n').filter(l => /^📍/.test(l)).length === 2 && /📍 DP1090\n⚠️ รูปมืด[^\n]*\n👉 ถ่ายตอนไฟป้ายติด/.test(d1.msgs['วิชัย']));
 t('ส่งให้ Gemini เฉพาะ Code + เหตุผล — ไม่มีชื่อช่างจริง ไม่มีรูป', sentBody.indexOf('สมชาย') === -1 && sentBody.indexOf('วิชัย') === -1 && !/base64|inlineData|image/.test(sentBody) && /DP713/.test(sentBody));
 t('ทุกครั้งที่เรียก บันทึกลงชีท _AIApiLog (โมเดล · ผล · เวลา)', apiLog.length === 1 && apiLog[0][2] === 'gemini-2.5-flash' && apiLog[0][3] === 'ok');
