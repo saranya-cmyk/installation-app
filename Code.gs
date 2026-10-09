@@ -2350,7 +2350,8 @@ function _draftInstallerMessages_(by) {
     'ใช้ code ตามข้อมูลเท่านั้น ห้ามแต่ง code ใหม่ ห้ามใส่คำทักทาย\n' +
     'ตอบเป็น JSON เท่านั้น รูปแบบ {"messages":[{"id":"ช่าง 1","items":[{"code":"...","fix":"..."}]}]}\nข้อมูล: ' + JSON.stringify(anon);
   var r = _geminiJson_(prompt, 'ร่างข้อความแจ้งช่าง (' + names.length + ' คน)');
-  var out = { source: 'template', msgs: tpl, model: '' };
+  var why = r.ok ? 'badjson' : (r.why === 'nokey' ? 'nokey' : (/ 429/.test(r.why || '') ? 'quota' : 'error'));
+  var out = { source: 'template', msgs: tpl, model: '', why: why };
   if (r.ok && r.data && r.data.messages) {
     var got = {}, good = true, msgs = {};
     r.data.messages.forEach(function (m) {
@@ -2371,7 +2372,10 @@ function _draftInstallerMessages_(by) {
     out = { source: good ? 'gemini' : 'gemini+template', msgs: msgs, model: r.model };
     if (!good) _aiApiLog_('ตรวจผล Gemini', r.model, 'บางจุดไม่มีคำแนะนำ → ใช้คำแนะนำสำรองเฉพาะจุดนั้น', 0, '');
   }
-  try { cache.put(cacheKey, JSON.stringify(out), 21600); } catch (e) {}
+  // ไม่มีคีย์ → ไม่จำผล (ใส่คีย์แล้วใช้ได้ทันที) · เรียกพลาด → จำแค่ 10 นาที กันยิง API ซ้ำ · สำเร็จ → จำ 6 ชม.
+  if (out.why !== 'nokey' || out.source !== 'template') {
+    try { cache.put(cacheKey, JSON.stringify(out), out.source === 'template' ? 600 : 21600); } catch (e) {}
+  }
   return out;
 }
 /** Snaphub ปุ่ม "💬 ร่างข้อความแจ้งช่าง" — ใช้ธงล่าสุด ณ ตอนกด (ไม่ต้องรออีเมลรายวัน) · แอดมินเท่านั้น */
@@ -2380,7 +2384,7 @@ function aiDraft(body) {
     var by = _aiFlagReport(String(body.jobId || ''), null), names = Object.keys(by);
     if (!names.length) return json({ success: true, source: 'none', drafts: [] });
     var d = _draftInstallerMessages_(by);
-    return json({ success: true, source: d.source, model: d.model || '',
+    return json({ success: true, source: d.source, model: d.model || '', why: d.why || '',
       drafts: names.map(function (n) { return { installer: n, count: by[n].length, text: d.msgs[n] || '' }; }) });
   } catch (e) { return json({ success: false, error: String(e && e.message || e) }); }
 }
