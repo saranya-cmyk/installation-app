@@ -2985,7 +2985,10 @@ function aiqDraft(btn) {
       if (!res.success) throw new Error(res.error || 'ร่างข้อความไม่สำเร็จ');
       box = document.getElementById('aiqDraftBox') || box;
       if (!res.drafts.length) { box.innerHTML = '<div style="color:#c8f542">✓ ไม่มีธงที่ต้องแจ้งช่างแล้ว</div>'; return; }
-      var head = res.source === 'template' ? '💬 ข้อความแม่แบบ (Gemini ไม่พร้อมใช้ตอนนี้)' : '💬 ร่างโดย Gemini API' + (res.model ? ' (' + esc(res.model) + ')' : '');
+      var WHY = { nokey: 'ยังไม่ได้ใส่คีย์ Gemini — ใส่ที่เมนู 🔒', quota: 'โควต้า Gemini ฟรีของวันนี้/นาทีนี้เต็ม — ลองใหม่ภายหลัง',
+        error: 'เรียก Gemini ไม่สำเร็จ — ดูสาเหตุในชีท _AIApiLog', badjson: 'Gemini ตอบรูปแบบไม่ถูก — ใช้แม่แบบแทน' };
+      var head = res.source === 'template' ? '💬 ข้อความแม่แบบ <span style="font-weight:normal;color:#f5b041;font-size:12px">(' + (WHY[res.why] || 'Gemini ไม่พร้อมใช้ตอนนี้') + ')</span>'
+        : '💬 ร่างโดย Gemini API' + (res.model ? ' (' + esc(res.model) + ')' : '');
       box.innerHTML = '<div style="font-weight:bold;color:#c8f542;margin-bottom:6px">' + head + '</div>' +
         res.drafts.map(function(d, k) {
           return '<div style="background:#1b1b1b;border:1px solid #333;border-radius:10px;padding:10px;margin-bottom:8px">' +
