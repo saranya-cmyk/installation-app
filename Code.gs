@@ -2338,10 +2338,11 @@ function _fmtDraft_(name, items, fixes) {
 function _draftInstallerMessages_(by) {
   var names = Object.keys(by || {});
   if (!names.length) return { source: 'none', msgs: {} };
-  var tpl = {};
-  names.forEach(function (n) { tpl[n] = _fmtDraft_(n, by[n], []); });
+  var tpl = {}, tplItems = {};
+  var itemsOf = function (n, fixes) { return by[n].map(function (x, k) { return { code: x.code, reason: x.reason, fix: fixes[k] || _fixTip_(x.reason) }; }); };
+  names.forEach(function (n) { tpl[n] = _fmtDraft_(n, by[n], []); tplItems[n] = itemsOf(n, []); });
   // ผูกผลที่จำไว้กับคีย์ปัจจุบัน — เปลี่ยน/ใส่คีย์ใหม่ = ไม่ใช้ผลเก่า (กันค้างข้อความแม่แบบจากตอนยังไม่มีคีย์)
-  var cacheKey = 'gem3_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(by) + '|' + _geminiKey_().slice(-8))).slice(0, 22);
+  var cacheKey = 'gem4_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(by) + '|' + _geminiKey_().slice(-8))).slice(0, 22);
   var cache = CacheService.getScriptCache(), hit = cache.get(cacheKey);
   if (hit) { try { return JSON.parse(hit); } catch (e) {} }
   // ส่งแบบไม่ระบุตัวตน: ช่าง 1, ช่าง 2 ... (ไม่ส่งชื่อจริง ชื่อลูกค้า หรือรูป)
@@ -2353,9 +2354,9 @@ function _draftInstallerMessages_(by) {
     'ตอบเป็น JSON เท่านั้น รูปแบบ {"messages":[{"id":"ช่าง 1","items":[{"code":"...","fix":"..."}]}]}\nข้อมูล: ' + JSON.stringify(anon);
   var r = _geminiJson_(prompt, 'ร่างข้อความแจ้งช่าง (' + names.length + ' คน)');
   var why = r.ok ? 'badjson' : (r.why === 'nokey' ? 'nokey' : (/ 429/.test(r.why || '') ? 'quota' : 'error'));
-  var out = { source: 'template', msgs: tpl, model: '', why: why };
+  var out = { source: 'template', msgs: tpl, items: tplItems, model: '', why: why };
   if (r.ok && r.data && r.data.messages) {
-    var got = {}, good = true, msgs = {};
+    var got = {}, good = true, msgs = {}, its = {};
     r.data.messages.forEach(function (m) {
       var fx = {}; (m.items || []).forEach(function (it) { fx[String(it.code || '').trim().toUpperCase()] = String(it.fix || '').trim(); });
       got[String(m.id || '').trim()] = fx;
@@ -2370,8 +2371,9 @@ function _draftInstallerMessages_(by) {
         return f;
       });
       msgs[names[k]] = _fmtDraft_(names[k], by[names[k]], fixes);
+      its[names[k]] = itemsOf(names[k], fixes);
     });
-    out = { source: good ? 'gemini' : 'gemini+template', msgs: msgs, model: r.model };
+    out = { source: good ? 'gemini' : 'gemini+template', msgs: msgs, items: its, model: r.model };
     if (!good) _aiApiLog_('ตรวจผล Gemini', r.model, 'บางจุดไม่มีคำแนะนำ → ใช้คำแนะนำสำรองเฉพาะจุดนั้น', 0, '');
   }
   // ไม่มีคีย์ → ไม่จำผล (ใส่คีย์แล้วใช้ได้ทันที) · เรียกพลาด → จำแค่ 10 นาที กันยิง API ซ้ำ · สำเร็จ → จำ 6 ชม.
@@ -2387,7 +2389,7 @@ function aiDraft(body) {
     if (!names.length) return json({ success: true, source: 'none', drafts: [] });
     var d = _draftInstallerMessages_(by);
     return json({ success: true, source: d.source, model: d.model || '', why: d.why || '',
-      drafts: names.map(function (n) { return { installer: n, count: by[n].length, text: d.msgs[n] || '' }; }) });
+      drafts: names.map(function (n) { return { installer: n, count: by[n].length, text: d.msgs[n] || '', items: (d.items || {})[n] || [] }; }) });
   } catch (e) { return json({ success: false, error: String(e && e.message || e) }); }
 }
 function _draftHtml_(by) {
