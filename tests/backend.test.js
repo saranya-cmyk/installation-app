@@ -310,7 +310,7 @@ delete propStore.GEMINI_API_KEY; delete propStore.GEMINI_MODEL;
 const byF = { 'สมชาย': [{ code: 'DP713', reason: 'รูปเบลอมาก' }], 'วิชัย': [{ code: 'DP959', reason: 'อาจติดผิดป้าย — อ่านได้ DP958' }, { code: 'DP1090', reason: 'รูปมืด / อาจไฟป้ายดับ' }] };
 const d0 = _draftInstallerMessages_(byF);
 t('ไม่มีคีย์ Gemini → ใช้ข้อความแม่แบบ ไม่เรียก API งานไม่สะดุด · บอกสาเหตุ', d0.source === 'template' && d0.why === 'nokey' && fetched.length === 0 && /DP713/.test(d0.msgs['สมชาย']));
-t('ไม่มีคีย์ → ไม่จำผลแม่แบบไว้ (ใส่คีย์แล้วใช้ Gemini ได้ทันที)', Object.keys(cacheStore).filter(k => /^gem4_/.test(k)).length === 0);
+t('ไม่มีคีย์ → ไม่จำผลแม่แบบไว้ (ใส่คีย์แล้วใช้ Gemini ได้ทันที)', Object.keys(cacheStore).filter(k => /^gem5_/.test(k)).length === 0);
 for (const k of Object.keys(cacheStore)) delete cacheStore[k];
 propStore.GEMINI_API_KEY = 'KEY123';
 const okText = { messages: [ { id: 'ช่าง 1', items: [{ code: 'DP713', fix: 'ถือมือถือให้นิ่ง แตะโฟกัสก่อนถ่าย' }] },
