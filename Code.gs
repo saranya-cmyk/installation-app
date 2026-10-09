@@ -2342,13 +2342,14 @@ function _draftInstallerMessages_(by) {
   var itemsOf = function (n, fixes) { return by[n].map(function (x, k) { return { code: x.code, reason: x.reason, fix: fixes[k] || _fixTip_(x.reason) }; }); };
   names.forEach(function (n) { tpl[n] = _fmtDraft_(n, by[n], []); tplItems[n] = itemsOf(n, []); });
   // ผูกผลที่จำไว้กับคีย์ปัจจุบัน — เปลี่ยน/ใส่คีย์ใหม่ = ไม่ใช้ผลเก่า (กันค้างข้อความแม่แบบจากตอนยังไม่มีคีย์)
-  var cacheKey = 'gem4_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(by) + '|' + _geminiKey_().slice(-8))).slice(0, 22);
+  var cacheKey = 'gem5_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(by) + '|' + _geminiKey_().slice(-8))).slice(0, 22);
   var cache = CacheService.getScriptCache(), hit = cache.get(cacheKey);
   if (hit) { try { return JSON.parse(hit); } catch (e) {} }
   // ส่งแบบไม่ระบุตัวตน: ช่าง 1, ช่าง 2 ... (ไม่ส่งชื่อจริง ชื่อลูกค้า หรือรูป)
   var anon = names.map(function (n, k) { return { id: 'ช่าง ' + (k + 1), items: by[n].slice(0, 20) }; });
   var prompt = 'คุณคือผู้ช่วยแอดมินทีมติดตั้งป้ายโฆษณา AI ตรวจรูปติดตั้งแล้วพบรูปที่ควรให้ช่างถ่ายใหม่ ' +
-    'สำหรับแต่ละจุด เขียนคำแนะนำวิธีถ่ายใหม่ที่ตรงกับปัญหาของจุดนั้น 1 ประโยคสั้นๆ (ไม่เกิน 60 ตัวอักษร) ภาษาง่าย เป็นกันเอง ' +
+    'สำหรับแต่ละจุด เขียนคำแนะนำวิธีถ่ายใหม่ที่ตรงกับปัญหาของจุดนั้น 1 ประโยคสั้นๆ (ไม่เกิน 60 ตัวอักษร) ภาษาง่าย สุภาพแบบที่ทำงาน ' +
+    'ไม่ใส่คำลงท้าย (ครับ/ค่ะ/นะจ๊ะ/จ้า) และไม่ใส่อีโมจิ ' +
     '(เช่น รูปมืด → ถ่ายตอนไฟป้ายติดหรือเปิดแฟลช, รูปเบลอ → ถือนิ่ง/แตะโฟกัส, อาจติดผิดป้าย → ถ่ายป้าย Code ให้ชัดและเช็คจุดติด) ' +
     'ใช้ code ตามข้อมูลเท่านั้น ห้ามแต่ง code ใหม่ ห้ามใส่คำทักทาย\n' +
     'ตอบเป็น JSON เท่านั้น รูปแบบ {"messages":[{"id":"ช่าง 1","items":[{"code":"...","fix":"..."}]}]}\nข้อมูล: ' + JSON.stringify(anon);
