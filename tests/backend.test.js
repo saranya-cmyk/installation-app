@@ -320,6 +320,7 @@ const d1 = _draftInstallerMessages_(byF);
 const sentBody = fetched.filter(f => /generateContent/.test(f.url)).map(f => f.body).join(' ');
 t('มีคีย์ → เรียก Gemini API จริง (รุ่นแรกใช้ไม่ได้ → ลองรุ่นถัดไปเอง)', d1.source === 'gemini' && d1.model === 'gemini-2.5-flash' && fetched.some(f => /gemini-2.5-flash-lite:generateContent/.test(f.url)));
 t('ข้อความที่ได้ใส่ชื่อช่างกลับให้ และมีครบทุก Code', /^สวัสดีค่ะ ช่างสมชาย/.test(d1.msgs['สมชาย']) && /DP959/.test(d1.msgs['วิชัย']) && /DP1090/.test(d1.msgs['วิชัย']));
+t('อีเมลมีปุ่มส่ง LINE พร้อมข้อความแจ้งช่าง', (() => { const h = _draftHtml_(byF); return /line\.me\/R\/share\?text=/.test(h) && h.indexOf(encodeURIComponent('DP1090')) > -1; })());
 t('ข้อความแจ้งช่างแบ่งบรรทัดอ่านง่าย: จุดละบรรทัด + วิธีถ่ายใต้แต่ละจุด', d1.msgs['วิชัย'].split('\n').filter(l => /^📍/.test(l)).length === 2 && /📍 DP1090\n⚠️ รูปมืด[^\n]*\n👉 ถ่ายตอนไฟป้ายติด/.test(d1.msgs['วิชัย']));
 t('ส่งให้ Gemini เฉพาะ Code + เหตุผล — ไม่มีชื่อช่างจริง ไม่มีรูป', sentBody.indexOf('สมชาย') === -1 && sentBody.indexOf('วิชัย') === -1 && !/base64|inlineData|image/.test(sentBody) && /DP713/.test(sentBody));
 t('ทุกครั้งที่เรียก บันทึกลงชีท _AIApiLog (โมเดล · ผล · เวลา)', apiLog.length === 1 && apiLog[0][2] === 'gemini-2.5-flash' && apiLog[0][3] === 'ok');
