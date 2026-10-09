@@ -301,7 +301,7 @@ const apiLog = [], fetched = [];
 openNamedSS = (name) => name === '_AIApiLog' ? { getActiveSheet: () => ({ appendRow: r => apiLog.push(r) }) } : null;
 let gemReply = null;
 global.UrlFetchApp = { fetch: (url, opt) => {
-  fetched.push({ url, body: opt && opt.payload ? String(opt.payload) : '' });
+  fetched.push({ url, body: opt && opt.payload ? String(opt.payload) : '', key: opt && opt.headers ? opt.headers['x-goog-api-key'] : '' });
   if (/\/models\?/.test(url)) return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ models: [] }) };
   const m = url.match(/models\/([^:]+):generateContent/)[1];
   return gemReply(m);
@@ -325,6 +325,7 @@ t('อีเมลมีปุ่มส่ง LINE พร้อมข้อค�
 t('ข้อความแจ้งช่างแบ่งบรรทัดอ่านง่าย: จุดละบรรทัด + วิธีถ่ายใต้แต่ละจุด', d1.msgs['วิชัย'].split('\n').filter(l => /^📍/.test(l)).length === 2 && /📍 DP1090\n⚠️ รูปมืด[^\n]*\n👉 ถ่ายตอนไฟป้ายติด/.test(d1.msgs['วิชัย']));
 t('ส่งให้ Gemini เฉพาะ Code + เหตุผล — ไม่มีชื่อช่างจริง ไม่มีรูป', sentBody.indexOf('สมชาย') === -1 && sentBody.indexOf('วิชัย') === -1 && !/base64|inlineData|image/.test(sentBody) && /DP713/.test(sentBody));
 t('ทุกครั้งที่เรียก บันทึกลงชีท _AIApiLog (โมเดล · ผล · เวลา)', apiLog.length === 1 && apiLog[0][2] === 'gemini-2.5-flash' && apiLog[0][3] === 'ok');
+t('ส่งคีย์ทาง header ไม่ใส่ใน URL (ใช้ได้ทั้งคีย์ AIza… และ AQ.…)', fetched.every(f => f.url.indexOf('KEY123') === -1 && f.key === 'KEY123'));
 t('จำรุ่นที่ใช้ได้ไว้ รอบหน้าไม่ต้องลองใหม่', propStore.GEMINI_MODEL === 'gemini-2.5-flash');
 for (const k of Object.keys(cacheStore)) delete cacheStore[k];
 const badText = { messages: [ { id: 'ช่าง 1', items: [{ code: 'DP713', fix: 'ถือให้นิ่งแล้วถ่าย DP713 ใหม่' }] }, { id: 'ช่าง 2', items: [{ code: 'DP959', fix: 'ถ่ายป้าย Code ให้ชัด' }] } ] };
