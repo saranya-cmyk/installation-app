@@ -158,9 +158,9 @@ function doGet(e) {
 var AUTH_PUBLIC = { '': 1, login: 1, authInfo: 1, otpSend: 1, otpVerify: 1, pwStatus: 1, pwLogin: 1, approveSend: 1, portalData: 1,
   // แอปช่าง (ไม่ต้องล็อกอิน) — ทำได้แค่ส่งรูป/แจ้งปัญหา/ดูงานที่ต้องติด
   uploadBatch: 1, uploadDone: 1, reportProblem: 1, reportRepair: 1, deletePhotos: 1,
-  getInstallers: 1, getInstallLog: 1, getPhotos: 1, getPhotoThumbs: 1, getJobsField: 1 };
+  getInstallers: 1, getInstallLog: 1, getPhotos: 1, getJobsField: 1 };
 var AUTH_ACL = {           // งานที่จอ War Room / หุ่นยนต์ AI ทำได้ (แอดมินทำได้ทุกอย่าง · ที่ไม่อยู่ในรายการ = แอดมินเท่านั้น)
-  getJobs: ['view'], getProblemLog: ['view'], aiPending: ['view'], aiThumbs: ['view'], aiSaveChecks: ['view']
+  getJobs: ['view'], getProblemLog: ['view'], aiPending: ['view'], aiThumbs: ['view'], aiSaveChecks: ['view'], getPhotoThumbs: ['view']
 };
 var AUTH_DAYS = { admin: 30, view: 365 };
 var TECH_DELETE_HOURS = 72;  // ช่างลบรูปได้เฉพาะรูปที่ส่งมาไม่เกินกี่ชั่วโมง (แอดมินลบได้ทุกรูป)
@@ -222,6 +222,11 @@ function _authGate(action, t, p) {
   var role = _roleOf(t);
   // รายการงาน: ถ้าไม่ใช่แอดมิน/จอ → ให้ดูแบบช่างอัตโนมัติ (เฉพาะงานที่ยังไม่จบ ไม่มีอีเมลเซล) แทนการปฏิเสธ
   if (action === 'getJobs' && p && (p.view === 'field' || (role !== 'admin' && role !== 'view' && _authOn()))) { p.view = 'field'; action = 'getJobsField'; }
+  // คนที่ไม่ได้ล็อกอิน (แอปช่าง/คนนอกที่รู้ลิงก์ Apps Script) เห็นข้อมูลแคบที่สุด: เฉพาะงานที่ระบุ · ไม่เห็นลิงก์โฟลเดอร์ Drive
+  if (p && role !== 'admin' && role !== 'view') {
+    if (action === 'getInstallLog' && !p.jobId) return json({ log: [], error: 'กรุณาเข้าสู่ระบบ', auth: true });
+    if (action === 'getInstallLog' || action === 'getPhotos') p._field = '1';
+  } else if (p) { try { delete p._field; } catch (e) {} }
   if (_authAllowed(action, role)) return null;
   if (!_authOn()) {         // โหมดทดลอง: ยังปล่อยผ่าน แต่จดไว้ว่ายังมีคำขอที่ไม่มีบัตรผ่าน (ดูได้ในเมนู 🔒)
     try { CacheService.getScriptCache().put('auth_last_miss', String(action) + ' @ ' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM HH:mm'), 21600); } catch (e) {}
@@ -882,7 +887,7 @@ function uploadBatch(body) {
   // [P9] InstallLog แบบ upsert — ไม่มีแถวซ้ำ
   try { upsertInstallLog(jobId, installer, dateStr, uploadedCodes); }
   catch(e) { Logger.log('InstallLog: '+e.message); }
-  bustCache(['resp_ilog', 'resp_ilog_' + jobId, 'portal_' + jobId, 'resp_jobs_full', 'resp_jobs_field']); // ข้อมูลใหม่ → ทุกจอเห็นรอบถัดไป (รวมสถานะจบงาน)
+  bustCache(['resp_ilog', 'resp_ilog_' + jobId, 'resp_ilogf_' + jobId, 'portal_' + jobId, 'resp_jobs_full', 'resp_jobs_field']); // ข้อมูลใหม่ → ทุกจอเห็นรอบถัดไป (รวมสถานะจบงาน)
 
   try { logSheet(installer, jobName, new Date().toISOString(), uploadedCodes, unmatched.length); } catch(e) {}
 
@@ -903,6 +908,9 @@ function uploadBatch(body) {
     try { checkJobCompletion(jobId); } catch(e) { Logger.log('completion: '+e.message); }
   }
 
+  // ปลุกหุ่นยนต์ AI ให้ตรวจรูปที่เพิ่งเข้ามาทันที (ไม่ต้องรอรอบ 30 นาที) — พลาดก็ไม่กระทบการอัปโหลด
+  if (uploadedCodes.some(function(c){ return (c.count || 0) > 0; })) { try { _kickAiBot_(); } catch(e) {} }
+
   var _result = { success:true, codes:uploadedCodes, failed:failedTotal,
     unmatched:unmatched.length, folderUrl:monthFolderUrl };
   if (requestId) {
@@ -910,6 +918,31 @@ function uploadBatch(body) {
   }
   return json(_result);
 }
+
+/** สั่ง GitHub Actions (ai-check) ให้รันทันที — ต้องตั้ง Script Properties: GH_TOKEN (fine-grained, Actions: Read and write)
+ *  กันยิงถี่: 1 ครั้ง / 2 นาที (ถ้าบอทกำลังรันอยู่ GitHub จะต่อคิวไว้ 1 รอบ แล้วบอทตรวจวนจนหมดเอง) */
+function _aiBotReady_() { return !!String(_props.getProperty('GH_TOKEN') || '').trim(); }
+function _kickAiBot_() {
+  var token = String(_props.getProperty('GH_TOKEN') || '').trim();
+  if (!token) return { ok: false, why: 'notoken' };
+  var cache = CacheService.getScriptCache();
+  if (cache.get('aibot_kick')) return { ok: true, skipped: true };
+  cache.put('aibot_kick', '1', 120);
+  var repo = String(_props.getProperty('GH_REPO') || 'saranya-cmyk/installation-app').trim();
+  var res = UrlFetchApp.fetch('https://api.github.com/repos/' + repo + '/actions/workflows/ai-check.yml/dispatches', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+    payload: JSON.stringify({ ref: String(_props.getProperty('GH_REF') || 'main') }) });
+  var code = res.getResponseCode();
+  if (code !== 204) {
+    try { cache.remove('aibot_kick'); } catch (e) {}
+    _auditWrite_('system', 'kickAiBot', 'ปลุกบอท AI ไม่สำเร็จ HTTP ' + code + ' ' + String(res.getContentText() || '').slice(0, 150));
+    return { ok: false, why: 'http ' + code };
+  }
+  return { ok: true };
+}
+/** รันเองใน Apps Script เพื่อทดสอบ/อนุญาตสิทธิ์: ดูผลใน Logger + แท็บ Actions บน GitHub */
+function testKickAiBot() { try { CacheService.getScriptCache().remove('aibot_kick'); } catch (e) {} var r = _kickAiBot_(); Logger.log(JSON.stringify(r)); return r; }
 
 // ── อีเมลส่งรูป ──
 function _noteMailError(msg) {
@@ -1028,10 +1061,27 @@ function findPhotoFiles(codeStr) {
   return findPhotoEntries(codeStr).map(function(e){ return e.file; });
 }
 
+/** รูปของงาน+จุดนี้ตาม _InstallLog (ใช้จำกัดสิ่งที่แอปช่างเห็น) */
+function _jobCodeImgIds_(jobId, code) {
+  var ok = {}, ss = openNamedSS('_InstallLog', null); if (!ss) return ok;
+  var rows = ss.getActiveSheet().getDataRange().getValues(), cu = String(code).trim().toUpperCase();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) !== String(jobId) || String(rows[i][1]).trim().toUpperCase() !== cu) continue;
+    try { JSON.parse(rows[i][7] || '[]').forEach(function(id){ ok[String(id)] = 1; }); } catch (e) {}
+  }
+  return ok;
+}
 function getPhotos(params) {
   try {
     var code = params.code || '';
+    var allow = null;
+    if (params._field) {           // ไม่ได้ล็อกอิน → ต้องระบุงาน และเห็นเฉพาะรูปที่ส่งเข้างานนั้น
+      if (!params.jobId) return json({ photos: [], error: 'ต้องระบุงาน' });
+      allow = _jobCodeImgIds_(String(params.jobId), code);
+      if (!Object.keys(allow).length) return json({ photos: [], note: 'ไม่พบรูปของ ' + code });
+    }
     var entries = findPhotoEntries(code);
+    if (allow) entries = entries.filter(function(en){ return allow[en.file.getId()]; });
     if (!entries.length) return json({ photos: [], note: 'ไม่พบรูปของ '+code });
     // เรียง: วันที่ใหม่สุดก่อน แล้วตามชื่อไฟล์
     entries.sort(function(a,b){
@@ -1259,7 +1309,7 @@ function fixCode(body) {
       }
     })();
 
-    bustCache(['resp_ilog', 'resp_ilog_' + jobId, 'portal_' + jobId]);
+    bustCache(['resp_ilog', 'resp_ilog_' + jobId, 'resp_ilogf_' + jobId, 'portal_' + jobId]);
     if (!logRows) return json({ success:true, moved:0, note:'ไม่พบบันทึกของ ' + oldCode + ' ในงานนี้' });
     return json({ success:true, moved:movedFiles, notIndexed:notIndexed,
       note: notIndexed ? 'มีรูปเก่าอีก ' + notIndexed + ' รูปที่ไม่อยู่ในดัชนี — เปลี่ยนชื่อใน Drive เองถ้าต้องการ' : '' });
@@ -1320,7 +1370,7 @@ function deletePhotosFn(body) {
         });
       } catch(e) { Logger.log('deletePhotos log: ' + e.message); }
     }
-    bustCache(['resp_ilog', 'resp_ilog_' + jobId, 'portal_' + jobId, 'resp_jobs_full', 'resp_jobs_field']);
+    bustCache(['resp_ilog', 'resp_ilog_' + jobId, 'resp_ilogf_' + jobId, 'portal_' + jobId, 'resp_jobs_full', 'resp_jobs_field']);
     return json({ success:true, deleted:deleted, refused:refused, remaining:remaining });
   } catch(err) { return json({ success:false, error:err.message }); }
 }
@@ -1355,7 +1405,7 @@ function deleteCodeFiles(body) {
       c.remove('seen_' + jobId + '_' + who + '_' + code);
     } catch(e) {}
 
-    bustCache(['resp_ilog', 'resp_ilog_' + jobId, 'portal_' + jobId, 'resp_jobs_full', 'resp_jobs_field']);
+    bustCache(['resp_ilog', 'resp_ilog_' + jobId, 'resp_ilogf_' + jobId, 'portal_' + jobId, 'resp_jobs_full', 'resp_jobs_field']);
     return json({ success:true, deleted:deleted, logDeleted:logDeleted, notIndexed:notIndexed });
   } catch(err) { return json({ success:false, error:err.message }); }
 }
@@ -1401,6 +1451,13 @@ function getInstallLog(params) {
   var jobId = params && params.jobId ? String(params.jobId) : '';
   // มี jobId = แอปช่างขอแค่งานเดียว (กรองที่เซิร์ฟเวอร์ ลด JSON ที่ส่งกลับ ไม่ต้องรอโหลดทุกงาน)
   // ไม่มี jobId = แอดมิน/War Room ขอภาพรวมทุกงาน (พฤติกรรมเดิมเป๊ะ ไม่กระทบ)
+  if (jobId && params._field) {   // แอปช่าง: ตัดลิงก์โฟลเดอร์ Drive ออก (ช่างไม่ได้ใช้)
+    return respCache('resp_ilogf_' + jobId, 45, function(){
+      var r = buildInstallLog(jobId);
+      (r.log || []).forEach(function(e){ delete e.folderUrl; delete e.productFolderUrl; });
+      return r;
+    });
+  }
   if (jobId) {
     return respCache('resp_ilog_' + jobId, 45, function(){ return buildInstallLog(jobId); });
   }
@@ -1591,10 +1648,8 @@ function buildRepairLog() {
 // ═══════════════════════════ CUSTOMER PORTAL ═══════════════════════════
 
 function genPortalKey() {
-  var chars = 'abcdefghjkmnpqrstuvwxyz23456789';
-  var key = '';
-  for (var i = 0; i < 10; i++) key += chars.charAt(Math.floor(Math.random() * chars.length));
-  return key;
+  // สุ่มจาก UUID (ปลอดภัยกว่า Math.random) · 20 ตัวอักษร เดายากมาก · ลิงก์เดิมที่ส่งไปแล้วยังใช้ได้
+  return (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').slice(0, 20);
 }
 
 function getPortalLink(p) {
@@ -2256,7 +2311,7 @@ function _aiJobSummaryHtml(jobId, codes) {
     color = '#b25e00'; bg = '#fff4e5';
     var draftBy = by;
   }
-  if (unchecked) { lines.push('⏳ AI ยังไม่ได้ตรวจ ' + unchecked + ' รูป (บอทจะตรวจให้ในรอบถัดไป)'); if (color === PLANB_BLUE) { color = '#555'; bg = '#f3f3f3'; } }
+  if (unchecked) { lines.push('⏳ AI ยังไม่ได้ตรวจ ' + unchecked + ' รูป (' + (_aiBotReady_() ? 'บอทเริ่มตรวจแล้ว — ผลขึ้นใน Snaphub ภายในไม่กี่นาที' : 'บอทจะตรวจให้ในรอบถัดไป') + ')'); if (color === PLANB_BLUE) { color = '#555'; bg = '#f3f3f3'; } }
   if (total && !waiting && !unchecked) lines.push('✓ ไม่พบรูปที่ต้องแจ้งช่าง');
   return '<div style="background:' + bg + ';color:' + color + ';border-radius:10px;padding:12px;font-size:13px;line-height:1.7;margin-bottom:18px;text-align:left">' + lines.join('<br>') + '</div>' +
     (draftBy ? _draftHtml_(draftBy) : '');
