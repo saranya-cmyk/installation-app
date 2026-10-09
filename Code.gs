@@ -113,6 +113,7 @@ function doPost(e) {
     if (body.action === 'reportRepair')    return reportRepair(body);
     if (body.action === 'aiSaveChecks')    return withLock(function(){ return aiSaveChecks(body); });
     if (body.action === 'aiDecision')      return withLock(function(){ return aiDecision(body); });
+    if (body.action === 'aiDraft')         return aiDraft(body);
     if (body.action === 'securityInfo')    return securityInfo(body);
     if (body.action === 'securitySet')     return securitySet(body);
     return json({ error: 'unknown action' });
@@ -498,15 +499,50 @@ function mkFolder(parent, name) {
   return ex.hasNext() ? ex.next() : parent.createFolder(name);
 }
 
+/** โฟลเดอร์สินค้าแยกตามงาน — ชื่อสินค้าซ้ำกันคนละงาน (เดือน+สื่อเดียวกัน) จะได้โฟลเดอร์ใหม่ "ชื่อ (2)"
+ *  งานล่าสุดเห็นเฉพาะรูปของตัวเอง · ผูกงานด้วยคำอธิบายโฟลเดอร์ snap-job:<jobId> */
+var SNAP_JOB_TAG = 'snap-job:';
+function _productFolder_(media, productName, jobId) {
+  if (!jobId) return mkFolder(media, productName);
+  var tag = SNAP_JOB_TAG + jobId, legacy = [], same = 0, it = media.getFolders();
+  while (it.hasNext()) {
+    var f = it.next(), nm = f.getName();
+    if (nm !== productName && nm.indexOf(productName + ' (') !== 0) continue;
+    same++;
+    var d = ''; try { d = String(f.getDescription() || ''); } catch (e) {}
+    if (d === tag) return f;
+    if (!d && nm === productName) legacy.push(f);
+  }
+  // โฟลเดอร์เก่าก่อนมีระบบผูกงาน: ใช้ต่อได้เฉพาะเมื่อไม่มีงานอื่นใช้อยู่
+  for (var i = 0; i < legacy.length; i++) {
+    if (!_folderUsedByOtherJob_(legacy[i].getId(), jobId)) {
+      try { legacy[i].setDescription(tag); } catch (e) {}
+      return legacy[i];
+    }
+  }
+  var nf = media.createFolder(same ? productName + ' (' + (same + 1) + ')' : productName);
+  try { nf.setDescription(tag); } catch (e) {}
+  return nf;
+}
+function _folderUsedByOtherJob_(folderId, jobId) {
+  try {
+    var ss = openNamedSS('_InstallLog', null); if (!ss) return false;
+    var rows = ss.getActiveSheet().getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++)
+      if (String(rows[i][6] || '').indexOf(folderId) > -1 && String(rows[i][0]) !== String(jobId)) return true;
+    return false;
+  } catch (e) { return true; }   // อ่านไม่ได้ → แยกโฟลเดอร์ใหม่ไว้ก่อน ปลอดภัยกว่า
+}
+
 /** [P4] สร้าง chain โฟลเดอร์ทั้งเส้นภายใต้ lock เดียว — กันโฟลเดอร์ซ้ำเมื่อยิงพร้อมกัน */
-function makeCodeFolderChain(monthStr, mediaName, productName, dateStr, code) {
+function makeCodeFolderChain(monthStr, mediaName, productName, dateStr, code, jobId) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
     var root   = DriveApp.getFolderById(CONFIG.DRIVE_FOLDER_ID);
     var month  = mkFolder(root, monthStr);
     var media  = mkFolder(month, mediaName);
-    var prod   = mkFolder(media, productName);
+    var prod   = _productFolder_(media, productName, jobId);
     var dateF  = mkFolder(prod, dateStr);
     var codeF  = mkFolder(dateF, code);
     return { month: month, product: prod, code: codeF };
@@ -728,7 +764,7 @@ function uploadBatch(body) {
 
     var fold;
     try {
-      fold = makeCodeFolderChain(monthStr, mediaName, productName, dateStr, code);
+      fold = makeCodeFolderChain(monthStr, mediaName, productName, dateStr, code, jobId);
     } catch(e) {
       failedTotal += group.length;
       uploadedCodes.push({ code:code, product:productName, address:spot?(spot.address||''):'',
@@ -2192,7 +2228,7 @@ function _aiFlagReport(jobId, codes) {
   if (codes && codes.length) { only = {}; codes.forEach(function(c){ only[String(c).trim().toUpperCase()] = true; }); }
   var index = _aiPhotoIndex(), rows = _aiLogSheet().getDataRange().getValues(), seen = {}, by = {};
   for (var i = 1; i < rows.length; i++) {
-    if (String(rows[i][1]) !== String(jobId) || rows[i][4] !== 'flag' || !index[String(rows[i][3])]) continue;
+    if ((jobId && String(rows[i][1]) !== String(jobId)) || rows[i][4] !== 'flag' || !index[String(rows[i][3])]) continue;
     var code = String(rows[i][2]).trim().toUpperCase();
     if (only && !only[code]) continue;
     var who = index[String(rows[i][3])].installer || 'ไม่ระบุช่าง';
@@ -2312,6 +2348,16 @@ function _draftInstallerMessages_(by) {
   try { cache.put(cacheKey, JSON.stringify(out), 21600); } catch (e) {}
   return out;
 }
+/** Snaphub ปุ่ม "💬 ร่างข้อความแจ้งช่าง" — ใช้ธงล่าสุด ณ ตอนกด (ไม่ต้องรออีเมลรายวัน) · แอดมินเท่านั้น */
+function aiDraft(body) {
+  try {
+    var by = _aiFlagReport(String(body.jobId || ''), null), names = Object.keys(by);
+    if (!names.length) return json({ success: true, source: 'none', drafts: [] });
+    var d = _draftInstallerMessages_(by);
+    return json({ success: true, source: d.source, model: d.model || '',
+      drafts: names.map(function (n) { return { installer: n, count: by[n].length, text: d.msgs[n] || '' }; }) });
+  } catch (e) { return json({ success: false, error: String(e && e.message || e) }); }
+}
 function _draftHtml_(by) {
   var d = _draftInstallerMessages_(by), names = Object.keys(d.msgs || {});
   if (!names.length) return '';
@@ -2337,6 +2383,9 @@ function _webAppUrl() {
 
 // ═══════════════ รายงานรายวัน (แทนการรอครบ 100%) ═══════════════
 // _Jobs คอลัมน์ 13 = reportedCodes (จุดที่ส่งเซลแล้ว) · 14 = pendingCodes (จุดรอบนี้ที่รอแอดมินยืนยัน)
+function mailCcOf_(ccEmail, noSales) {
+  return ccEmail ? ccEmail : (!noSales && CONFIG.ADMIN_EMAIL ? CONFIG.ADMIN_EMAIL : '');
+}
 function _codesOf(v) {
   try { var a = JSON.parse(v || '[]'); return Array.isArray(a) ? a.map(function(c){ return String(c).trim().toUpperCase(); }) : []; }
   catch (e) { return []; }
@@ -2636,7 +2685,7 @@ function approveSend(p) {
     // 3) ส่งอีเมลถึงเซล (หรือแอดมินถ้าไม่มีเซล)
     var noSales = !salesEmail;
     var to = noSales ? CONFIG.ADMIN_EMAIL : salesEmail;
-    // ลิงก์โฟลเดอร์รูปใน Drive ของจุดรอบนี้ — เปิดสิทธิ์ "ทุกคนที่มีลิงก์ดูได้" ให้เซลเปิดได้
+    // ลิงก์โฟลเดอร์รูปใน Drive ของงานนี้ — เปิด "ทุกคนที่มีลิงก์ดูได้" ให้เซลส่งต่อลูกค้าได้
     var folders = [], seenF = {};
     sentNow.forEach(function(c) {
       var u = prodUrlOf[c]; if (!u || seenF[u]) return; seenF[u] = true;
@@ -2654,8 +2703,7 @@ function approveSend(p) {
         (isDone ? ' — ครบ ' + spots.length + ' จุด' : ' — +' + sentNow.length + ' จุด (' + cum + '/' + spots.length + ')'),
       htmlBody: mailHtml };
     if (logoBlob) mailOpts.inlineImages = { planblogo: logoBlob };
-    if (ccEmail) mailOpts.cc = ccEmail;
-    else if (!noSales && CONFIG.ADMIN_EMAIL) mailOpts.cc = CONFIG.ADMIN_EMAIL;
+    var ccOut = mailCcOf_(ccEmail, noSales); if (ccOut) mailOpts.cc = ccOut;
     MailApp.sendEmail(mailOpts);
 
     // 4) ปิดสถานะ
