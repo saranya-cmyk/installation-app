@@ -312,22 +312,23 @@ const d0 = _draftInstallerMessages_(byF);
 t('ไม่มีคีย์ Gemini → ใช้ข้อความแม่แบบ ไม่เรียก API งานไม่สะดุด', d0.source === 'template' && fetched.length === 0 && /DP713/.test(d0.msgs['สมชาย']));
 for (const k of Object.keys(cacheStore)) delete cacheStore[k];
 propStore.GEMINI_API_KEY = 'KEY123';
-const okText = { messages: [ { id: 'ช่าง 1', text: '{NAME} รบกวนถ่าย DP713 ใหม่นะครับ รูปเบลอ ลองถือมือถือให้นิ่งแล้วแตะโฟกัสที่ป้ายก่อนกดถ่าย' },
-                             { id: 'ช่าง 2', text: '{NAME} รบกวนเช็ค DP959 กับ DP1090 ครับ DP959 อาจติดผิดป้าย ส่วน DP1090 รูปมืด ถ่ายป้าย Code ให้ชัดด้วยนะครับ' } ] };
+const okText = { messages: [ { id: 'ช่าง 1', items: [{ code: 'DP713', fix: 'ถือมือถือให้นิ่ง แตะโฟกัสก่อนถ่าย' }] },
+                             { id: 'ช่าง 2', items: [{ code: 'DP959', fix: 'ถ่ายป้าย Code ให้ชัด เช็คว่าติดถูกจุด' }, { code: 'DP1090', fix: 'ถ่ายตอนไฟป้ายติด' }] } ] };
 gemReply = (m) => m === 'gemini-2.5-flash-lite' ? { getResponseCode: () => 404, getContentText: () => '{}' }
   : { getResponseCode: () => 200, getContentText: () => JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(okText) }] } }] }) };
 const d1 = _draftInstallerMessages_(byF);
 const sentBody = fetched.filter(f => /generateContent/.test(f.url)).map(f => f.body).join(' ');
 t('มีคีย์ → เรียก Gemini API จริง (รุ่นแรกใช้ไม่ได้ → ลองรุ่นถัดไปเอง)', d1.source === 'gemini' && d1.model === 'gemini-2.5-flash' && fetched.some(f => /gemini-2.5-flash-lite:generateContent/.test(f.url)));
-t('ข้อความที่ได้ใส่ชื่อช่างกลับให้ และมีครบทุก Code', /^ช่างสมชาย/.test(d1.msgs['สมชาย']) && /DP959/.test(d1.msgs['วิชัย']) && /DP1090/.test(d1.msgs['วิชัย']));
+t('ข้อความที่ได้ใส่ชื่อช่างกลับให้ และมีครบทุก Code', /^สวัสดีค่ะ ช่างสมชาย/.test(d1.msgs['สมชาย']) && /DP959/.test(d1.msgs['วิชัย']) && /DP1090/.test(d1.msgs['วิชัย']));
+t('ข้อความแจ้งช่างแบ่งบรรทัดอ่านง่าย: จุดละบรรทัด + วิธีถ่ายใต้แต่ละจุด', d1.msgs['วิชัย'].split('\n').filter(l => /^📍/.test(l)).length === 2 && /📍 DP1090\n⚠️ รูปมืด[^\n]*\n👉 ถ่ายตอนไฟป้ายติด/.test(d1.msgs['วิชัย']));
 t('ส่งให้ Gemini เฉพาะ Code + เหตุผล — ไม่มีชื่อช่างจริง ไม่มีรูป', sentBody.indexOf('สมชาย') === -1 && sentBody.indexOf('วิชัย') === -1 && !/base64|inlineData|image/.test(sentBody) && /DP713/.test(sentBody));
 t('ทุกครั้งที่เรียก บันทึกลงชีท _AIApiLog (โมเดล · ผล · เวลา)', apiLog.length === 1 && apiLog[0][2] === 'gemini-2.5-flash' && apiLog[0][3] === 'ok');
 t('จำรุ่นที่ใช้ได้ไว้ รอบหน้าไม่ต้องลองใหม่', propStore.GEMINI_MODEL === 'gemini-2.5-flash');
 for (const k of Object.keys(cacheStore)) delete cacheStore[k];
-const badText = { messages: [ { id: 'ช่าง 1', text: '{NAME} รบกวนถ่าย DP713 ใหม่' }, { id: 'ช่าง 2', text: '{NAME} รบกวนเช็ค DP959 ครับ' } ] };
+const badText = { messages: [ { id: 'ช่าง 1', items: [{ code: 'DP713', fix: 'ถือให้นิ่งแล้วถ่าย DP713 ใหม่' }] }, { id: 'ช่าง 2', items: [{ code: 'DP959', fix: 'ถ่ายป้าย Code ให้ชัด' }] } ] };
 gemReply = () => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(badText) }] } }] }) });
 const d2 = _draftInstallerMessages_(byF);
-t('ตรวจผลก่อนใช้: Gemini ลืม Code (DP1090) → ข้อความช่างคนนั้นใช้แม่แบบแทน คนอื่นใช้ของ Gemini', d2.source === 'gemini+template' && /DP1090/.test(d2.msgs['วิชัย']) && /ถ่าย DP713 ใหม่/.test(d2.msgs['สมชาย']));
+t('ตรวจผลก่อนใช้: Gemini ลืมจุด DP1090 → จุดนั้นใช้คำแนะนำสำรอง จุดอื่นใช้ของ Gemini', d2.source === 'gemini+template' && /DP1090\n⚠️ รูปมืด[^\n]*\n👉 ถ่ายตอนไฟป้ายติด หรือเปิดแฟลช/.test(d2.msgs['วิชัย']) && /ถ่าย DP713 ใหม่/.test(d2.msgs['สมชาย']));
 for (const k of Object.keys(cacheStore)) delete cacheStore[k];
 apiLog.length = 0;
 gemReply = () => ({ getResponseCode: () => 429, getContentText: () => '{}' });
