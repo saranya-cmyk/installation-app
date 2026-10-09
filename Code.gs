@@ -2340,7 +2340,8 @@ function _draftInstallerMessages_(by) {
   if (!names.length) return { source: 'none', msgs: {} };
   var tpl = {};
   names.forEach(function (n) { tpl[n] = _fmtDraft_(n, by[n], []); });
-  var cacheKey = 'gem2_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(by))).slice(0, 22);
+  // ผูกผลที่จำไว้กับคีย์ปัจจุบัน — เปลี่ยน/ใส่คีย์ใหม่ = ไม่ใช้ผลเก่า (กันค้างข้อความแม่แบบจากตอนยังไม่มีคีย์)
+  var cacheKey = 'gem3_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(by) + '|' + _geminiKey_().slice(-8))).slice(0, 22);
   var cache = CacheService.getScriptCache(), hit = cache.get(cacheKey);
   if (hit) { try { return JSON.parse(hit); } catch (e) {} }
   // ส่งแบบไม่ระบุตัวตน: ช่าง 1, ช่าง 2 ... (ไม่ส่งชื่อจริง ชื่อลูกค้า หรือรูป)
