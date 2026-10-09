@@ -2991,10 +2991,16 @@ function aiqDraft(btn) {
           return '<div style="background:#1b1b1b;border:1px solid #333;border-radius:10px;padding:10px;margin-bottom:8px">' +
             '<div style="font-size:12px;color:#aaa;margin-bottom:4px">👷 ' + esc(d.installer) + ' · ' + d.count + ' จุด</div>' +
             '<div id="aiqDraftT' + k + '" style="white-space:pre-wrap;font-size:13px;line-height:1.6">' + esc(d.text) + '</div>' +
-            '<button class="copy-btn btn-ghost" style="margin-top:6px" onclick="aiqCopyDraft(' + k + ',this)">📋 คัดลอก</button></div>';
+            '<button class="copy-btn btn-ghost" style="margin-top:6px" onclick="aiqCopyDraft(' + k + ',this)">📋 คัดลอก</button> ' +
+            '<button class="copy-btn" style="margin-top:6px;background:#06C755;color:#fff;font-weight:bold;border:none" onclick="aiqLineDraft(' + k + ')">💬 ส่ง LINE</button></div>';
         }).join('') + '<button class="copy-btn btn-ghost" onclick="_aiqDraftCache.html=\'\';aiqRenderReview()" style="font-size:11px">↻ ร่างใหม่จากธงล่าสุด</button>';
       _aiqDraftCache = { job: forJob, html: box.innerHTML };
     }).catch(function(err) { btn.disabled = false; btn.textContent = '💬 ร่างข้อความแจ้งช่าง (Gemini)'; alert(err.message); });
+}
+// เปิด LINE พร้อมข้อความ → เลือกแชทช่าง/กลุ่มแล้วกดส่ง (มือถือเปิดแอป LINE · คอมเปิด LINE PC/เว็บ)
+function aiqLineDraft(k) {
+  var t = (document.getElementById('aiqDraftT' + k) || {}).textContent || '';
+  window.open('https://line.me/R/share?text=' + encodeURIComponent(t), '_blank');
 }
 function aiqCopyDraft(k, btn) {
   var t = (document.getElementById('aiqDraftT' + k) || {}).textContent || '';
