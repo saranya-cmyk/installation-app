@@ -2391,7 +2391,8 @@ function _draftHtml_(by) {
     : '💬 ข้อความแจ้งช่าง — ร่างโดย Gemini API' + (d.model ? ' (' + d.model + ')' : '') + ' · คัดลอกส่ง LINE ได้เลย';
   return '<div style="text-align:left;margin:-8px 0 18px 0;padding:12px;border:1px dashed #d9b98a;border-radius:10px;background:#fffdf8;font-size:13px;color:#333">' +
     '<div style="font-weight:bold;color:#b25e00;margin-bottom:6px">' + head + '</div>' +
-    names.map(function (n) { return '<div style="margin:6px 0;padding:10px 12px;background:#fff;border-radius:8px;border:1px solid #eee;white-space:pre-line;line-height:1.7">' + esc_(d.msgs[n]) + '</div>'; }).join('') +
+    names.map(function (n) { return '<div style="margin:6px 0;padding:10px 12px;background:#fff;border-radius:8px;border:1px solid #eee;white-space:pre-line;line-height:1.7">' + esc_(d.msgs[n]) +
+      '<div style="white-space:normal;margin-top:8px"><a href="https://line.me/R/share?text=' + encodeURIComponent(d.msgs[n]) + '" style="display:inline-block;background:#06C755;color:#fff;text-decoration:none;font-weight:bold;font-size:12px;padding:6px 12px;border-radius:6px">💬 ส่ง LINE</a></div></div>'; }).join('') +
     '<div style="color:#999;font-size:11px">ส่งให้ AI เฉพาะ Code + เหตุผล (ไม่มีรูป · ไม่มีชื่อลูกค้า · ไม่มีชื่อช่าง)</div></div>';
 }
 /** เมนู 🔒: ใส่/ลบคีย์ Gemini (คีย์ไม่ถูกส่งกลับไปที่แอป) + ทดสอบ */
