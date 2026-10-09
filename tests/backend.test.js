@@ -129,6 +129,7 @@ upsertInstallLog = () => {}; logSheet = () => {}; checkJobCompletion = () => {};
 const up = (b, code, n, tok) => uploadBatch({ jobId: 'M', installer: 'ช่าง', jobName: 'งานM', media: 'Bus', spots: [{code}], batchIndex: b, totalBatches: 3,
   sessionToken: tok, requestId: tok + b, files: Array.from({length:n}, () => ({ _forceCode: code, data: 'x', name: 'a.jpg' })) });
 up(2, 'C3', 1, 'T1');
+t('ยังไม่ตั้ง GH_TOKEN → ไม่ปลุกบอท ไม่กระทบการอัปโหลด', JSON.stringify(_kickAiBot_()) === JSON.stringify({ ok: false, why: 'notoken' }));
 t('รูปเข้าแล้วส่งอีเมลทันที ไม่รอก้อนอื่น', mails.length === 1 && mails[0] === 'C3:1');
 up(0, 'C1', 2, 'T1'); up(1, 'C2', 3, 'T1');
 t('ทุกก้อนได้อีเมลของตัวเอง ครบทุกจุด ไม่ตกหล่น', mails.length === 3 && mails.join('|') === 'C3:1|C1:2|C2:3');
@@ -242,7 +243,7 @@ t('โหมดทดลอง (ยังไม่เปิด) → คำขอ
 securitySet(Object.assign({ enforce: true }, ownerBody));
 t('เปิดใช้จากเมนู 🔒 ได้', _authOn());
 t('เปิดใช้แล้ว → ไม่มีบัตรผ่าน ลบงาน/สร้างงาน/ลิงก์ลูกค้า/เมนู 🔒 ไม่ได้', deny('deleteJob', '') && deny('saveJob', '') && deny('portalLink', '') && deny('securityInfo', '') && deny('securitySet', ''));
-t('แอปช่างไม่ต้องล็อกอิน: ส่งรูป แจ้งปัญหา ดูงานแบบช่าง ได้ปกติ', !deny('uploadBatch', '') && !deny('reportProblem', '') && !deny('getJobs', '', { view: 'field' }) && !deny('getInstallLog', ''));
+t('แอปช่างไม่ต้องล็อกอิน: ส่งรูป แจ้งปัญหา ดูงานแบบช่าง ได้ปกติ', !deny('uploadBatch', '') && !deny('reportProblem', '') && !deny('getJobs', '', { view: 'field' }) && !deny('getInstallLog', '', { jobId: 'J1' }));
 const pj = {}; _authGate('getJobs', '', pj);
 t('ไม่มีบัตรผ่านขอรายการงาน → ได้แบบช่างอัตโนมัติ (แอปช่างรุ่นเก่ายังใช้ได้)', pj.view === 'field');
 const fieldJobs = JSON.parse(getJobsList({ view: 'field' }).getContent()).jobs;
@@ -251,6 +252,11 @@ t('ลูกค้า Portal และลิงก์ยืนยันในอ
 t('แอดมินทำได้ทุกอย่าง', !deny('deleteJob', nok.token) && !deny('saveJob', tkO) && !deny('portalLink', tkO));
 const tkV = JSON.parse(login({ role: 'view', pass: propStore.VIEW_KEY }).getContent()).token;
 t('จอ War Room ดู + บันทึกผล AI ได้ แต่ลบ/สร้างงานไม่ได้', !deny('aiPending', tkV) && !deny('aiSaveChecks', tkV) && !deny('getJobs', tkV) && deny('deleteJob', tkV) && deny('saveJob', tkV));
+t('คนไม่ล็อกอินดูประวัติส่งรูปทุกงานไม่ได้ (ต้องระบุงาน) · ดูรูปย่อด้วย AI ไม่ได้', deny('getInstallLog', '') && deny('getPhotoThumbs', '') && !deny('getInstallLog', tkV) && !deny('getPhotoThumbs', tkV));
+{
+  const pp = { jobId: 'J1' }; _authGate('getInstallLog', '', pp); const pa = { jobId: 'J1', _field: '1' }; _authGate('getInstallLog', tkO, pa);
+  t('แอปช่างได้ข้อมูลแบบตัดลิงก์ Drive · แอดมินได้ครบ (ปลอม _field ไม่ได้)', pp._field === '1' && !('_field' in pa));
+}
 t('ร่างข้อความแจ้งช่าง (Gemini) ใน Snaphub → แอดมินเท่านั้น จอ War Room/ไม่ล็อกอิน ใช้ไม่ได้', !deny('aiDraft', tkO) && deny('aiDraft', tkV) && deny('aiDraft', ''));
 {
   const keepR = _aiFlagReport, keepD = _draftInstallerMessages_;
@@ -295,6 +301,35 @@ t('แอดมินลบรูปเก่าได้', trashed.join() === '
 disableSecurity();
 t('disableSecurity → ใช้งานได้ทันที (ฉุกเฉิน)', _authGate('deleteJob', '', {}) === null);
 
+// ── แอปช่างเห็นเฉพาะรูปของงานตัวเอง ──
+{
+  const keepFind = findPhotoEntries, keepOpen = openNamedSS;
+  const mk = (id) => ({ file: { getId: () => id, getName: () => 'DP1_' + id + '.jpg', setSharing(){} }, date: '2026-10-09' });
+  findPhotoEntries = () => [mk('A1'), mk('B9')];   // B9 = รูปจุดเดียวกันของงานอื่น
+  openNamedSS = (n) => n === '_InstallLog' ? { getActiveSheet: () => ({ getDataRange: () => ({ getValues: () => [[], ['J1', 'DP1', 'ช่าง', '', 1, '', '', '["A1"]'], ['J2', 'DP1', 'ช่าง', '', 1, '', '', '["B9"]']] }) }) } : null;
+  const pub = JSON.parse(getPhotos({ code: 'DP1', jobId: 'J1', _field: '1' }).getContent());
+  const noJob = JSON.parse(getPhotos({ code: 'DP1', _field: '1' }).getContent());
+  const adm = JSON.parse(getPhotos({ code: 'DP1' }).getContent());
+  t('แอปช่าง: เห็นเฉพาะรูปที่ส่งเข้างานนั้น · ไม่ระบุงาน = ไม่ได้รูป · แอดมินเห็นทั้งหมด', pub.photos.length === 1 && pub.photos[0].id === 'A1' && noJob.photos.length === 0 && adm.photos.length === 2);
+  t('ลิงก์ลูกค้า (Portal key) สุ่มแบบปลอดภัย ยาว 20 ตัว', /^[0-9a-f]{20}$/.test(genPortalKey()) && genPortalKey() !== genPortalKey());
+  findPhotoEntries = keepFind; openNamedSS = keepOpen;
+}
+// ── ปลุกหุ่นยนต์ AI ทันทีที่รูปเข้า (GitHub Actions workflow_dispatch) ──
+{
+  const keepFetch = global.UrlFetchApp, calls = [];
+  global.UrlFetchApp = { fetch: (url, opt) => { calls.push({ url, opt }); return { getResponseCode: () => 204, getContentText: () => '' }; } };
+  propStore.GH_TOKEN = 'ghp_TEST';
+  for (const k of Object.keys(cacheStore)) if (k === 'aibot_kick') delete cacheStore[k];
+  const k1 = _kickAiBot_(), k2 = _kickAiBot_();
+  t('มีรูปเข้า → สั่ง GitHub Actions ตรวจทันที (ai-check.yml บน main)', k1.ok && calls.length === 1 && /repos\/saranya-cmyk\/installation-app\/actions\/workflows\/ai-check\.yml\/dispatches$/.test(calls[0].url)
+    && calls[0].opt.headers.Authorization === 'Bearer ghp_TEST' && JSON.parse(calls[0].opt.payload).ref === 'main');
+  t('รูปเข้ารัวๆ → ไม่ยิงซ้ำภายใน 2 นาที', k2.skipped === true && calls.length === 1);
+  delete cacheStore['aibot_kick'];
+  global.UrlFetchApp = { fetch: () => ({ getResponseCode: () => 401, getContentText: () => 'Bad credentials' }) };
+  const k3 = _kickAiBot_();
+  t('โทเคนผิด/หมดอายุ → แจ้งพลาด ไม่ล็อกรอบ (ลองใหม่ได้ทันที)', k3.ok === false && !cacheStore['aibot_kick']);
+  delete propStore.GH_TOKEN; global.UrlFetchApp = keepFetch;
+}
 // ── Gemini API: ร่างข้อความแจ้งช่าง (ส่งเฉพาะ Code + เหตุผล · ตรวจผลก่อนใช้ · พังได้ไม่กระทบงาน) ──
 for (const k of Object.keys(cacheStore)) delete cacheStore[k];
 const apiLog = [], fetched = [];
