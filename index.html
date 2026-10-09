@@ -1276,7 +1276,7 @@ function openPhotoManager(code) {
       '</div>' +
     '</div>';
   document.body.appendChild(m);
-  fetch(SCRIPT_URL + '?action=getPhotos&code=' + encodeURIComponent(code))
+  fetch(SCRIPT_URL + '?action=getPhotos&code=' + encodeURIComponent(code) + '&jobId=' + encodeURIComponent(selectedJob ? selectedJob.id : ''))
     .then(function(r){ return r.json(); })
     .then(function(d) {
       var grid = document.getElementById('pmGrid');
