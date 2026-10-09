@@ -309,7 +309,8 @@ global.UrlFetchApp = { fetch: (url, opt) => {
 delete propStore.GEMINI_API_KEY; delete propStore.GEMINI_MODEL;
 const byF = { 'สมชาย': [{ code: 'DP713', reason: 'รูปเบลอมาก' }], 'วิชัย': [{ code: 'DP959', reason: 'อาจติดผิดป้าย — อ่านได้ DP958' }, { code: 'DP1090', reason: 'รูปมืด / อาจไฟป้ายดับ' }] };
 const d0 = _draftInstallerMessages_(byF);
-t('ไม่มีคีย์ Gemini → ใช้ข้อความแม่แบบ ไม่เรียก API งานไม่สะดุด', d0.source === 'template' && fetched.length === 0 && /DP713/.test(d0.msgs['สมชาย']));
+t('ไม่มีคีย์ Gemini → ใช้ข้อความแม่แบบ ไม่เรียก API งานไม่สะดุด · บอกสาเหตุ', d0.source === 'template' && d0.why === 'nokey' && fetched.length === 0 && /DP713/.test(d0.msgs['สมชาย']));
+t('ไม่มีคีย์ → ไม่จำผลแม่แบบไว้ (ใส่คีย์แล้วใช้ Gemini ได้ทันที)', Object.keys(cacheStore).filter(k => /^gem2_/.test(k)).length === 0);
 for (const k of Object.keys(cacheStore)) delete cacheStore[k];
 propStore.GEMINI_API_KEY = 'KEY123';
 const okText = { messages: [ { id: 'ช่าง 1', items: [{ code: 'DP713', fix: 'ถือมือถือให้นิ่ง แตะโฟกัสก่อนถ่าย' }] },
@@ -334,7 +335,7 @@ for (const k of Object.keys(cacheStore)) delete cacheStore[k];
 apiLog.length = 0;
 gemReply = () => ({ getResponseCode: () => 429, getContentText: () => '{}' });
 const d3 = _draftInstallerMessages_(byF);
-t('โควต้าหมด/ระบบล่ม → ใช้แม่แบบ งานไม่สะดุด + บันทึก error', d3.source === 'template' && apiLog.length === 1 && apiLog[0][3] === 'error');
+t('โควต้าหมด/ระบบล่ม → ใช้แม่แบบ งานไม่สะดุด + บันทึก error + บอกว่าโควต้าเต็ม', d3.source === 'template' && d3.why === 'quota' && apiLog.length === 1 && apiLog[0][3] === 'error');
 gemReply = () => { throw new Error('ไม่ควรเรียกซ้ำ'); };
 t('ข้อมูลเดิมไม่เรียก API ซ้ำ (ใช้ผลที่จำไว้)', _draftInstallerMessages_(byF).source === 'template');
 const si = JSON.parse(securityInfo({ _who: 'saranya@planbmedia.co.th' }).getContent());
