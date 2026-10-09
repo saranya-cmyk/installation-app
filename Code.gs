@@ -2312,38 +2312,64 @@ function _aiApiLog_(purpose, model, status, ms, note) {
   } catch (e) {}
 }
 /** by = {ชื่อช่าง: [{code, reason}]} → {ชื่อช่าง: ข้อความพร้อมส่ง LINE} · source = 'gemini' | 'template' */
+// คำแนะนำสำรองตามปัญหา (ใช้เมื่อ Gemini ไม่ตอบ/ตอบไม่ครบ)
+function _fixTip_(reason) {
+  var r = String(reason || '');
+  if (/ผิดป้าย/.test(r)) return 'ถ่ายป้าย Code ให้เห็นชัด และเช็คว่าติดตรงจุดนี้จริง';
+  if (/มืด|ไฟ/.test(r)) return 'ถ่ายตอนไฟป้ายติด หรือเปิดแฟลชช่วย';
+  if (/เบลอ/.test(r)) return 'ถือมือถือให้นิ่ง แตะโฟกัสที่ป้ายก่อนกดถ่าย';
+  if (/เอียง/.test(r)) return 'ยืนตรงหน้าป้าย ถือมือถือให้ตรง';
+  if (/Code|โค้ด/i.test(r)) return 'ถ่ายป้าย Code ให้เห็นชัดอีก 1 รูป';
+  return 'ถ่ายใหม่ให้เห็นป้ายชัดทั้งป้าย';
+}
+// จัดข้อความเป็นบรรทัด อ่านง่ายบน LINE: ทักทาย → จุดละ 2 บรรทัด (Code+ปัญหา / วิธีถ่าย) → ขอบคุณ
+function _fmtDraft_(name, items, fixes) {
+  var lines = ['สวัสดีค่ะ ช่าง' + (name === 'ไม่ระบุช่าง' ? '' : name) + ' 🙏', 'รบกวนถ่ายรูปใหม่ ' + items.length + ' จุดนะคะ', ''];
+  items.forEach(function (x, k) {
+    lines.push('📍 ' + x.code);
+    lines.push('⚠️ ' + x.reason);
+    lines.push('👉 ' + (fixes[k] || _fixTip_(x.reason)));
+    lines.push('');
+  });
+  lines.push('ถ้าผ่านไปแถวนั้นรบกวนถ่ายแล้วส่งในแอปได้เลยค่ะ ขอบคุณค่ะ 🙏');
+  return lines.join('\n');
+}
 function _draftInstallerMessages_(by) {
   var names = Object.keys(by || {});
   if (!names.length) return { source: 'none', msgs: {} };
   var tpl = {};
-  names.forEach(function (n) {
-    tpl[n] = 'ช่าง' + n + ' ครับ/ค่ะ รบกวนตรวจรูปจุดต่อไปนี้: ' + by[n].map(function (x) { return x.code + ' (' + x.reason + ')'; }).join(', ') + ' ถ้าผ่านไปแถวนั้นรบกวนถ่ายใหม่ให้ด้วยนะคะ ขอบคุณค่ะ';
-  });
-  var cacheKey = 'gem_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(by))).slice(0, 22);
+  names.forEach(function (n) { tpl[n] = _fmtDraft_(n, by[n], []); });
+  var cacheKey = 'gem2_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(by))).slice(0, 22);
   var cache = CacheService.getScriptCache(), hit = cache.get(cacheKey);
   if (hit) { try { return JSON.parse(hit); } catch (e) {} }
   // ส่งแบบไม่ระบุตัวตน: ช่าง 1, ช่าง 2 ... (ไม่ส่งชื่อจริง ชื่อลูกค้า หรือรูป)
   var anon = names.map(function (n, k) { return { id: 'ช่าง ' + (k + 1), items: by[n].slice(0, 20) }; });
   var prompt = 'คุณคือผู้ช่วยแอดมินทีมติดตั้งป้ายโฆษณา AI ตรวจรูปติดตั้งแล้วพบรูปที่ควรให้ช่างถ่ายใหม่ ' +
-    'เขียนข้อความ LINE สั้นๆ สุภาพ เป็นกันเอง ถึงช่างแต่ละคน (2-4 ประโยค) บอกว่าจุดไหนต้องถ่ายใหม่เพราะอะไร ' +
-    'และให้คำแนะนำการถ่ายที่ตรงกับปัญหา 1 ข้อ (เช่น รูปมืด → ถ่ายตอนไฟป้ายติดหรือเปิดแฟลช, รูปเบลอ → ถือนิ่ง/แตะโฟกัส, อาจติดผิดป้าย → ถ่ายป้าย Code ให้ชัด) ' +
-    'ต้องระบุ Code ทุกจุดให้ครบตามข้อมูล ห้ามแต่ง Code ใหม่ ขึ้นต้นข้อความด้วยคำว่า {NAME} แทนชื่อช่าง\n' +
-    'ตอบเป็น JSON เท่านั้น รูปแบบ {"messages":[{"id":"ช่าง 1","text":"..."}]}\nข้อมูล: ' + JSON.stringify(anon);
+    'สำหรับแต่ละจุด เขียนคำแนะนำวิธีถ่ายใหม่ที่ตรงกับปัญหาของจุดนั้น 1 ประโยคสั้นๆ (ไม่เกิน 60 ตัวอักษร) ภาษาง่าย เป็นกันเอง ' +
+    '(เช่น รูปมืด → ถ่ายตอนไฟป้ายติดหรือเปิดแฟลช, รูปเบลอ → ถือนิ่ง/แตะโฟกัส, อาจติดผิดป้าย → ถ่ายป้าย Code ให้ชัดและเช็คจุดติด) ' +
+    'ใช้ code ตามข้อมูลเท่านั้น ห้ามแต่ง code ใหม่ ห้ามใส่คำทักทาย\n' +
+    'ตอบเป็น JSON เท่านั้น รูปแบบ {"messages":[{"id":"ช่าง 1","items":[{"code":"...","fix":"..."}]}]}\nข้อมูล: ' + JSON.stringify(anon);
   var r = _geminiJson_(prompt, 'ร่างข้อความแจ้งช่าง (' + names.length + ' คน)');
   var out = { source: 'template', msgs: tpl, model: '' };
   if (r.ok && r.data && r.data.messages) {
-    var got = {}, good = true;
-    r.data.messages.forEach(function (m) { got[String(m.id || '').trim()] = String(m.text || ''); });
-    var msgs = {};
+    var got = {}, good = true, msgs = {};
+    r.data.messages.forEach(function (m) {
+      var fx = {}; (m.items || []).forEach(function (it) { fx[String(it.code || '').trim().toUpperCase()] = String(it.fix || '').trim(); });
+      got[String(m.id || '').trim()] = fx;
+    });
     anon.forEach(function (a, k) {
-      var t = got[a.id] || '';
-      // ตรวจผลก่อนใช้: ต้องมีครบทุก Code และไม่ยาวเกิน — ไม่ผ่าน = ใช้แม่แบบของช่างคนนั้น
-      var allCodes = a.items.every(function (x) { return t.toUpperCase().indexOf(x.code) > -1; });
-      if (!t || !allCodes || t.length > 700) { good = false; msgs[names[k]] = tpl[names[k]]; }
-      else msgs[names[k]] = t.replace(/\{NAME\}/g, 'ช่าง' + names[k]);
+      var fx = got[a.id] || {};
+      // ตรวจผลก่อนใช้: ทุกจุดต้องมีคำแนะนำ สั้น ไม่ขึ้นบรรทัดใหม่ — จุดไหนไม่ผ่าน ใช้คำแนะนำสำรองของจุดนั้น
+      var fixes = by[names[k]].map(function (x, i) {
+        if (i >= a.items.length) return '';
+        var f = fx[String(x.code).toUpperCase()] || '';
+        if (!f || f.length > 90 || /[\r\n]/.test(f)) { good = false; return ''; }
+        return f;
+      });
+      msgs[names[k]] = _fmtDraft_(names[k], by[names[k]], fixes);
     });
     out = { source: good ? 'gemini' : 'gemini+template', msgs: msgs, model: r.model };
-    if (!good) _aiApiLog_('ตรวจผล Gemini', r.model, 'บางข้อความไม่ครบ Code → ใช้แม่แบบแทน', 0, '');
+    if (!good) _aiApiLog_('ตรวจผล Gemini', r.model, 'บางจุดไม่มีคำแนะนำ → ใช้คำแนะนำสำรองเฉพาะจุดนั้น', 0, '');
   }
   try { cache.put(cacheKey, JSON.stringify(out), 21600); } catch (e) {}
   return out;
@@ -2365,7 +2391,7 @@ function _draftHtml_(by) {
     : '💬 ข้อความแจ้งช่าง — ร่างโดย Gemini API' + (d.model ? ' (' + d.model + ')' : '') + ' · คัดลอกส่ง LINE ได้เลย';
   return '<div style="text-align:left;margin:-8px 0 18px 0;padding:12px;border:1px dashed #d9b98a;border-radius:10px;background:#fffdf8;font-size:13px;color:#333">' +
     '<div style="font-weight:bold;color:#b25e00;margin-bottom:6px">' + head + '</div>' +
-    names.map(function (n) { return '<div style="margin:6px 0;padding:8px 10px;background:#fff;border-radius:8px;border:1px solid #eee">' + esc_(d.msgs[n]) + '</div>'; }).join('') +
+    names.map(function (n) { return '<div style="margin:6px 0;padding:10px 12px;background:#fff;border-radius:8px;border:1px solid #eee;white-space:pre-line;line-height:1.7">' + esc_(d.msgs[n]) + '</div>'; }).join('') +
     '<div style="color:#999;font-size:11px">ส่งให้ AI เฉพาะ Code + เหตุผล (ไม่มีรูป · ไม่มีชื่อลูกค้า · ไม่มีชื่อช่าง)</div></div>';
 }
 /** เมนู 🔒: ใส่/ลบคีย์ Gemini (คีย์ไม่ถูกส่งกลับไปที่แอป) + ทดสอบ */
