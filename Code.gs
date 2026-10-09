@@ -2272,7 +2272,7 @@ function _geminiModelList_(key) {
   var saved = _props.getProperty('GEMINI_MODEL'), list = saved ? [saved] : [];
   GEMINI_PREF.forEach(function (m) { if (list.indexOf(m) < 0) list.push(m); });
   try {   // เผื่อชื่อรุ่นเปลี่ยน: ถามรายชื่อรุ่นที่ใช้ได้จริงจาก API แล้วต่อท้าย
-    var r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + encodeURIComponent(key), { muteHttpExceptions: true });
+    var r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': key }, muteHttpExceptions: true });
     if (r.getResponseCode() === 200) (JSON.parse(r.getContentText()).models || []).forEach(function (m) {
       var n = String(m.name || '').replace('models/', '');
       if (/flash/.test(n) && !/image|tts|audio|live|embedding|thinking|exp/.test(n) && (m.supportedGenerationMethods || []).indexOf('generateContent') > -1 && list.indexOf(n) < 0) list.push(n);
@@ -2288,8 +2288,9 @@ function _geminiJson_(prompt, purpose) {
   var models = _geminiModelList_(key), lastErr = '';
   for (var i = 0; i < models.length && i < 6; i++) {
     try {
-      var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent?key=' + encodeURIComponent(key),
-        { method: 'post', contentType: 'application/json', payload: body, muteHttpExceptions: true });
+      // ส่งคีย์ทาง header (รองรับคีย์แบบเก่า AIza... และแบบใหม่ AQ....) — ไม่ติดไปกับ URL/log
+      var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent',
+        { method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': key }, payload: body, muteHttpExceptions: true });
       var code = res.getResponseCode();
       if (code === 404 || code === 400) { lastErr = models[i] + ' ' + code; continue; }   // รุ่นนี้ใช้ไม่ได้ → ลองรุ่นถัดไป
       if (code !== 200) { lastErr = models[i] + ' ' + code; break; }                      // โควต้าหมด/ระบบล่ม → ใช้แม่แบบแทน
